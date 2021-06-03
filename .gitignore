@@ -1,0 +1,8 @@
+/target
+Cargo.lock
+*.egg-info
+*.pyc
+build/
+.vscode
+*.so
+*.egg

@@ -1,0 +1,26 @@
+[package]
+name = "nnv-rs"
+version = "0.1.0"
+edition = "2018"
+
+[lib]
+name = "nnv_rs_py"
+crate-type = ["cdylib"]
+
+[dependencies.pyo3]
+version = "0.13"
+#features = ["extension-module"]
+
+[dependencies]
+rand = "*"
+ndarray = {version = "0.15.2", features = ["rayon"] }
+ndarray-linalg = { path = "../ndarray-linalg/ndarray-linalg/", features = ["openblas-system"] }
+highs = "*"
+truncnorm = {path = "../truncnorm/"}
+numpy = {path = "../rust-numpy/"}
+num = "*"
+
+[dev-dependencies]
+quickcheck = "*"
+quickcheck_macros = "*"
+ndarray-rand = "*"
