@@ -1,8 +1,6 @@
 use crate::affine::Affine;
-use highs::ColProblem;
-use highs::HighsModelStatus;
-use highs::Row;
-use highs::Sense;
+use crate::util::solve;
+use good_lp::ResolutionError;
 use ndarray::Array1;
 use ndarray::Array2;
 use ndarray::ArrayView1;
@@ -19,6 +17,7 @@ impl<T: 'static + Float> Polytope<T>
 where
     T: std::convert::Into<f64>,
     T: std::fmt::Display,
+    f64: std::convert::From<T>,
 {
     pub fn new(constraint_coeffs: Array2<T>, upper_bounds: Array1<T>) -> Self {
         Polytope {
@@ -34,6 +33,10 @@ where
 
     pub fn coeffs(&self) -> ArrayView2<T> {
         self.halfspaces.get_mul()
+    }
+
+    pub fn get_coeffs_as_rows(&self) -> ArrayView2<T> {
+        self.halfspaces.get_coeffs_as_rows()
     }
 
     pub fn upper_bounds(&self) -> ArrayView1<T> {
@@ -70,29 +73,19 @@ where
 
     /// Check whether the Star set is empty.
     pub fn is_empty(&self) -> bool {
-        let coeffs = self.halfspaces.get_mul();
-        let upper_bounds = self.halfspaces.get_shift();
-        let mut pb = ColProblem::default();
+        let mut c = Array1::zeros(self.upper_bounds().len());
+        c[[0]] = T::one();
 
-        let problem_cs = upper_bounds.mapv(|x| pb.add_row(..=x)).to_vec();
-        let eqn_iter = if self.halfspaces.is_lhs {
-            coeffs.columns().into_iter()
-        } else {
-            coeffs.columns().into_iter()
-        };
-        eqn_iter.for_each(|var| {
-            let x: Vec<(Row, f64)> = problem_cs
-                .clone()
-                .into_iter()
-                .zip(var.to_vec().into_iter().map(|x| T::into(x)))
-                .collect();
-            pb.add_column(1., (0.).., x);
-        });
-        let mut model = pb.optimise(Sense::Maximise);
-        model.make_quiet();
-        let solved = model.solve();
-        let status = solved.status();
-        !((status == HighsModelStatus::Optimal) || (status == HighsModelStatus::PrimalUnbounded))
+        let solved = solve(
+            self.halfspaces.get_coeffs_as_rows().rows(),
+            self.upper_bounds(),
+            c.view(),
+        )
+        .0;
+        match solved {
+            Ok(_) | Err(ResolutionError::Unbounded) => false,
+            _ => true,
+        }
     }
 }
 
@@ -107,9 +100,10 @@ mod tests {
         let ubs = array![0., 0.];
         let pt = Polytope::new(coeffs, ubs);
         assert!(!pt.is_empty());
-        let coeffs = array![[0., 1.], [1., 0.], [0., -1.]];
-        let ubs = array![0., 0., -1.];
+        let coeffs = array![[0., 0., 1.], [0., 0., -1.]];
+        let ubs = array![0., -1.];
         let pt = Polytope::new(coeffs, ubs);
+        println!("{:?}", pt);
         assert!(pt.is_empty());
     }
 
@@ -119,6 +113,6 @@ mod tests {
         let ubs = array![0., 0., 0.];
         let pt = Polytope::new(coeffs, ubs);
         println!("{:?}", pt);
-        let points = vec![array![0., 0.], array![1., 1.], array![0., 1.]];
+        let _points = vec![array![0., 0.], array![1., 1.], array![0., 1.]];
     }
 }

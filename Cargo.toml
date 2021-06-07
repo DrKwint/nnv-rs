@@ -15,10 +15,11 @@ version = "0.13"
 rand = "*"
 ndarray = {version = "0.15.2", features = ["rayon"] }
 ndarray-linalg = { path = "../ndarray-linalg/ndarray-linalg/", features = ["openblas-system"] }
-highs = "*"
 truncnorm = {path = "../truncnorm/"}
 numpy = {path = "../rust-numpy/"}
 num = "*"
+good_lp = {version = "*", features = ["highs"]}
+highs = { version = "0.4" }
 
 [dev-dependencies]
 quickcheck = "*"

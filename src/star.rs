@@ -1,9 +1,11 @@
-extern crate highs;
 extern crate truncnorm;
 
 use crate::affine::Affine;
 use crate::polytope::Polytope;
-use crate::util::{ensure_spd, pinv};
+use crate::util::pinv;
+use crate::util::solve;
+use good_lp::ResolutionError;
+use ndarray::s;
 use ndarray::Array1;
 use ndarray::Array2;
 use ndarray::ArrayView1;
@@ -40,6 +42,8 @@ pub struct Star<T: Float> {
     representation: Affine<T>,
     /// `constraints` is the concatenation of [coeffs upper_bounds] and is a representation of the input polyhedron
     constraints: Option<Polytope<T>>,
+    input_lower_bounds: Option<Array1<T>>,
+    input_upper_bounds: Option<Array1<T>>,
 }
 
 impl<T: Float> Star<T>
@@ -49,6 +53,7 @@ where
     T: ndarray::ScalarOperand,
     T: std::fmt::Display,
     T: std::fmt::Debug,
+    f64: std::convert::From<T>,
 {
     /// Create a new Star with given dimension.
     ///
@@ -57,6 +62,8 @@ where
         Star {
             representation: Affine::new(Array2::eye(dim), Array1::zeros(dim)),
             constraints: None,
+            input_lower_bounds: None,
+            input_upper_bounds: None,
         }
     }
 
@@ -67,7 +74,15 @@ where
         Star {
             representation: Affine::new(basis, center),
             constraints: None,
+            input_lower_bounds: None,
+            input_upper_bounds: None,
         }
+    }
+
+    pub fn with_input_bounds(mut self, lower_bounds: Array1<T>, upper_bounds: Array1<T>) -> Self {
+        self.input_lower_bounds = Some(lower_bounds);
+        self.input_upper_bounds = Some(upper_bounds);
+        self
     }
 
     pub fn input_space_polytope(&self) -> Option<&Polytope<T>> {
@@ -135,6 +150,8 @@ where
         Star {
             representation: new_repr,
             constraints: self.constraints.clone(),
+            input_lower_bounds: None,
+            input_upper_bounds: None,
         }
     }
 
@@ -145,6 +162,52 @@ where
         } else {
             false
         }
+    }
+
+    pub fn get_min(&self, idx: usize) -> T {
+        let eqn = self.representation.get_eqn(idx);
+        let len = eqn.len();
+        let c = &eqn.slice(s![..len - 1]);
+
+        let solved = solve(
+            self.constraints
+                .as_ref()
+                .unwrap()
+                .get_coeffs_as_rows()
+                .rows(),
+            self.constraint_upper_bounds().unwrap(),
+            c.view(),
+        );
+        let val = match solved.0 {
+            Ok(_) => std::convert::From::from(solved.1.unwrap()),
+            Err(ResolutionError::Unbounded) => T::infinity(),
+            _ => panic!(),
+        };
+        self.center()[idx] - val
+    }
+
+    pub fn get_max(&self, idx: usize) -> T {
+        let neg_one: T = std::convert::From::from(-1.);
+        let eqn = self.representation.get_eqn(idx);
+        let len = eqn.len();
+        let c = &eqn.slice(s![..len - 1]) * neg_one;
+
+        let solved = solve(
+            self.constraints
+                .as_ref()
+                .unwrap()
+                .get_coeffs_as_rows()
+                .rows(),
+            self.constraint_upper_bounds().unwrap(),
+            c.view(),
+        );
+
+        let val = match solved.0 {
+            Ok(_) => std::convert::From::from(solved.1.unwrap()),
+            Err(ResolutionError::Unbounded) => T::infinity(),
+            _ => panic!(),
+        };
+        self.center()[idx] + val
     }
 
     /// TODO: doc this
@@ -178,6 +241,7 @@ where
         sigma: &Array2<T>,
         n: usize,
     ) -> Vec<Array1<f64>> {
+        println!("{:?}", self);
         if let Some(poly) = &self.constraints {
             let mu = mu.mapv(|x| x.into());
             let sigma = sigma.mapv(|x| x.into());

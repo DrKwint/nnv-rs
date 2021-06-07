@@ -7,8 +7,8 @@ use ndarray::ArrayView2;
 use ndarray::ArrayViewMut1;
 use ndarray::ArrayViewMut2;
 use ndarray::Axis;
+use ndarray::Slice;
 use num::Float;
-use std::fmt::Display;
 
 #[derive(Clone, Debug)]
 pub struct Affine<T: Float> {
@@ -55,7 +55,7 @@ impl<T: 'static + Float + std::fmt::Display> Affine<T> {
     }
 
     pub fn add_eqns(&mut self, eqns: &Affine<T>) {
-        let axis = if self.is_lhs {
+        if self.is_lhs {
             if !eqns.is_lhs {
                 self.matrix.append(Axis(0), eqns.matrix.t()).unwrap()
             } else {
@@ -83,6 +83,17 @@ impl<T: 'static + Float + std::fmt::Display> Affine<T> {
     pub fn get_eqn_mut(&mut self, index: usize) -> ArrayViewMut1<T> {
         let axis = if self.is_lhs { Axis(0) } else { Axis(1) };
         self.matrix.index_axis_mut(axis, index)
+    }
+
+    pub fn get_coeffs_as_rows(&self) -> ArrayView2<T> {
+        if self.is_lhs {
+            self.matrix
+                .slice_axis(Axis(1), Slice::from(..self.matrix.ncols() - 1))
+        } else {
+            self.matrix
+                .slice_axis(Axis(0), Slice::from(..self.matrix.nrows() - 1))
+                .reversed_axes()
+        }
     }
 
     pub fn lhs_mul(&self, lhs: &Affine<T>) -> Affine<T> {
@@ -167,7 +178,7 @@ mod tests {
         let two = array![1., 2.];
         let lhs = Affine::new(twobyfour.clone(), two);
         let rhs = Affine::new(twobyfour.clone().reversed_axes(), four);
-        let out = rhs.lhs_mul(&lhs);
+        let _out = rhs.lhs_mul(&lhs);
     }
 
     #[test]
@@ -177,7 +188,7 @@ mod tests {
         let two = array![1., 2.];
         let lhs = Affine::new(twobyfour.clone(), four);
         let rhs = Affine::new(twobyfour.clone().reversed_axes(), two);
-        let out = lhs.rhs_mul(&rhs);
+        let _out = lhs.rhs_mul(&rhs);
     }
 
     #[test]
