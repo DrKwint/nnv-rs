@@ -43,6 +43,7 @@ pub fn build_constellation(
 }
 
 #[pyfunction]
+#[text_signature = "(affines, loc, scale, safe_value, cdf_samples, num_samples, input_lower_bounds, input_upper_bounds /)"]
 pub fn sample_constellation(
     py_affines: &PyList,
     loc: PyReadonlyArray1<f64>,

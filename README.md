@@ -10,3 +10,7 @@
 6. Install OpenBlas (`sudo apt-get install libopenblas-dev` on Ubuntu)
 6. Switch to nightly Rust with `rustup default nightly`
 7. Build and install the Rust-backed Python package with `python ./setup.py install`
+
+### Troubleshooting
+
+- Build gives linker error `/usr/bin/ld: cannot find -lCbcSolver`: cbc solver is a default dependency of the `good_lp` package we're using for linear programming. Fix on Ubuntu is to run `sudo apt install coinor-libcbc-dev`.
