@@ -53,20 +53,24 @@ pub fn sample_constellation(
     num_samples: usize,
     input_lower_bounds: Option<PyReadonlyArray1<f64>>,
     input_upper_bounds: Option<PyReadonlyArray1<f64>>,
-) -> Py<PyList> {
+) -> Py<PyArray1<f64>> {
     let mut constellation = build_constellation(py_affines, input_lower_bounds, input_upper_bounds);
 
     let loc = loc.as_array().to_owned();
     let scale = scale.as_array().to_owned();
-    let samples = constellation.sample(loc, scale, safe_value, cdf_samples, num_samples);
+    let mut samples = constellation.sample(&loc, &scale, safe_value, cdf_samples, num_samples);
+    while samples.is_empty() {
+        samples = constellation.sample(&loc, &scale, safe_value, cdf_samples, num_samples);
+    }
     let gil = Python::acquire_gil();
     let py = gil.python();
     let py_samples: Vec<Py<PyArray1<f64>>> = samples
         .into_iter()
         .map(|x| PyArray1::from_array(py, &x).to_owned())
         .collect();
-    let out = PyList::new(py, py_samples);
-    out.into_py(py)
+    //let out = PyList::new(py, py_samples);
+    //out.into_py(py)
+    py_samples[0].clone()
 }
 
 #[pymodule]

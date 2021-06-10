@@ -48,20 +48,21 @@ where
 
     pub fn sample(
         &mut self,
-        loc: Array1<T>,
-        scale: Array2<T>,
+        loc: &Array1<T>,
+        scale: &Array2<T>,
         safe_value: T,
         cdf_samples: usize,
         num_samples: usize,
     ) -> Vec<Array1<f64>> {
         let mut current_node = 0;
         let mut rng = rand::thread_rng();
+        let mut bounds = (T::one(), T::one());
         loop {
             // Expand
             let children = self.expand_node(current_node);
             if children.is_empty() {
                 // sample from leaf
-                println!("{:?}", self.arena[current_node].star);
+                println!("Leaf sample with bounds {:?}", bounds);
                 let samples =
                     self.arena[current_node]
                         .star
@@ -81,7 +82,6 @@ where
                     self.arena[children[0]].star.clone(),
                     self.arena[children[0]].layer,
                 );
-                println!("a minmax {:?}", a_range);
                 let b_prob = self.arena[children[1]]
                     .star
                     .trunc_gaussian_cdf(&loc, &scale, cdf_samples)
@@ -90,44 +90,47 @@ where
                     self.arena[children[1]].star.clone(),
                     self.arena[children[1]].layer,
                 );
-                println!("b minmax {:?}", b_range);
-                println!("a {} b {} sum {}", a_prob, b_prob, a_prob + b_prob);
-                current_node = if Bernoulli::new(a_prob / (a_prob + b_prob))
-                    .unwrap()
-                    .sample(&mut rng)
-                {
-                    println!("a sampled");
-                    if a_range.1 <= safe_value {
-                        let samples = self.arena[children[0]].star.trunc_gaussian_sample(
-                            &loc,
-                            &scale,
-                            num_samples,
-                        );
-                        return samples;
-                    } else if a_range.0 > safe_value {
-                        println!("b");
-                        children[1]
-                    } else {
-                        println!("a");
-                        children[0]
+                //println!("a minmax {:?} b minmax {:?}", a_range,  b_range);
+                //println!("a {} b {} sum {}", a_prob, b_prob, a_prob + b_prob);
+                current_node =
+                    match Bernoulli::new(a_prob / (a_prob + b_prob)) {
+                        Err(_) => 0, // if there's an error, return to the root
+                        Ok(bernoulli) => {
+                            if bernoulli.sample(&mut rng) {
+                                if a_range.1 <= safe_value {
+                                    println!("Safe sample with bounds {:?}", bounds);
+                                    let samples = self.arena[children[0]]
+                                        .star
+                                        .trunc_gaussian_sample(&loc, &scale, num_samples);
+                                    return samples;
+                                } else if a_range.0 > safe_value {
+                                    //println!("b");
+                                    bounds = b_range;
+                                    children[1]
+                                } else {
+                                    //println!("a");
+                                    bounds = a_range;
+                                    children[0]
+                                }
+                            } else {
+                                if b_range.1 <= safe_value {
+                                    println!("Safe sample with bounds {:?}", bounds);
+                                    let samples = self.arena[children[1]]
+                                        .star
+                                        .trunc_gaussian_sample(&loc, &scale, num_samples);
+                                    return samples;
+                                } else if b_range.0 > safe_value {
+                                    //println!("a");
+                                    bounds = a_range;
+                                    children[0]
+                                } else {
+                                    //println!("b");
+                                    bounds = b_range;
+                                    children[1]
+                                }
+                            }
+                        }
                     }
-                } else {
-                    println!("b sampled");
-                    if b_range.1 <= safe_value {
-                        let samples = self.arena[children[1]].star.trunc_gaussian_sample(
-                            &loc,
-                            &scale,
-                            num_samples,
-                        );
-                        return samples;
-                    } else if b_range.0 > safe_value {
-                        println!("a");
-                        children[0]
-                    } else {
-                        println!("b");
-                        children[1]
-                    }
-                };
             }
         }
     }

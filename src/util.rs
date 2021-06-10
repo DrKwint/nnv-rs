@@ -14,15 +14,17 @@ use ndarray::Axis;
 use ndarray::Slice;
 use ndarray_linalg::EigVals;
 use ndarray_linalg::SVD;
+use ndarray::s;
 use std::collections::HashMap;
 
 pub fn pinv(x: &Array2<f64>) -> Array2<f64> {
     let (u_opt, sigma, vt_opt) = x.svd(true, true).unwrap();
     let u = u_opt.unwrap();
     let vt = vt_opt.unwrap();
-    let sig_square = Array2::from_diag(&sigma.map(|x| if *x < 1e-10 { 0. } else { 1. / x }));
-    let sig_base = Array2::eye(vt.nrows());
-    let sig = sig_base.slice_axis(Axis(1), Slice::from(..sig_square.nrows()));
+    let sig_diag = &sigma.map(|x| if *x < 1e-10 { 0. } else { 1. / x });
+    let mut sig_base = Array2::eye(u.nrows());
+    sig_base.diag_mut().slice_mut(s![..sig_diag.len()]).assign(sig_diag);
+    let sig = sig_base.slice_axis(Axis(0), Slice::from(..vt.nrows()));
     vt.t().dot(&sig.dot(&u.t()))
 }
 
@@ -58,14 +60,33 @@ pub fn solve<'a, I, T: 'a>(
     A: I,
     b: ArrayView1<T>,
     c: ArrayView1<T>,
+    c_lower_bounds: Option<ArrayView1<T>>,
+    c_upper_bounds: Option<ArrayView1<T>>,
 ) -> (Result<HighsSolution, ResolutionError>, Option<f64>)
 where
     T: std::convert::Into<f64> + std::clone::Clone + std::marker::Copy,
     I: IntoIterator<Item = ArrayView1<'a, T>>,
     f64: std::convert::From<T>,
 {
+    let shh = shh::stdout().unwrap();
     let mut problem = ProblemVariables::new();
-    let vars = problem.add_vector(variable(), c.len());
+    let vars = if c_lower_bounds.is_some() {
+        let lowers = c_lower_bounds.unwrap();
+        let uppers = c_upper_bounds.unwrap();
+        lowers
+            .into_iter()
+            .zip(uppers)
+            .map(|bounds| {
+                problem.add(
+                    variable()
+                        .min(f64::from(*bounds.0))
+                        .max(f64::from(*bounds.1)),
+                )
+            })
+            .collect()
+    } else {
+        problem.add_vector(variable(), c.len())
+    };
     let c_expression = LinearExpression {
         coefficients: vars
             .iter()

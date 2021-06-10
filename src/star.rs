@@ -177,6 +177,8 @@ where
                 .rows(),
             self.constraint_upper_bounds().unwrap(),
             c.view(),
+            self.input_lower_bounds.as_ref().map(|x| x.view()),
+            self.input_upper_bounds.as_ref().map(|x| x.view()),
         );
         let val = match solved.0 {
             Ok(_) => std::convert::From::from(solved.1.unwrap()),
@@ -200,6 +202,8 @@ where
                 .rows(),
             self.constraint_upper_bounds().unwrap(),
             c.view(),
+            self.input_lower_bounds.as_ref().map(|x| x.view()),
+            self.input_upper_bounds.as_ref().map(|x| x.view()),
         );
 
         let val = match solved.0 {
@@ -241,7 +245,6 @@ where
         sigma: &Array2<T>,
         n: usize,
     ) -> Vec<Array1<f64>> {
-        println!("{:?}", self);
         if let Some(poly) = &self.constraints {
             let mu = mu.mapv(|x| x.into());
             let sigma = sigma.mapv(|x| x.into());

@@ -11,6 +11,8 @@ use num::Float;
 #[derive(Clone, Debug)]
 pub struct Polytope<T: Float> {
     halfspaces: Affine<T>,
+    lower_bounds: Option<Array1<T>>,
+    upper_bounds: Option<Array1<T>>,
 }
 
 impl<T: 'static + Float> Polytope<T>
@@ -22,13 +24,23 @@ where
     pub fn new(constraint_coeffs: Array2<T>, upper_bounds: Array1<T>) -> Self {
         Polytope {
             halfspaces: Affine::new(constraint_coeffs, upper_bounds),
+            lower_bounds: None,
+            upper_bounds: None,
         }
     }
 
     pub fn from_affine(halfspaces: Affine<T>) -> Self {
         Polytope {
             halfspaces: halfspaces,
+            lower_bounds: None,
+            upper_bounds: None,
         }
+    }
+
+    pub fn with_input_bounds(mut self, lower_bounds: Array1<T>, upper_bounds: Array1<T>) -> Self {
+        self.lower_bounds = Some(lower_bounds);
+        self.upper_bounds = Some(upper_bounds);
+        self
     }
 
     pub fn coeffs(&self) -> ArrayView2<T> {
@@ -80,6 +92,8 @@ where
             self.halfspaces.get_coeffs_as_rows().rows(),
             self.upper_bounds(),
             c.view(),
+            self.lower_bounds.as_ref().map(|x| x.view()),
+            self.upper_bounds.as_ref().map(|x| x.view()),
         )
         .0;
         match solved {
