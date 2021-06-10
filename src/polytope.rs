@@ -7,6 +7,7 @@ use ndarray::ArrayView1;
 use ndarray::ArrayView2;
 use ndarray::Zip;
 use num::Float;
+use std::fmt::Debug;
 
 #[derive(Clone, Debug)]
 pub struct Polytope<T: Float> {
@@ -15,7 +16,7 @@ pub struct Polytope<T: Float> {
     upper_bounds: Option<Array1<T>>,
 }
 
-impl<T: 'static + Float> Polytope<T>
+impl<T: 'static + Float + Debug> Polytope<T>
 where
     T: std::convert::Into<f64>,
     T: std::fmt::Display,
@@ -51,7 +52,7 @@ where
         self.halfspaces.get_coeffs_as_rows()
     }
 
-    pub fn upper_bounds(&self) -> ArrayView1<T> {
+    pub fn eqn_upper_bounds(&self) -> ArrayView1<T> {
         self.halfspaces.get_shift()
     }
 
@@ -78,19 +79,19 @@ where
 
     pub fn is_member(&self, point: &ArrayView1<T>) -> bool {
         let vals = point.dot(&self.coeffs());
-        Zip::from(self.upper_bounds())
+        Zip::from(self.eqn_upper_bounds())
             .and(&vals)
             .fold(true, |acc, ub, v| acc && (v <= ub))
     }
 
     /// Check whether the Star set is empty.
     pub fn is_empty(&self) -> bool {
-        let mut c = Array1::zeros(self.upper_bounds().len());
+        let mut c = Array1::zeros(self.eqn_upper_bounds().len());
         c[[0]] = T::one();
 
         let solved = solve(
             self.halfspaces.get_coeffs_as_rows().rows(),
-            self.upper_bounds(),
+            self.eqn_upper_bounds(),
             c.view(),
             self.lower_bounds.as_ref().map(|x| x.view()),
             self.upper_bounds.as_ref().map(|x| x.view()),

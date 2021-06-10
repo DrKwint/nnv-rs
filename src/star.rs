@@ -80,8 +80,11 @@ where
     }
 
     pub fn with_input_bounds(mut self, lower_bounds: Array1<T>, upper_bounds: Array1<T>) -> Self {
-        self.input_lower_bounds = Some(lower_bounds);
-        self.input_upper_bounds = Some(upper_bounds);
+        self.input_lower_bounds = Some(lower_bounds.clone());
+        self.input_upper_bounds = Some(upper_bounds.clone());
+        self.constraints = self
+            .constraints
+            .map(|x| x.with_input_bounds(lower_bounds, upper_bounds));
         self
     }
 
@@ -126,7 +129,7 @@ where
 
     pub fn constraint_upper_bounds(&self) -> Option<ArrayView1<T>> {
         if let Some(constrs) = &self.constraints {
-            Some(constrs.upper_bounds())
+            Some(constrs.eqn_upper_bounds())
         } else {
             None
         }
@@ -139,7 +142,14 @@ where
         if let Some(ref mut constrs) = self.constraints {
             constrs.add_constraints(new_constraints);
         } else {
-            self.constraints = Some(Polytope::from_affine(new_constraints.clone()));
+            let mut polytope = Polytope::from_affine(new_constraints.clone());
+            if self.input_lower_bounds.is_some() {
+                polytope = polytope.with_input_bounds(
+                    self.input_lower_bounds.clone().unwrap(),
+                    self.input_upper_bounds.clone().unwrap(),
+                );
+            }
+            self.constraints = Some(polytope);
         }
         self
     }
@@ -150,8 +160,8 @@ where
         Star {
             representation: new_repr,
             constraints: self.constraints.clone(),
-            input_lower_bounds: None,
-            input_upper_bounds: None,
+            input_lower_bounds: self.input_lower_bounds.clone(),
+            input_upper_bounds: self.input_upper_bounds.clone(),
         }
     }
 
@@ -185,7 +195,7 @@ where
             Err(ResolutionError::Unbounded) => T::infinity(),
             _ => panic!(),
         };
-        self.center()[idx] - val
+        self.center()[idx] + val
     }
 
     pub fn get_max(&self, idx: usize) -> T {
@@ -211,7 +221,7 @@ where
             Err(ResolutionError::Unbounded) => T::infinity(),
             _ => panic!(),
         };
-        self.center()[idx] + val
+        self.center()[idx] - val
     }
 
     /// TODO: doc this
@@ -226,7 +236,7 @@ where
             let sigma = sigma.mapv(|x| x.into());
 
             let constraint_coeffs = poly.coeffs().mapv(|x| x.into());
-            let upper_bounds = poly.upper_bounds().mapv(|x| x.into());
+            let upper_bounds = poly.eqn_upper_bounds().mapv(|x| x.into());
             let mut sigma_star = constraint_coeffs.t().dot(&sigma.dot(&constraint_coeffs));
             let pos_def_guarator = Array2::from_diag(&Array1::from_elem(sigma_star.nrows(), 1e-12));
             sigma_star = sigma_star + pos_def_guarator;
@@ -250,7 +260,7 @@ where
             let sigma = sigma.mapv(|x| x.into());
 
             let constraint_coeffs = poly.coeffs().mapv(|x| x.into());
-            let upper_bounds = poly.upper_bounds().mapv(|x| x.into());
+            let upper_bounds = poly.eqn_upper_bounds().mapv(|x| x.into());
 
             let mut sigma_star = constraint_coeffs.t().dot(&sigma.dot(&constraint_coeffs));
             let pos_def_guarator = Array2::from_diag(&Array1::from_elem(sigma_star.nrows(), 1e-12));

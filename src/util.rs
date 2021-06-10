@@ -8,14 +8,15 @@ use good_lp::ProblemVariables;
 use good_lp::ResolutionError;
 use good_lp::Variable;
 use good_lp::{variable, Solution, SolverModel};
+use ndarray::s;
 use ndarray::Array2;
 use ndarray::ArrayView1;
 use ndarray::Axis;
 use ndarray::Slice;
 use ndarray_linalg::EigVals;
 use ndarray_linalg::SVD;
-use ndarray::s;
 use std::collections::HashMap;
+use std::fmt::Debug;
 
 pub fn pinv(x: &Array2<f64>) -> Array2<f64> {
     let (u_opt, sigma, vt_opt) = x.svd(true, true).unwrap();
@@ -23,7 +24,10 @@ pub fn pinv(x: &Array2<f64>) -> Array2<f64> {
     let vt = vt_opt.unwrap();
     let sig_diag = &sigma.map(|x| if *x < 1e-10 { 0. } else { 1. / x });
     let mut sig_base = Array2::eye(u.nrows());
-    sig_base.diag_mut().slice_mut(s![..sig_diag.len()]).assign(sig_diag);
+    sig_base
+        .diag_mut()
+        .slice_mut(s![..sig_diag.len()])
+        .assign(sig_diag);
     let sig = sig_base.slice_axis(Axis(0), Slice::from(..vt.nrows()));
     vt.t().dot(&sig.dot(&u.t()))
 }
@@ -56,7 +60,7 @@ impl IntoAffineExpression for LinearExpression {
     }
 }
 
-pub fn solve<'a, I, T: 'a>(
+pub fn solve<'a, I, T: 'a + Debug>(
     A: I,
     b: ArrayView1<T>,
     c: ArrayView1<T>,

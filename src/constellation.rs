@@ -98,7 +98,7 @@ where
                         Ok(bernoulli) => {
                             if bernoulli.sample(&mut rng) {
                                 if a_range.1 <= safe_value {
-                                    println!("Safe sample with bounds {:?}", bounds);
+                                    println!("Safe sample with bounds {:?}", a_range);
                                     let samples = self.arena[children[0]]
                                         .star
                                         .trunc_gaussian_sample(&loc, &scale, num_samples);
@@ -114,7 +114,7 @@ where
                                 }
                             } else {
                                 if b_range.1 <= safe_value {
-                                    println!("Safe sample with bounds {:?}", bounds);
+                                    println!("Safe sample with bounds {:?}", b_range);
                                     let samples = self.arena[children[1]]
                                         .star
                                         .trunc_gaussian_sample(&loc, &scale, num_samples);
@@ -253,7 +253,7 @@ mod tests {
 
         let loc = Array1::zeros(4);
         let scale = Array2::eye(4);
-        let val = constellation.sample(loc, scale, -100., 10000, 10);
+        let val = constellation.sample(&loc, &scale, -100., 10000, 10);
         println!("{:?}", val);
         assert_eq!(0, 1);
     }
