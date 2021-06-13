@@ -5,12 +5,14 @@ use crate::polytope::Polytope;
 use crate::util::pinv;
 use crate::util::solve;
 use good_lp::ResolutionError;
+use ndarray::concatenate;
 use ndarray::s;
 use ndarray::Array1;
 use ndarray::Array2;
 use ndarray::ArrayView1;
 use ndarray::ArrayView2;
 use ndarray::Axis;
+use ndarray::Zip;
 use num::Float;
 use std::fmt::Debug;
 use truncnorm::mv_truncnormal_cdf;
@@ -42,8 +44,6 @@ pub struct Star<T: Float> {
     representation: Affine<T>,
     /// `constraints` is the concatenation of [coeffs upper_bounds] and is a representation of the input polyhedron
     constraints: Option<Polytope<T>>,
-    input_lower_bounds: Option<Array1<T>>,
-    input_upper_bounds: Option<Array1<T>>,
 }
 
 impl<T: Float> Star<T>
@@ -62,8 +62,6 @@ where
         Star {
             representation: Affine::new(Array2::eye(dim), Array1::zeros(dim)),
             constraints: None,
-            input_lower_bounds: None,
-            input_upper_bounds: None,
         }
     }
 
@@ -74,17 +72,19 @@ where
         Star {
             representation: Affine::new(basis, center),
             constraints: None,
-            input_lower_bounds: None,
-            input_upper_bounds: None,
         }
     }
 
     pub fn with_input_bounds(mut self, lower_bounds: Array1<T>, upper_bounds: Array1<T>) -> Self {
-        self.input_lower_bounds = Some(lower_bounds.clone());
-        self.input_upper_bounds = Some(upper_bounds.clone());
-        self.constraints = self
-            .constraints
-            .map(|x| x.with_input_bounds(lower_bounds, upper_bounds));
+        //self.input_lower_bounds = Some(lower_bounds.clone());
+        //self.input_upper_bounds = Some(upper_bounds.clone());
+        if self.constraints.is_some() {
+            self.constraints = self
+                .constraints
+                .map(|x| x.with_input_bounds(lower_bounds, upper_bounds));
+        } else {
+            self.constraints = Some(Polytope::from_input_bounds(lower_bounds, upper_bounds));
+        }
         self
     }
 
@@ -143,12 +143,6 @@ where
             constrs.add_constraints(new_constraints);
         } else {
             let mut polytope = Polytope::from_affine(new_constraints.clone());
-            if self.input_lower_bounds.is_some() {
-                polytope = polytope.with_input_bounds(
-                    self.input_lower_bounds.clone().unwrap(),
-                    self.input_upper_bounds.clone().unwrap(),
-                );
-            }
             self.constraints = Some(polytope);
         }
         self
@@ -160,8 +154,6 @@ where
         Star {
             representation: new_repr,
             constraints: self.constraints.clone(),
-            input_lower_bounds: self.input_lower_bounds.clone(),
-            input_upper_bounds: self.input_upper_bounds.clone(),
         }
     }
 
@@ -179,20 +171,17 @@ where
         let len = eqn.len();
         let c = &eqn.slice(s![..len - 1]);
 
+        let poly = self.constraints.as_ref().unwrap();
         let solved = solve(
-            self.constraints
-                .as_ref()
-                .unwrap()
-                .get_coeffs_as_rows()
-                .rows(),
+            poly.get_coeffs_as_rows().rows(),
             self.constraint_upper_bounds().unwrap(),
             c.view(),
-            self.input_lower_bounds.as_ref().map(|x| x.view()),
-            self.input_upper_bounds.as_ref().map(|x| x.view()),
+            poly.get_input_lower_bound(),
+            poly.get_input_upper_bound(),
         );
         let val = match solved.0 {
             Ok(_) => std::convert::From::from(solved.1.unwrap()),
-            Err(ResolutionError::Unbounded) => T::infinity(),
+            Err(ResolutionError::Unbounded) => T::neg_infinity(),
             _ => panic!(),
         };
         self.center()[idx] + val
@@ -204,21 +193,18 @@ where
         let len = eqn.len();
         let c = &eqn.slice(s![..len - 1]) * neg_one;
 
+        let poly = self.constraints.as_ref().unwrap();
         let solved = solve(
-            self.constraints
-                .as_ref()
-                .unwrap()
-                .get_coeffs_as_rows()
-                .rows(),
+            poly.get_coeffs_as_rows().rows(),
             self.constraint_upper_bounds().unwrap(),
             c.view(),
-            self.input_lower_bounds.as_ref().map(|x| x.view()),
-            self.input_upper_bounds.as_ref().map(|x| x.view()),
+            poly.get_input_lower_bound(),
+            poly.get_input_upper_bound(),
         );
 
         let val = match solved.0 {
             Ok(_) => std::convert::From::from(solved.1.unwrap()),
-            Err(ResolutionError::Unbounded) => T::infinity(),
+            Err(ResolutionError::Unbounded) => T::neg_infinity(),
             _ => panic!(),
         };
         self.center()[idx] - val
@@ -259,22 +245,52 @@ where
             let mu = mu.mapv(|x| x.into());
             let sigma = sigma.mapv(|x| x.into());
 
-            let constraint_coeffs = poly.coeffs().mapv(|x| x.into());
-            let upper_bounds = poly.eqn_upper_bounds().mapv(|x| x.into());
+            let reduced_space_poly = poly.reduce_fixed_inputs();
 
-            let mut sigma_star = constraint_coeffs.t().dot(&sigma.dot(&constraint_coeffs));
+            let constraint_coeffs = reduced_space_poly.coeffs().mapv(|x| x.into());
+            let eqn_upper_bounds = reduced_space_poly.eqn_upper_bounds().mapv(|x| x.into());
+
+            let (lbs, ubs) = poly.get_input_bounds().unwrap();
+            let unfixed = Zip::from(lbs).and(ubs).map_collect(|&lb, &ub| lb != ub);
+
+            let sigma_rows: Vec<ArrayView2<f64>> = sigma
+                .rows()
+                .into_iter()
+                .zip(&unfixed)
+                .filter(|(row, fix)| **fix)
+                .map(|(row, fix)| row.insert_axis(Axis(0)))
+                .collect();
+            let mut reduced_sigma = concatenate(Axis(0), sigma_rows.as_slice()).unwrap();
+            let sigma_rows: Vec<ArrayView2<f64>> = reduced_sigma
+                .columns()
+                .into_iter()
+                .zip(&unfixed)
+                .filter(|(row, fix)| **fix)
+                .map(|(row, fix)| row.insert_axis(Axis(1)))
+                .collect();
+            reduced_sigma = concatenate(Axis(1), sigma_rows.as_slice()).unwrap();
+            let reduced_mu: Array1<f64> = Array1::from_iter(
+                mu.into_iter()
+                    .zip(unfixed)
+                    .filter(|(val, fix)| *fix)
+                    .map(|(row, fix)| row),
+            );
+
+            let mut sigma_star = constraint_coeffs
+                .t()
+                .dot(&reduced_sigma.dot(&constraint_coeffs));
             let pos_def_guarator = Array2::from_diag(&Array1::from_elem(sigma_star.nrows(), 1e-12));
             sigma_star = sigma_star + pos_def_guarator;
-            let ub = &upper_bounds - &mu.dot(&constraint_coeffs);
+            let ub = &eqn_upper_bounds - &reduced_mu.dot(&constraint_coeffs);
             let lb = Array1::from_elem(ub.len(), f64::NEG_INFINITY);
             let centered_samples = mv_truncnormal_rand(lb, ub, sigma_star, n);
             let inv_constraint_coeffs = pinv(&constraint_coeffs);
 
-            let samples = centered_samples.dot(&inv_constraint_coeffs) + mu;
+            let samples = centered_samples.dot(&inv_constraint_coeffs) + reduced_mu;
             samples
                 .rows()
                 .into_iter()
-                .filter(|x| poly.is_member(&x.mapv(|v| v.into()).view()))
+                .filter(|x| reduced_space_poly.is_member(&x.mapv(|v| v.into()).view()))
                 .map(|x| x.into_owned())
                 .collect()
         } else {

@@ -1,10 +1,13 @@
 use crate::affine::Affine;
 use crate::util::solve;
 use good_lp::ResolutionError;
+use ndarray::concatenate;
 use ndarray::Array1;
 use ndarray::Array2;
 use ndarray::ArrayView1;
 use ndarray::ArrayView2;
+use ndarray::Axis;
+use ndarray::ScalarOperand;
 use ndarray::Zip;
 use num::Float;
 use std::fmt::Debug;
@@ -20,6 +23,7 @@ impl<T: 'static + Float + Debug> Polytope<T>
 where
     T: std::convert::Into<f64>,
     T: std::fmt::Display,
+    T: ScalarOperand,
     f64: std::convert::From<T>,
 {
     pub fn new(constraint_coeffs: Array2<T>, upper_bounds: Array1<T>) -> Self {
@@ -38,10 +42,86 @@ where
         }
     }
 
+    pub fn from_input_bounds(lower_bounds: Array1<T>, upper_bounds: Array1<T>) -> Self {
+        Self {
+            halfspaces: Affine::from_raw(Array2::zeros((lower_bounds.len() + 1, 1)), false),
+            lower_bounds: Some(lower_bounds.clone()),
+            upper_bounds: Some(upper_bounds.clone()),
+        }
+        //poly.with_input_bounds(lower_bounds, upper_bounds)
+    }
+
     pub fn with_input_bounds(mut self, lower_bounds: Array1<T>, upper_bounds: Array1<T>) -> Self {
-        self.lower_bounds = Some(lower_bounds);
-        self.upper_bounds = Some(upper_bounds);
+        self.lower_bounds = Some(lower_bounds.clone());
+        self.upper_bounds = Some(upper_bounds.clone());
+        let axis = if self.halfspaces.is_lhs {
+            Axis(1)
+        } else {
+            Axis(0)
+        };
+        let lbs = concatenate(
+            axis,
+            &[
+                (Array2::eye(lower_bounds.len()) * T::from(-1.).unwrap()).view(),
+                lower_bounds.insert_axis(axis).view(),
+            ],
+        )
+        .unwrap();
+        self.add_constraints(&Affine::from_raw(lbs, self.halfspaces.is_lhs));
+        let ubs = concatenate(
+            axis,
+            &[
+                Array2::eye(upper_bounds.len()).view(),
+                upper_bounds.insert_axis(axis).view(),
+            ],
+        )
+        .unwrap();
+        self.add_constraints(&Affine::from_raw(ubs, self.halfspaces.is_lhs));
         self
+    }
+
+    pub fn get_input_bounds(&self) -> Option<(ArrayView1<T>, ArrayView1<T>)> {
+        self.lower_bounds
+            .as_ref()
+            .map(|x| x.view())
+            .zip(self.upper_bounds.as_ref().map(|x| x.view()))
+    }
+
+    pub fn get_input_lower_bound(&self) -> Option<ArrayView1<T>> {
+        self.lower_bounds.as_ref().map(|x| x.view())
+    }
+
+    pub fn get_input_upper_bound(&self) -> Option<ArrayView1<T>> {
+        self.upper_bounds.as_ref().map(|x| x.view())
+    }
+
+    pub fn reduce_fixed_inputs(&self) -> Self {
+        let lbs = self.lower_bounds.as_ref().unwrap();
+        let ubs = self.upper_bounds.as_ref().unwrap();
+        let fixed = Zip::from(lbs)
+            .and(ubs)
+            .map_collect(|&lb, &ub| if lb == ub { lb } else { T::zero() });
+        let ub_reduction = if self.halfspaces.is_lhs {
+            self.coeffs().dot(&fixed)
+        } else {
+            fixed.dot(&self.coeffs())
+        };
+        let new_eqn_ubs = &self.eqn_upper_bounds() - ub_reduction;
+        let vars = self.get_coeffs_as_rows();
+        let new_eqns_vec: Vec<ArrayView2<T>> = vars
+            .columns()
+            .into_iter()
+            .zip(fixed)
+            .filter(|(_, fixed)| T::is_zero(fixed))
+            .map(|(var, _)| var.insert_axis(Axis(0)))
+            .collect();
+        let new_eqns = concatenate(Axis(0), new_eqns_vec.as_slice()).unwrap();
+
+        Polytope {
+            halfspaces: Affine::new(new_eqns, new_eqn_ubs),
+            lower_bounds: None,
+            upper_bounds: None,
+        }
     }
 
     pub fn coeffs(&self) -> ArrayView2<T> {

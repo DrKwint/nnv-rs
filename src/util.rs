@@ -15,6 +15,7 @@ use ndarray::Axis;
 use ndarray::Slice;
 use ndarray_linalg::EigVals;
 use ndarray_linalg::SVD;
+use std::cmp::max;
 use std::collections::HashMap;
 use std::fmt::Debug;
 
@@ -23,13 +24,16 @@ pub fn pinv(x: &Array2<f64>) -> Array2<f64> {
     let u = u_opt.unwrap();
     let vt = vt_opt.unwrap();
     let sig_diag = &sigma.map(|x| if *x < 1e-10 { 0. } else { 1. / x });
-    let mut sig_base = Array2::eye(u.nrows());
+    let mut sig_base = Array2::eye(max(u.nrows(), vt.nrows()));
     sig_base
         .diag_mut()
         .slice_mut(s![..sig_diag.len()])
         .assign(sig_diag);
-    let sig = sig_base.slice_axis(Axis(0), Slice::from(..vt.nrows()));
-    vt.t().dot(&sig.dot(&u.t()))
+    let mut sig = sig_base
+        .slice_axis(Axis(0), Slice::from(..vt.nrows()))
+        .to_owned();
+    let final_sig = sig.slice_axis(Axis(1), Slice::from(..u.nrows()));
+    vt.t().dot(&final_sig.dot(&u.t()))
 }
 
 pub fn ensure_spd(A: Array2<f64>) -> Array2<f64> {
@@ -43,6 +47,13 @@ pub fn ensure_spd(A: Array2<f64>) -> Array2<f64> {
     let min_eig = a_hat.eigvals().unwrap();
     println!("min_eig {}", min_eig);
     a_hat
+}
+
+pub fn embed_identity(A: Array2<f64>) -> Array2<f64> {
+    let eye_dim = max(A.nrows(), A.ncols());
+    let mut eye = Array2::eye(eye_dim);
+    eye.slice_mut(s![..A.nrows(), ..A.ncols()]).assign(&A);
+    eye
 }
 
 /// An linear expression without a constant component
@@ -73,6 +84,7 @@ where
     f64: std::convert::From<T>,
 {
     let shh = shh::stdout().unwrap();
+    let shh_err = shh::stderr().unwrap();
     let mut problem = ProblemVariables::new();
     let vars = if c_lower_bounds.is_some() {
         let lowers = c_lower_bounds.unwrap();

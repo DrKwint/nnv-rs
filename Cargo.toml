@@ -21,8 +21,15 @@ num = "*"
 good_lp = {version = "*", features = ["highs"], default-features = false }
 highs = { version = "0.4" }
 shh = "*"
+ndarray-rand = "*"
 
 [dev-dependencies]
 quickcheck = "*"
 quickcheck_macros = "*"
 ndarray-rand = "*"
+
+[[bin]]
+name = "debug_binary"
+path = "src/debug_main.rs"
+test = false
+bench = false

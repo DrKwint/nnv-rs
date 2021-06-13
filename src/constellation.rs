@@ -59,6 +59,7 @@ where
         let mut bounds = (T::one(), T::one());
         loop {
             // Expand
+            //println!("{:?}", self.arena[current_node]);
             let children = self.expand_node(current_node);
             if children.is_empty() {
                 // sample from leaf
