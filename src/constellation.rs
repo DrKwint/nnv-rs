@@ -56,83 +56,75 @@ where
     ) -> Vec<Array1<f64>> {
         let mut current_node = 0;
         let mut rng = rand::thread_rng();
-        let mut bounds = (T::one(), T::one());
         loop {
-            // Expand
-            //println!("{:?}", self.arena[current_node]);
-            let children = self.expand_node(current_node);
-            if children.is_empty() {
-                // sample from leaf
-                println!("Leaf sample with bounds {:?}", bounds);
-                let samples =
-                    self.arena[current_node]
-                        .star
-                        .trunc_gaussian_sample(&loc, &scale, num_samples);
-                return samples;
-            } else if children.len() == 1 {
-                // continue with only child
-                current_node = children[0];
+            let bounds = self.overestimate_output_range(
+                self.arena[current_node].star.clone(),
+                self.arena[current_node].layer,
+            );
+            println!("{:?}", bounds);
+            current_node = if bounds.1 <= safe_value {
+                // sample current node
+                println!("Safe sample");
+                return self.arena[current_node].star.trunc_gaussian_sample(
+                    &loc,
+                    &scale,
+                    num_samples,
+                );
+            } else if bounds.0 > safe_value {
+                // no output will be safe, so just sample
+                println!("Totally unsafe at {:?}", current_node);
+                if current_node == 0 {
+                    return self.arena[current_node].star.trunc_gaussian_sample(
+                        &loc,
+                        &scale,
+                        num_samples,
+                    );
+                }
+                // restart
+                0
             } else {
-                // Bernoulli trial to choose child
-                // In this branch, there can only be exactly two children
-                let a_prob = self.arena[children[0]]
-                    .star
-                    .trunc_gaussian_cdf(&loc, &scale, cdf_samples)
-                    .0;
-                let a_range = self.overestimate_output_range(
-                    self.arena[children[0]].star.clone(),
-                    self.arena[children[0]].layer,
-                );
-                let b_prob = self.arena[children[1]]
-                    .star
-                    .trunc_gaussian_cdf(&loc, &scale, cdf_samples)
-                    .0;
-                let b_range = self.overestimate_output_range(
-                    self.arena[children[1]].star.clone(),
-                    self.arena[children[1]].layer,
-                );
-                //println!("a minmax {:?} b minmax {:?}", a_range,  b_range);
-                //println!("a {} b {} sum {}", a_prob, b_prob, a_prob + b_prob);
-                current_node =
-                    match Bernoulli::new(a_prob / (a_prob + b_prob)) {
-                        Err(_) => 0, // if there's an error, return to the root
-                        Ok(bernoulli) => {
-                            if bernoulli.sample(&mut rng) {
-                                if a_range.1 <= safe_value {
-                                    println!("Safe sample with bounds {:?}", a_range);
-                                    let samples = self.arena[children[0]]
-                                        .star
-                                        .trunc_gaussian_sample(&loc, &scale, num_samples);
-                                    return samples;
-                                } else if a_range.0 > safe_value {
-                                    //println!("b");
-                                    bounds = b_range;
-                                    children[1]
-                                } else {
-                                    //println!("a");
-                                    bounds = a_range;
-                                    children[0]
-                                }
-                            } else {
-                                if b_range.1 <= safe_value {
-                                    println!("Safe sample with bounds {:?}", b_range);
-                                    let samples = self.arena[children[1]]
-                                        .star
-                                        .trunc_gaussian_sample(&loc, &scale, num_samples);
-                                    return samples;
-                                } else if b_range.0 > safe_value {
-                                    //println!("a");
-                                    bounds = a_range;
+                // expand
+                let children = self.expand_node(current_node);
+                match children.len() {
+                    // leaf node
+                    0 => {
+                        println!("Leaf sample");
+                        return self.arena[current_node].star.trunc_gaussian_sample(
+                            &loc,
+                            &scale,
+                            num_samples,
+                        );
+                    }
+                    // affine or pos def stepRelu
+                    1 => children[0],
+                    // stepRelu with pos and neg children
+                    // In this branch, there can only be exactly two children
+                    _ => {
+                        // Bernoulli trial to choose child
+                        let a_prob = self.arena[children[0]]
+                            .star
+                            .trunc_gaussian_cdf(&loc, &scale, cdf_samples)
+                            .0;
+                        let b_prob = self.arena[children[1]]
+                            .star
+                            .trunc_gaussian_cdf(&loc, &scale, cdf_samples)
+                            .0;
+                        match Bernoulli::new(a_prob / (a_prob + b_prob)) {
+                            Err(_) => {
+                                println!("Bernoulli error restart");
+                                0
+                            } // if there's an error, return to the root
+                            Ok(bernoulli) => {
+                                if bernoulli.sample(&mut rng) {
                                     children[0]
                                 } else {
-                                    //println!("b");
-                                    bounds = b_range;
                                     children[1]
                                 }
                             }
                         }
                     }
-            }
+                }
+            };
         }
     }
 
