@@ -98,6 +98,9 @@ where
     pub fn reduce_fixed_inputs(&self) -> Self {
         let lbs = self.lower_bounds.as_ref().unwrap();
         let ubs = self.upper_bounds.as_ref().unwrap();
+        let is_fixed = Zip::from(lbs)
+            .and(ubs)
+            .map_collect(|&lb, &ub| if lb == ub { false } else { true });
         let fixed = Zip::from(lbs)
             .and(ubs)
             .map_collect(|&lb, &ub| if lb == ub { lb } else { T::zero() });
@@ -111,8 +114,8 @@ where
         let new_eqns_vec: Vec<ArrayView2<T>> = vars
             .columns()
             .into_iter()
-            .zip(fixed)
-            .filter(|(_, fixed)| T::is_zero(fixed))
+            .zip(is_fixed)
+            .filter(|(_, fixed)| *fixed)
             .map(|(var, _)| var.insert_axis(Axis(0)))
             .collect();
         let new_eqns = concatenate(Axis(0), new_eqns_vec.as_slice()).unwrap();
