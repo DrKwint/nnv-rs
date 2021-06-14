@@ -34,6 +34,8 @@ where
             star: star,
             layer: 0,
             remaining_steps: None,
+            cdf: Some(1.),
+            is_feasible: true,
         };
         out.arena.push(star_node);
         out
@@ -81,6 +83,7 @@ where
                     );
                 }
                 // restart
+                self.arena[current_node].is_feasible = false;
                 0
             } else {
                 // expand
@@ -96,29 +99,62 @@ where
                         );
                     }
                     // affine or pos def stepRelu
-                    1 => children[0],
+                    1 => {
+                        if self.arena[children[0]].is_feasible {
+                            children[0]
+                        } else {
+                            self.arena[current_node].is_feasible = false;
+                            0
+                        }
+                    }
                     // stepRelu with pos and neg children
                     // In this branch, there can only be exactly two children
                     _ => {
-                        // Bernoulli trial to choose child
-                        let a_prob = self.arena[children[0]]
-                            .star
-                            .trunc_gaussian_cdf(&loc, &scale, cdf_samples)
-                            .0;
-                        let b_prob = self.arena[children[1]]
-                            .star
-                            .trunc_gaussian_cdf(&loc, &scale, cdf_samples)
-                            .0;
-                        match Bernoulli::new(a_prob / (a_prob + b_prob)) {
-                            Err(_) => {
-                                println!("Bernoulli error restart");
+                        match (
+                            self.arena[children[0]].is_feasible,
+                            self.arena[children[1]].is_feasible,
+                        ) {
+                            (false, false) => {
+                                self.arena[current_node].is_feasible = false;
                                 0
-                            } // if there's an error, return to the root
-                            Ok(bernoulli) => {
-                                if bernoulli.sample(&mut rng) {
-                                    children[0]
+                            }
+                            (false, true) => children[1],
+                            (true, false) => children[0],
+                            (true, true) => {
+                                // Bernoulli trial to choose child
+                                let a_prob = if self.arena[children[0]].cdf.is_some() {
+                                    self.arena[children[0]].cdf.unwrap()
                                 } else {
-                                    children[1]
+                                    let prob = self.arena[children[0]]
+                                        .star
+                                        .trunc_gaussian_cdf(&loc, &scale, cdf_samples)
+                                        .0;
+                                    self.arena[children[0]].cdf = Some(prob);
+                                    prob
+                                };
+                                let b_prob = if self.arena[children[1]].cdf.is_some() {
+                                    self.arena[children[0]].cdf.unwrap()
+                                } else {
+                                    let prob = self.arena[children[1]]
+                                        .star
+                                        .trunc_gaussian_cdf(&loc, &scale, cdf_samples)
+                                        .0;
+                                    self.arena[children[0]].cdf = Some(prob);
+                                    prob
+                                };
+                                match Bernoulli::new(a_prob / (a_prob + b_prob)) {
+                                    Err(_) => {
+                                        println!("Bernoulli error restart");
+                                        self.arena[current_node].is_feasible = false;
+                                        0
+                                    } // if there's an error, return to the root
+                                    Ok(bernoulli) => {
+                                        if bernoulli.sample(&mut rng) {
+                                            children[0]
+                                        } else {
+                                            children[1]
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -189,6 +225,8 @@ struct StarNode<T: num::Float> {
     star: Star<T>,
     layer: usize,
     remaining_steps: Option<usize>,
+    cdf: Option<f64>,
+    is_feasible: bool,
 }
 
 impl<T: num::Float> StarNode<T> {
@@ -206,6 +244,8 @@ impl<T: num::Float> StarNode<T> {
             children: None,
             layer: layer,
             remaining_steps: remaining_steps,
+            cdf: None,
+            is_feasible: true,
         }
     }
 }
