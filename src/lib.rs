@@ -68,8 +68,6 @@ pub fn sample_constellation(
         .into_iter()
         .map(|x| PyArray1::from_array(py, &x).to_owned())
         .collect();
-    //let out = PyList::new(py, py_samples);
-    //out.into_py(py)
     py_samples[0].clone()
 }
 

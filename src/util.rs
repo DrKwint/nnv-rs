@@ -19,6 +19,10 @@ use std::cmp::max;
 use std::collections::HashMap;
 use std::fmt::Debug;
 
+pub fn l2_norm(x: ArrayView1<f64>) -> f64 {
+    x.dot(&x).sqrt()
+}
+
 pub fn pinv(x: &Array2<f64>) -> Array2<f64> {
     let (u_opt, sigma, vt_opt) = x.svd(true, true).unwrap();
     let u = u_opt.unwrap();
@@ -29,7 +33,7 @@ pub fn pinv(x: &Array2<f64>) -> Array2<f64> {
         .diag_mut()
         .slice_mut(s![..sig_diag.len()])
         .assign(sig_diag);
-    let mut sig = sig_base
+    let sig = sig_base
         .slice_axis(Axis(0), Slice::from(..vt.nrows()))
         .to_owned();
     let final_sig = sig.slice_axis(Axis(1), Slice::from(..u.nrows()));
@@ -58,8 +62,8 @@ pub fn embed_identity(A: Array2<f64>) -> Array2<f64> {
 
 /// An linear expression without a constant component
 #[derive(Clone)]
-struct LinearExpression {
-    coefficients: HashMap<Variable, f64>,
+pub struct LinearExpression {
+    pub coefficients: HashMap<Variable, f64>,
 }
 
 impl IntoAffineExpression for LinearExpression {

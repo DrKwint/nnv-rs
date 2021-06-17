@@ -1,6 +1,16 @@
 use crate::affine::Affine;
+use crate::util::l2_norm;
 use crate::util::solve;
+use crate::util::LinearExpression;
+use good_lp::solvers::highs::highs;
+
+use good_lp::Expression;
+
+use good_lp::ProblemVariables;
 use good_lp::ResolutionError;
+
+use good_lp::Variable;
+use good_lp::{variable, Solution, SolverModel};
 use ndarray::concatenate;
 use ndarray::Array1;
 use ndarray::Array2;
@@ -9,7 +19,9 @@ use ndarray::ArrayView2;
 use ndarray::Axis;
 use ndarray::ScalarOperand;
 use ndarray::Zip;
+
 use num::Float;
+use std::collections::HashMap;
 use std::fmt::Debug;
 
 #[derive(Clone, Debug)]
@@ -139,10 +151,6 @@ where
         self.halfspaces.get_shift()
     }
 
-    fn num_dims(&self) -> usize {
-        self.halfspaces.input_dim()
-    }
-
     pub fn num_constraints(&self) -> usize {
         self.halfspaces.output_dim()
     }
@@ -184,6 +192,39 @@ where
             Ok(_) | Err(ResolutionError::Unbounded) => false,
             _ => true,
         }
+    }
+
+    /// Source: https://stanford.edu/class/ee364a/lectures/problems.pdf
+    pub fn chebyshev_center(&self) -> (Array1<f64>, f64) {
+        let A = self.halfspaces.get_coeffs_as_rows().rows();
+        let b = self.eqn_upper_bounds();
+        let mut problem = ProblemVariables::new();
+        let r = problem.add_variable();
+        let x_c: Vec<Variable> = problem.add_vector(variable(), b.len());
+        let mut unsolved = problem.maximise(r).using(highs);
+
+        self.halfspaces
+            .get_coeffs_as_rows()
+            .rows()
+            .into_iter()
+            .zip(b.into_iter())
+            .for_each(|pair: (ArrayView1<T>, &T)| {
+                let (coeffs, ub) = pair;
+                let coeffs = coeffs.map(|x| f64::from(*x));
+                let l2_norm_val = l2_norm(coeffs.view());
+                let mut expr_map: HashMap<Variable, f64> =
+                    x_c.iter().cloned().zip(coeffs).collect();
+                expr_map.insert(r, l2_norm_val);
+                let expr = LinearExpression {
+                    coefficients: expr_map,
+                };
+                let constr =
+                    good_lp::constraint::leq(Expression::from_other_affine(expr), f64::from(*ub));
+                unsolved.add_constraint(constr);
+            });
+        let soln = unsolved.solve().unwrap();
+        let x_c: Array1<f64> = x_c.into_iter().map(|x| soln.value(x)).collect();
+        (x_c, soln.value(r))
     }
 }
 

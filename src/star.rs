@@ -142,8 +142,7 @@ where
         if let Some(ref mut constrs) = self.constraints {
             constrs.add_constraints(new_constraints);
         } else {
-            let mut polytope = Polytope::from_affine(new_constraints.clone());
-            self.constraints = Some(polytope);
+            self.constraints = Some(Polytope::from_affine(new_constraints.clone()));
         }
         self
     }
@@ -257,23 +256,23 @@ where
                 .rows()
                 .into_iter()
                 .zip(&unfixed)
-                .filter(|(row, fix)| **fix)
-                .map(|(row, fix)| row.insert_axis(Axis(0)))
+                .filter(|(_row, fix)| **fix)
+                .map(|(row, _fix)| row.insert_axis(Axis(0)))
                 .collect();
             let mut reduced_sigma = concatenate(Axis(0), sigma_rows.as_slice()).unwrap();
             let sigma_rows: Vec<ArrayView2<f64>> = reduced_sigma
                 .columns()
                 .into_iter()
                 .zip(&unfixed)
-                .filter(|(row, fix)| **fix)
-                .map(|(row, fix)| row.insert_axis(Axis(1)))
+                .filter(|(_row, fix)| **fix)
+                .map(|(row, _fix)| row.insert_axis(Axis(1)))
                 .collect();
             reduced_sigma = concatenate(Axis(1), sigma_rows.as_slice()).unwrap();
             let reduced_mu: Array1<f64> = Array1::from_iter(
                 mu.into_iter()
                     .zip(unfixed)
-                    .filter(|(val, fix)| *fix)
-                    .map(|(row, fix)| row),
+                    .filter(|(_val, fix)| *fix)
+                    .map(|(row, _fix)| row),
             );
 
             let mut sigma_star = constraint_coeffs
@@ -287,12 +286,18 @@ where
             let inv_constraint_coeffs = pinv(&constraint_coeffs);
 
             let samples = centered_samples.dot(&inv_constraint_coeffs) + reduced_mu;
-            samples
+            let filtered_samples: Vec<Array1<f64>> = samples
                 .rows()
                 .into_iter()
                 .filter(|x| reduced_space_poly.is_member(&x.mapv(|v| v.into()).view()))
                 .map(|x| x.into_owned())
-                .collect()
+                .collect();
+            if filtered_samples.is_empty() {
+                let (x_c, _r) = self.constraints.as_ref().unwrap().chebyshev_center();
+                vec![x_c]
+            } else {
+                filtered_samples
+            }
         } else {
             panic!()
         }
