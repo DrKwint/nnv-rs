@@ -34,7 +34,7 @@ impl<T: 'static + Float + std::fmt::Display> Affine<T> {
     pub fn from_raw(raw: Array2<T>, is_lhs: bool) -> Self {
         Affine {
             matrix: raw,
-            is_lhs: is_lhs,
+            is_lhs,
         }
     }
 
@@ -97,8 +97,8 @@ impl<T: 'static + Float + std::fmt::Display> Affine<T> {
     }
 
     pub fn lhs_mul(&self, lhs: &Affine<T>) -> Affine<T> {
-        assert_eq!(self.is_lhs, true);
-        assert_eq!(lhs.is_lhs, true);
+        assert!(self.is_lhs);
+        assert!(lhs.is_lhs);
         let lhs_matrix = lhs.matrix.view();
         let rhs_matrix = self.matrix.view();
         let mut augmentation: Array2<T> = Array2::zeros((1, rhs_matrix.ncols()));
@@ -111,8 +111,8 @@ impl<T: 'static + Float + std::fmt::Display> Affine<T> {
     }
 
     pub fn rhs_mul(&self, rhs: &Affine<T>) -> Affine<T> {
-        assert_eq!(self.is_lhs, false);
-        assert_eq!(rhs.is_lhs, false);
+        assert!(!self.is_lhs);
+        assert!(!rhs.is_lhs);
         let lhs_matrix = self.matrix.view();
         let rhs_matrix = rhs.matrix.view();
         let mut augmentation: Array2<T> = Array2::zeros((lhs_matrix.nrows(), 1));

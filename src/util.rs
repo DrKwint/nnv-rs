@@ -1,3 +1,4 @@
+#![allow(non_snake_case)]
 extern crate good_lp;
 
 use good_lp::solvers::highs::highs;
@@ -53,9 +54,12 @@ pub fn ensure_spd(A: Array2<f64>) -> Array2<f64> {
     a_hat
 }
 
-pub fn embed_identity(A: Array2<f64>) -> Array2<f64> {
-    let eye_dim = max(A.nrows(), A.ncols());
-    let mut eye = Array2::eye(eye_dim);
+pub fn embed_identity(A: &Array2<f64>, dim_opt: Option<usize>) -> Array2<f64> {
+    let dim = match dim_opt {
+        Some(dim) => dim,
+        None => max(A.nrows(), A.ncols()),
+    };
+    let mut eye = Array2::eye(dim);
     eye.slice_mut(s![..A.nrows(), ..A.ncols()]).assign(&A);
     eye
 }
@@ -87,12 +91,10 @@ where
     I: IntoIterator<Item = ArrayView1<'a, T>>,
     f64: std::convert::From<T>,
 {
-    let shh = shh::stdout().unwrap();
-    let shh_err = shh::stderr().unwrap();
+    let _shh = shh::stdout().unwrap();
+    let _shh_err = shh::stderr().unwrap();
     let mut problem = ProblemVariables::new();
-    let vars = if c_lower_bounds.is_some() {
-        let lowers = c_lower_bounds.unwrap();
-        let uppers = c_upper_bounds.unwrap();
+    let vars = if let Some((lowers, uppers)) = c_lower_bounds.zip(c_upper_bounds) {
         lowers
             .into_iter()
             .zip(uppers)

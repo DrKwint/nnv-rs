@@ -1,6 +1,7 @@
 extern crate highs;
 extern crate ndarray;
 extern crate num;
+
 pub mod affine;
 pub mod constellation;
 pub mod polytope;
@@ -24,11 +25,8 @@ pub fn build_constellation(
         py_affines.extract().unwrap();
     let input_dim = ro_affines[0].0.shape()[0];
     let mut star = Star::default(input_dim);
-    if input_lower_bounds.is_some() {
-        star = star.with_input_bounds(
-            input_lower_bounds.unwrap().as_array().to_owned(),
-            input_upper_bounds.unwrap().as_array().to_owned(),
-        );
+    if let Some((lower_bounds, upper_bounds)) = input_lower_bounds.zip(input_upper_bounds) {
+        star = star.with_input_bounds(lower_bounds.as_array().to_owned(), upper_bounds.as_array().to_owned());
     }
     let affines: Vec<Affine<f64>> = ro_affines
         .iter()
@@ -42,6 +40,7 @@ pub fn build_constellation(
     Constellation::new(star, affines)
 }
 
+#[allow(clippy::too_many_arguments)]
 #[pyfunction]
 #[text_signature = "(affines, loc, scale, safe_value, cdf_samples, num_samples, input_lower_bounds, input_upper_bounds /)"]
 pub fn sample_constellation(
@@ -53,26 +52,32 @@ pub fn sample_constellation(
     num_samples: usize,
     input_lower_bounds: Option<PyReadonlyArray1<f64>>,
     input_upper_bounds: Option<PyReadonlyArray1<f64>>,
-) -> Py<PyArray1<f64>> {
+    max_iters: usize
+) -> (Py<PyArray1<f64>>, f64, f64) {
     let mut constellation = build_constellation(py_affines, input_lower_bounds, input_upper_bounds);
 
     let loc = loc.as_array().to_owned();
     let scale = scale.as_array().to_owned();
-    let mut samples = constellation.sample(&loc, &scale, safe_value, cdf_samples, num_samples);
-    while samples.is_empty() {
-        samples = constellation.sample(&loc, &scale, safe_value, cdf_samples, num_samples);
-    }
+    let (samples, branch_logp) = constellation.sample_multivariate_gaussian(
+        &loc,
+        &scale,
+        safe_value,
+        cdf_samples,
+        num_samples,
+        max_iters,
+    );
     let gil = Python::acquire_gil();
     let py = gil.python();
-    let py_samples: Vec<Py<PyArray1<f64>>> = samples
-        .into_iter()
-        .map(|x| PyArray1::from_array(py, &x).to_owned())
-        .collect();
-    py_samples[0].clone()
+    //(PyArray1::from_array(py, &samples[0]).to_owned(), logp[0])
+    (
+        PyArray1::from_array(py, &samples[0].0).to_owned(),
+        samples[0].1,
+        branch_logp,
+    )
 }
 
 #[pymodule]
-pub fn nnv_rs(py: Python, m: &PyModule) -> PyResult<()> {
+pub fn nnv_rs(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(sample_constellation, m)?)?;
     Ok(())
 }

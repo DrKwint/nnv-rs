@@ -1,22 +1,30 @@
+extern crate ndarray_stats;
 extern crate truncnorm;
 
 use crate::affine::Affine;
 use crate::polytope::Polytope;
+use crate::util::embed_identity;
 use crate::util::pinv;
 use crate::util::solve;
 use good_lp::ResolutionError;
+use ndarray::array;
 use ndarray::concatenate;
 use ndarray::s;
+use ndarray::Array;
 use ndarray::Array1;
 use ndarray::Array2;
 use ndarray::ArrayView1;
 use ndarray::ArrayView2;
 use ndarray::Axis;
+use ndarray::Ix1;
+use ndarray::Slice;
 use ndarray::Zip;
 use num::Float;
 use std::fmt::Debug;
-use truncnorm::mv_truncnormal_cdf;
-use truncnorm::mv_truncnormal_rand;
+use truncnorm::truncnorm::mv_truncnormal_cdf;
+use truncnorm::truncnorm::mv_truncnormal_rand;
+use truncnorm::distributions::{MultivariateNormal, MultivariateTruncatedNormal};
+use rand::distributions::Distribution;
 
 /// Representation of a set acted on by a deep neural network (DNN)
 ///
@@ -34,10 +42,10 @@ use truncnorm::mv_truncnormal_rand;
 /// to the input set polyhedron.
 ///
 /// Shapes
-/// basis - [input_dim, repr_dim]
-/// center - [repr_dim]
-/// constraints - [num_constraints, input_dim]
-/// upper_bounds - [num_constraints]
+/// basis - \[input_dim, repr_dim\]
+/// center - \[repr_dim\]
+/// constraints - \[num_constraints, input_dim\]
+/// upper_bounds - \[num_constraints\]
 #[derive(Clone, Debug)]
 pub struct Star<T: Float> {
     /// `representation` is the concatenation of [basis center] (where center is a column vector) and captures information about the transformed set
@@ -121,18 +129,14 @@ where
 
     pub fn constraint_coeffs(&self) -> Option<ArrayView2<T>> {
         if let Some(constrs) = &self.constraints {
-            Some(constrs.coeffs())
+            constrs.coeffs()
         } else {
             None
         }
     }
 
     pub fn constraint_upper_bounds(&self) -> Option<ArrayView1<T>> {
-        if let Some(constrs) = &self.constraints {
-            Some(constrs.eqn_upper_bounds())
-        } else {
-            None
-        }
+        self.constraints.as_ref().map(|constrs| constrs.eqn_upper_bounds())
     }
 
     /// Add constraints to restrict the input set. Each row represents a
@@ -171,8 +175,11 @@ where
         let c = &eqn.slice(s![..len - 1]);
 
         let poly = self.constraints.as_ref().unwrap();
+        if poly.get_coeffs_as_rows().is_none() {
+            return T::neg_infinity();
+        }
         let solved = solve(
-            poly.get_coeffs_as_rows().rows(),
+            poly.get_coeffs_as_rows().unwrap().rows(),
             self.constraint_upper_bounds().unwrap(),
             c.view(),
             poly.get_input_lower_bound(),
@@ -193,8 +200,11 @@ where
         let c = &eqn.slice(s![..len - 1]) * neg_one;
 
         let poly = self.constraints.as_ref().unwrap();
+        if poly.get_coeffs_as_rows().is_none() {
+            return T::infinity();
+        }
         let solved = solve(
-            poly.get_coeffs_as_rows().rows(),
+            poly.get_coeffs_as_rows().unwrap().rows(),
             self.constraint_upper_bounds().unwrap(),
             c.view(),
             poly.get_input_lower_bound(),
@@ -215,20 +225,23 @@ where
         mu: &Array1<T>,
         sigma: &Array2<T>,
         n: usize,
+        max_iters: usize,
     ) -> (f64, f64, f64) {
         if let Some(poly) = &self.constraints {
             let mu = mu.mapv(|x| x.into());
             let sigma = sigma.mapv(|x| x.into());
 
-            let constraint_coeffs = poly.coeffs().mapv(|x| x.into());
+            if poly.coeffs().is_none() {
+                return (1., 0., 1.);
+            }
+            let constraint_coeffs = poly.coeffs().unwrap().mapv(|x| x.into());
             let upper_bounds = poly.eqn_upper_bounds().mapv(|x| x.into());
             let mut sigma_star = constraint_coeffs.t().dot(&sigma.dot(&constraint_coeffs));
             let pos_def_guarator = Array2::from_diag(&Array1::from_elem(sigma_star.nrows(), 1e-12));
             sigma_star = sigma_star + pos_def_guarator;
             let ub = &upper_bounds - &mu.dot(&constraint_coeffs);
             let lb = Array1::from_elem(ub.len(), f64::NEG_INFINITY);
-            let out = mv_truncnormal_cdf(lb, ub, sigma_star, n);
-            out
+            mv_truncnormal_cdf(lb, ub, sigma_star, n, max_iters)
         } else {
             (1., 0., 1.)
         }
@@ -239,24 +252,22 @@ where
         mu: &Array1<T>,
         sigma: &Array2<T>,
         n: usize,
-    ) -> Vec<Array1<f64>> {
+        max_iters: usize,
+    ) -> Vec<(Array1<f64>, f64)> {
+        let mut rng = rand::thread_rng();
         if let Some(poly) = &self.constraints {
+            // convert T to f64 in inputs
             let mu = mu.mapv(|x| x.into());
             let sigma = sigma.mapv(|x| x.into());
 
-            let reduced_space_poly = poly.reduce_fixed_inputs();
-
-            let constraint_coeffs = reduced_space_poly.coeffs().mapv(|x| x.into());
-            let eqn_upper_bounds = reduced_space_poly.eqn_upper_bounds().mapv(|x| x.into());
-
+            // remove fixed dimensions from mu and sigma
             let (lbs, ubs) = poly.get_input_bounds().unwrap();
             let unfixed = Zip::from(lbs).and(ubs).map_collect(|&lb, &ub| lb != ub);
-
             let sigma_rows: Vec<ArrayView2<f64>> = sigma
                 .rows()
                 .into_iter()
                 .zip(&unfixed)
-                .filter(|(_row, fix)| **fix)
+                .filter(|(_row, &fix)| fix)
                 .map(|(row, _fix)| row.insert_axis(Axis(0)))
                 .collect();
             let mut reduced_sigma = concatenate(Axis(0), sigma_rows.as_slice()).unwrap();
@@ -264,7 +275,7 @@ where
                 .columns()
                 .into_iter()
                 .zip(&unfixed)
-                .filter(|(_row, fix)| **fix)
+                .filter(|(_row, &fix)| fix)
                 .map(|(row, _fix)| row.insert_axis(Axis(1)))
                 .collect();
             reduced_sigma = concatenate(Axis(1), sigma_rows.as_slice()).unwrap();
@@ -274,29 +285,97 @@ where
                     .filter(|(_val, fix)| *fix)
                     .map(|(row, _fix)| row),
             );
+            let reduced_space_poly = poly.reduce_fixed_inputs();
 
-            let mut sigma_star = constraint_coeffs
-                .t()
-                .dot(&reduced_sigma.dot(&constraint_coeffs));
-            let pos_def_guarator = Array2::from_diag(&Array1::from_elem(sigma_star.nrows(), 1e-12));
-            sigma_star = sigma_star + pos_def_guarator;
-            let ub = &eqn_upper_bounds - &reduced_mu.dot(&constraint_coeffs);
-            let lb = Array1::from_elem(ub.len(), f64::NEG_INFINITY);
-            let centered_samples = mv_truncnormal_rand(lb, ub, sigma_star, n);
-            let inv_constraint_coeffs = pinv(&constraint_coeffs);
+            // sample unfixed dimensions
+            let constraint_coeffs_opt = reduced_space_poly.coeffs().map(|x| x.mapv(|x| x.into()));
+            if let Some(mut constraint_coeffs) = constraint_coeffs_opt {
 
-            let samples = centered_samples.dot(&inv_constraint_coeffs) + reduced_mu;
-            let filtered_samples: Vec<Array1<f64>> = samples
-                .rows()
-                .into_iter()
-                .filter(|x| reduced_space_poly.is_member(&x.mapv(|v| v.into()).view()))
-                .map(|x| x.into_owned())
-                .collect();
-            if filtered_samples.is_empty() {
-                let (x_c, _r) = self.constraints.as_ref().unwrap().chebyshev_center();
-                vec![x_c]
-            } else {
+                // normalise each equation
+                let constraint_coeff_norms: Array1<f64> = constraint_coeffs
+                    .columns()
+                    .into_iter()
+                    .map(|col| col.mapv(|x| x.powi(2)).sum().sqrt())
+                    .collect();
+                constraint_coeffs /= &constraint_coeff_norms;
+                let ub = reduced_space_poly.eqn_upper_bounds().mapv(|x| x.into())
+                    / constraint_coeff_norms;
+
+                // embed constraint coeffs in an identity matrix
+                let sq_coeffs = embed_identity(&constraint_coeffs, None).reversed_axes();
+                // if there are more constraints than variables, add dummy variables
+                let sq_reduced_sigma = embed_identity(&reduced_sigma, Some(sq_coeffs.nrows()));
+                let sq_constr_sigma = {
+                    let sigma: Array2<f64> = sq_coeffs.dot(&sq_reduced_sigma.dot(&sq_coeffs.t()));
+                    let diag_addn = Array2::from_diag(&Array1::from_elem(sigma.nrows(), 1e-12));
+                    sigma + diag_addn
+                };
+                //println!("eqn_ub {:?}", reduced_space_poly.eqn_upper_bounds().mapv(|x| x.into()));
+                //println!("reduced_mu {:?}", reduced_mu);
+                //println!("sq_coeffs {:?}", sq_coeffs);
+                //println!("sq_coeffs dot red mu {:?}", sq_coeffs.dot(&reduced_mu));
+                let mut sq_ub = Array::from_elem(sq_coeffs.nrows(), f64::INFINITY);
+                sq_ub.slice_mut(s![..ub.len()]).assign(&ub);
+
+                let extended_reduced_mu = if sq_coeffs.nrows() != reduced_mu.len() {
+                    let mut e_r_mu = Array1::zeros(sq_coeffs.nrows());
+                    e_r_mu.slice_mut(s![..reduced_mu.len()]).assign(&reduced_mu);
+                    e_r_mu
+                } else {
+                    reduced_mu.clone()
+                };
+
+                let sq_constr_ub = &sq_ub - &sq_coeffs.dot(&extended_reduced_mu);
+                //println!("sq_constr_ub {:?}", sq_constr_ub);
+
+                let sq_constr_lb = Array1::from_elem(sq_constr_ub.len(), f64::NEG_INFINITY);
+
+                //println!("reduced_poly {:?}", reduced_space_poly);
+                //println!("sq_constr_sigma {:?}", sq_constr_sigma);
+                //println!("sq_constr_lb {:?}", sq_constr_lb);
+                //println!("sq_constr_ub {:?}", sq_constr_ub);
+                let (centered_samples, logp) = if sq_constr_sigma.len() == 1 {
+                    let sample = MultivariateTruncatedNormal::<Ix1>::new(
+                        array![0.],
+                        sq_constr_sigma.index_axis(Axis(0), 0).to_owned(),
+                        sq_constr_lb,
+                        sq_constr_ub, max_iters
+                    )
+                    .sample(&mut rng);
+                    (sample.insert_axis(Axis(1)), array![1.])
+                } else {
+                    mv_truncnormal_rand(sq_constr_lb, sq_constr_ub, sq_constr_sigma, n, max_iters)
+                };
+                let inv_constraint_coeffs = pinv(&sq_coeffs);
+                //println!("inv_constraint_coeffs {}", inv_constraint_coeffs);
+                //let mut samples = centered_samples.dot(&inv_constraint_coeffs);
+                //println!("shaped samples {}", &centered_samples.t());
+                let mut samples = inv_constraint_coeffs
+                    .dot(&centered_samples.t())
+                    .reversed_axes();
+                samples = samples
+                    .slice_axis(Axis(1), Slice::from(0..reduced_sigma.nrows()))
+                    .to_owned();
+                //println!("before samples {}", samples);
+                let mut filtered_samples: Vec<(Array1<f64>, f64)> = samples
+                    .rows()
+                    .into_iter()
+                    .zip(logp)
+                    .map(|(x, logp)| (x.to_owned() + &reduced_mu, logp))
+                    .filter(|(x, _logp)| reduced_space_poly.in_bounds(&x.mapv(|v| v.into()).view()))
+                    .collect();
+                if filtered_samples.is_empty() {
+                    let (x_c, _r) = self.constraints.as_ref().unwrap().chebyshev_center();
+                    filtered_samples = vec![(x_c, 0.43)]
+                }
+
+                //println!("filtered samples {:?}", filtered_samples);
                 filtered_samples
+            } else {
+                let mvn = MultivariateNormal::new(reduced_mu, reduced_sigma);
+                let sample = mvn.sample(&mut rng);
+                let logp = mvn.logp(&sample);
+                vec![(sample, logp)]
             }
         } else {
             panic!()

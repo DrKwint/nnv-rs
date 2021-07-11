@@ -14,14 +14,15 @@ version = "0.13"
 [dependencies]
 rand = "*"
 ndarray = {version = "0.15.2", features = ["rayon"] }
-ndarray-linalg = { path = "../ndarray-linalg/ndarray-linalg/", features = ["openblas-system"] }
-truncnorm = {path = "../truncnorm-rs/"}
+ndarray-linalg = { git = "https://github.com/rust-ndarray/ndarray-linalg", features = ["intel-mkl-static"] }
+truncnorm = { git = "https://github.com/DrKwint/truncnorm-rs" }
 numpy = {path = "../rust-numpy/"}
 num = "*"
 good_lp = {version = "*", features = ["highs"], default-features = false }
 highs = { version = "0.4" }
 shh = "*"
 ndarray-rand = "*"
+ndarray-stats = "*"
 
 [dev-dependencies]
 quickcheck = "*"
@@ -33,3 +34,8 @@ name = "debug_binary"
 path = "src/debug_main.rs"
 test = false
 bench = false
+
+[profile.release]
+lto = true
+codegen-units = 1
+panic = "abort"
