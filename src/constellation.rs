@@ -1,12 +1,13 @@
-extern crate rand;
-
+//! Data structure representing the paths through a DNN with sets as input/output
 use crate::affine::Affine;
 use crate::star::Star;
-use ndarray::Array1;
-use ndarray::Array2;
+use ndarray::{Array1, Array2};
 use num::Float;
 use rand::distributions::{Bernoulli, Distribution};
 
+/// Data structure representing the paths through a deep neural network (DNN)
+///
+/// It's assumed that the DNN is ReLU activated and fully connected
 #[derive(Debug)]
 pub struct Constellation<T: Float> {
     arena: Vec<StarNode<T>>,
@@ -15,15 +16,17 @@ pub struct Constellation<T: Float> {
 
 impl<T: Float> Constellation<T>
 where
-    T: std::convert::From<f64>,
-    T: std::convert::Into<f64>,
+    T: std::convert::From<f64>
+        + std::convert::Into<f64>
+        + ndarray::ScalarOperand
+        + std::ops::MulAssign
+        + std::fmt::Display
+        + std::fmt::Debug,
     f64: std::convert::From<T>,
-    T: ndarray::ScalarOperand,
-    T: std::fmt::Display,
-    T: std::fmt::Debug,
 {
+    /// Instantiate a Constellation with given input set and network
     pub fn new(star: Star<T>, dnn: Vec<Affine<T>>) -> Self {
-        let mut out = Constellation {
+        let mut out = Self {
             arena: Vec::new(),
             dnn_affines: dnn,
         };
@@ -63,9 +66,12 @@ where
     /// * `cdf_samples` - Number of samples to use in estimating a polytope's CDF under the Gaussian
     /// * `num_samples` - Number of samples to return from the final star that's sampled
     ///
+    /// # Panics
+    ///
     /// # Returns
     ///
     /// (Vec of samples, Array of sample probabilities, branch probability)
+    #[allow(clippy::too_many_lines)]
     pub fn sample_multivariate_gaussian(
         &mut self,
         loc: &Array1<T>,
@@ -90,8 +96,8 @@ where
             // base case for feasability
             if current_node == 0 && !self.arena[current_node].is_feasible {
                 output = self.arena[current_node].star.trunc_gaussian_sample(
-                    &loc,
-                    &scale,
+                    loc,
+                    scale,
                     num_samples,
                     max_iters,
                 );
@@ -105,17 +111,15 @@ where
                 self.arena[current_node].cdf = Some(
                     self.arena[current_node]
                         .star
-                        .trunc_gaussian_cdf(&loc, &scale, cdf_samples, max_iters)
+                        .trunc_gaussian_cdf(loc, scale, cdf_samples, max_iters)
                         .0,
                 );
             }
-            //println!("Node {} with bounds {:?} and cdf {}", current_node, bounds, self.arena[current_node].cdf.unwrap());
-            //println!("Node {} with bounds {:?}", current_node, bounds);
             current_node = if bounds.1 <= safe_value {
                 // sample current node
                 output = self.arena[current_node].star.trunc_gaussian_sample(
-                    &loc,
-                    &scale,
+                    loc,
+                    scale,
                     num_samples,
                     max_iters,
                 );
@@ -124,8 +128,8 @@ where
                 // at root, if lb is too high then no output will be safe, so just sample
                 if current_node == 0 {
                     output = self.arena[current_node].star.trunc_gaussian_sample(
-                        &loc,
-                        &scale,
+                        loc,
+                        scale,
                         num_samples,
                         max_iters,
                     );
@@ -135,7 +139,9 @@ where
                 self.arena[current_node].is_feasible = false;
                 let current_cdf = self.arena[current_node].cdf.unwrap();
                 for idx in &path {
-                    if let Some(x) = self.arena[*idx].cdf.as_mut() { *x -= current_cdf };
+                    if let Some(x) = self.arena[*idx].cdf.as_mut() {
+                        *x -= current_cdf
+                    };
                 }
                 0
             } else {
@@ -145,8 +151,8 @@ where
                     // leaf node
                     0 => {
                         output = self.arena[current_node].star.trunc_gaussian_sample(
-                            &loc,
-                            &scale,
+                            loc,
+                            scale,
                             num_samples,
                             max_iters,
                         );
@@ -160,7 +166,9 @@ where
                             self.arena[current_node].is_feasible = false;
                             let current_cdf = self.arena[current_node].cdf.unwrap();
                             for idx in &path {
-                                if let Some(x) = self.arena[*idx].cdf.as_mut() { *x -= current_cdf }
+                                if let Some(x) = self.arena[*idx].cdf.as_mut() {
+                                    *x -= current_cdf
+                                }
                             }
                             0
                         }
@@ -176,7 +184,9 @@ where
                                 self.arena[current_node].is_feasible = false;
                                 let current_cdf = self.arena[current_node].cdf.unwrap();
                                 for idx in &path {
-                                    if let Some(x) = self.arena[*idx].cdf.as_mut() { *x -= current_cdf };
+                                    if let Some(x) = self.arena[*idx].cdf.as_mut() {
+                                        *x -= current_cdf
+                                    };
                                 }
                                 0
                             }
@@ -189,7 +199,7 @@ where
                                 } else {
                                     let prob = self.arena[children[0]]
                                         .star
-                                        .trunc_gaussian_cdf(&loc, &scale, cdf_samples, max_iters)
+                                        .trunc_gaussian_cdf(loc, scale, cdf_samples, max_iters)
                                         .0;
                                     self.arena[children[0]].cdf = Some(prob);
                                     prob
@@ -199,7 +209,7 @@ where
                                 } else {
                                     let prob = self.arena[children[1]]
                                         .star
-                                        .trunc_gaussian_cdf(&loc, &scale, cdf_samples, max_iters)
+                                        .trunc_gaussian_cdf(loc, scale, cdf_samples, max_iters)
                                         .0;
                                     self.arena[children[0]].cdf = Some(prob);
                                     prob
@@ -272,7 +282,7 @@ where
                 // check if there's another affine to do
                 if node_layer < self.dnn_affines.len() {
                     let affine = &self.dnn_affines[node_layer];
-                    let child_star = self.arena[idx].star.clone().affine_map(&affine);
+                    let child_star = self.arena[idx].star.clone().affine_map(affine);
                     let repr_space_dim = Some(child_star.representation_space_dim() - 1);
                     vec![self.add_node(child_star, idx, node_layer + 1, repr_space_dim)]
                 } else {
@@ -321,10 +331,10 @@ impl<T: num::Float> StarNode<T> {
 
 #[cfg(test)]
 mod tests {
+    extern crate ndarray_rand;
     use super::*;
     use ndarray_rand::rand_distr::Normal;
     use ndarray_rand::RandomExt;
-    extern crate ndarray_rand;
 
     #[test]
     fn it_works() {
@@ -355,7 +365,7 @@ mod tests {
 
         let loc = Array1::zeros(4);
         let scale = Array2::eye(4);
-        let val = constellation.sample(&loc, &scale, -100., 10000, 10);
-        assert_eq!(0, 1);
+        let val = constellation.sample_multivariate_gaussian(&loc, &scale, -100., 10000, 10, 10);
+        print!("{:?}", val);
     }
 }

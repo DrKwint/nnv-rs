@@ -1,30 +1,18 @@
-extern crate ndarray_stats;
-extern crate truncnorm;
-
+//! Implementation of [star sets](https://link.springer.com/chapter/10.1007/978-3-030-30942-8_39)
+//! for representing affine transformed sets
 use crate::affine::Affine;
 use crate::polytope::Polytope;
-use crate::util::embed_identity;
-use crate::util::pinv;
-use crate::util::solve;
+use crate::util::{embed_identity, pinv, solve};
 use good_lp::ResolutionError;
-use ndarray::array;
-use ndarray::concatenate;
-use ndarray::s;
-use ndarray::Array;
-use ndarray::Array1;
-use ndarray::Array2;
-use ndarray::ArrayView1;
-use ndarray::ArrayView2;
-use ndarray::Axis;
-use ndarray::Ix1;
-use ndarray::Slice;
-use ndarray::Zip;
+use ndarray::{array, concatenate};
+use ndarray::{s, Axis, Ix1, Slice, Zip};
+use ndarray::{Array, Array1, Array2};
+use ndarray::{ArrayView1, ArrayView2};
 use num::Float;
-use std::fmt::Debug;
-use truncnorm::truncnorm::mv_truncnormal_cdf;
-use truncnorm::truncnorm::mv_truncnormal_rand;
-use truncnorm::distributions::{MultivariateNormal, MultivariateTruncatedNormal};
 use rand::distributions::Distribution;
+use std::fmt::Debug;
+use truncnorm::distributions::{MultivariateNormal, MultivariateTruncatedNormal};
+use truncnorm::truncnorm::{mv_truncnormal_cdf, mv_truncnormal_rand};
 
 /// Representation of a set acted on by a deep neural network (DNN)
 ///
@@ -41,6 +29,10 @@ use rand::distributions::Distribution;
 /// applying the affine transformation defined by the Star's basis and center
 /// to the input set polyhedron.
 ///
+/// Based on: Tran, Hoang-Dung, et al. "Star-based reachability analysis of
+/// deep neural networks." International Symposium on Formal Methods. Springer,
+/// Cham, 2019.
+///
 /// Shapes
 /// basis - \[input_dim, repr_dim\]
 /// center - \[repr_dim\]
@@ -56,18 +48,19 @@ pub struct Star<T: Float> {
 
 impl<T: Float> Star<T>
 where
-    T: std::convert::From<f64>,
-    T: std::convert::Into<f64>,
-    T: ndarray::ScalarOperand,
-    T: std::fmt::Display,
-    T: std::fmt::Debug,
+    T: std::convert::From<f64>
+        + std::convert::Into<f64>
+        + ndarray::ScalarOperand
+        + std::fmt::Display
+        + std::fmt::Debug
+        + std::ops::MulAssign,
     f64: std::convert::From<T>,
 {
     /// Create a new Star with given dimension.
     ///
     /// By default this Star covers the space because it has no constraints. To add constraints call `.add_constraints`.
     pub fn default(dim: usize) -> Self {
-        Star {
+        Self {
             representation: Affine::new(Array2::eye(dim), Array1::zeros(dim)),
             constraints: None,
         }
@@ -77,15 +70,13 @@ where
     ///
     /// By default this Star covers the space because it has no constraints. To add constraints call `.add_constraints`.
     pub fn new(basis: Array2<T>, center: Array1<T>) -> Self {
-        Star {
+        Self {
             representation: Affine::new(basis, center),
             constraints: None,
         }
     }
 
     pub fn with_input_bounds(mut self, lower_bounds: Array1<T>, upper_bounds: Array1<T>) -> Self {
-        //self.input_lower_bounds = Some(lower_bounds.clone());
-        //self.input_upper_bounds = Some(upper_bounds.clone());
         if self.constraints.is_some() {
             self.constraints = self
                 .constraints
@@ -128,15 +119,15 @@ where
     }
 
     pub fn constraint_coeffs(&self) -> Option<ArrayView2<T>> {
-        if let Some(constrs) = &self.constraints {
-            constrs.coeffs()
-        } else {
-            None
-        }
+        self.constraints
+            .as_ref()
+            .and_then(crate::polytope::Polytope::coeffs)
     }
 
     pub fn constraint_upper_bounds(&self) -> Option<ArrayView1<T>> {
-        self.constraints.as_ref().map(|constrs| constrs.eqn_upper_bounds())
+        self.constraints
+            .as_ref()
+            .map(|constrs| constrs.eqn_upper_bounds())
     }
 
     /// Add constraints to restrict the input set. Each row represents a
@@ -153,8 +144,8 @@ where
 
     /// Apply an affine transformation to the representation polyhedron
     pub fn affine_map(&self, affine: &Affine<T>) -> Self {
-        let new_repr = self.representation.rhs_mul(&affine);
-        Star {
+        let new_repr = self.representation.rhs_mul(affine);
+        Self {
             representation: new_repr,
             constraints: self.constraints.clone(),
         }
@@ -162,13 +153,12 @@ where
 
     /// Check whether the Star set is empty.
     pub fn is_empty(&self) -> bool {
-        if let Some(polytope) = &self.constraints {
-            polytope.is_empty()
-        } else {
-            false
-        }
+        self.constraints
+            .as_ref()
+            .map_or(false, crate::polytope::Polytope::is_empty)
     }
 
+    /// # Panics
     pub fn get_min(&self, idx: usize) -> T {
         let eqn = self.representation.get_eqn(idx);
         let len = eqn.len();
@@ -193,6 +183,7 @@ where
         self.center()[idx] + val
     }
 
+    /// # Panics
     pub fn get_max(&self, idx: usize) -> T {
         let neg_one: T = std::convert::From::from(-1.);
         let eqn = self.representation.get_eqn(idx);
@@ -220,6 +211,8 @@ where
     }
 
     /// TODO: doc this
+    ///
+    /// # Panics
     pub fn trunc_gaussian_cdf(
         &self,
         mu: &Array1<T>,
@@ -228,14 +221,14 @@ where
         max_iters: usize,
     ) -> (f64, f64, f64) {
         if let Some(poly) = &self.constraints {
-            let mu = mu.mapv(|x| x.into());
-            let sigma = sigma.mapv(|x| x.into());
+            let mu = mu.mapv(std::convert::Into::into);
+            let sigma = sigma.mapv(std::convert::Into::into);
 
             if poly.coeffs().is_none() {
                 return (1., 0., 1.);
             }
-            let constraint_coeffs = poly.coeffs().unwrap().mapv(|x| x.into());
-            let upper_bounds = poly.eqn_upper_bounds().mapv(|x| x.into());
+            let constraint_coeffs = poly.coeffs().unwrap().mapv(std::convert::Into::into);
+            let upper_bounds = poly.eqn_upper_bounds().mapv(std::convert::Into::into);
             let mut sigma_star = constraint_coeffs.t().dot(&sigma.dot(&constraint_coeffs));
             let pos_def_guarator = Array2::from_diag(&Array1::from_elem(sigma_star.nrows(), 1e-12));
             sigma_star = sigma_star + pos_def_guarator;
@@ -247,6 +240,8 @@ where
         }
     }
 
+    /// # Panics
+    #[allow(clippy::too_many_lines)]
     pub fn trunc_gaussian_sample(
         &self,
         mu: &Array1<T>,
@@ -257,8 +252,8 @@ where
         let mut rng = rand::thread_rng();
         if let Some(poly) = &self.constraints {
             // convert T to f64 in inputs
-            let mu = mu.mapv(|x| x.into());
-            let sigma = sigma.mapv(|x| x.into());
+            let mu = mu.mapv(std::convert::Into::into);
+            let sigma = sigma.mapv(std::convert::Into::into);
 
             // remove fixed dimensions from mu and sigma
             let (lbs, ubs) = poly.get_input_bounds().unwrap();
@@ -288,17 +283,20 @@ where
             let reduced_space_poly = poly.reduce_fixed_inputs();
 
             // sample unfixed dimensions
-            let constraint_coeffs_opt = reduced_space_poly.coeffs().map(|x| x.mapv(|x| x.into()));
+            let constraint_coeffs_opt = reduced_space_poly
+                .coeffs()
+                .map(|x| x.mapv(std::convert::Into::into));
             if let Some(mut constraint_coeffs) = constraint_coeffs_opt {
-
                 // normalise each equation
                 let constraint_coeff_norms: Array1<f64> = constraint_coeffs
                     .columns()
                     .into_iter()
-                    .map(|col| col.mapv(|x| x.powi(2)).sum().sqrt())
+                    .map(|col| col.mapv(|x| x * x).sum().sqrt())
                     .collect();
                 constraint_coeffs /= &constraint_coeff_norms;
-                let ub = reduced_space_poly.eqn_upper_bounds().mapv(|x| x.into())
+                let ub = reduced_space_poly
+                    .eqn_upper_bounds()
+                    .mapv(std::convert::Into::into)
                     / constraint_coeff_norms;
 
                 // embed constraint coeffs in an identity matrix
@@ -310,53 +308,39 @@ where
                     let diag_addn = Array2::from_diag(&Array1::from_elem(sigma.nrows(), 1e-12));
                     sigma + diag_addn
                 };
-                //println!("eqn_ub {:?}", reduced_space_poly.eqn_upper_bounds().mapv(|x| x.into()));
-                //println!("reduced_mu {:?}", reduced_mu);
-                //println!("sq_coeffs {:?}", sq_coeffs);
-                //println!("sq_coeffs dot red mu {:?}", sq_coeffs.dot(&reduced_mu));
                 let mut sq_ub = Array::from_elem(sq_coeffs.nrows(), f64::INFINITY);
                 sq_ub.slice_mut(s![..ub.len()]).assign(&ub);
 
-                let extended_reduced_mu = if sq_coeffs.nrows() != reduced_mu.len() {
+                let extended_reduced_mu = if sq_coeffs.nrows() == reduced_mu.len() {
+                    reduced_mu.clone()
+                } else {
                     let mut e_r_mu = Array1::zeros(sq_coeffs.nrows());
                     e_r_mu.slice_mut(s![..reduced_mu.len()]).assign(&reduced_mu);
                     e_r_mu
-                } else {
-                    reduced_mu.clone()
                 };
 
                 let sq_constr_ub = &sq_ub - &sq_coeffs.dot(&extended_reduced_mu);
-                //println!("sq_constr_ub {:?}", sq_constr_ub);
-
                 let sq_constr_lb = Array1::from_elem(sq_constr_ub.len(), f64::NEG_INFINITY);
-
-                //println!("reduced_poly {:?}", reduced_space_poly);
-                //println!("sq_constr_sigma {:?}", sq_constr_sigma);
-                //println!("sq_constr_lb {:?}", sq_constr_lb);
-                //println!("sq_constr_ub {:?}", sq_constr_ub);
                 let (centered_samples, logp) = if sq_constr_sigma.len() == 1 {
                     let sample = MultivariateTruncatedNormal::<Ix1>::new(
                         array![0.],
                         sq_constr_sigma.index_axis(Axis(0), 0).to_owned(),
                         sq_constr_lb,
-                        sq_constr_ub, max_iters
+                        sq_constr_ub,
+                        max_iters,
                     )
                     .sample(&mut rng);
                     (sample.insert_axis(Axis(1)), array![1.])
                 } else {
                     mv_truncnormal_rand(sq_constr_lb, sq_constr_ub, sq_constr_sigma, n, max_iters)
                 };
-                let inv_constraint_coeffs = pinv(&sq_coeffs);
-                //println!("inv_constraint_coeffs {}", inv_constraint_coeffs);
-                //let mut samples = centered_samples.dot(&inv_constraint_coeffs);
-                //println!("shaped samples {}", &centered_samples.t());
+                let inv_constraint_coeffs = pinv(&sq_coeffs); // TODO: switch to proper inverse
                 let mut samples = inv_constraint_coeffs
                     .dot(&centered_samples.t())
                     .reversed_axes();
                 samples = samples
                     .slice_axis(Axis(1), Slice::from(0..reduced_sigma.nrows()))
                     .to_owned();
-                //println!("before samples {}", samples);
                 let mut filtered_samples: Vec<(Array1<f64>, f64)> = samples
                     .rows()
                     .into_iter()
@@ -368,8 +352,6 @@ where
                     let (x_c, _r) = self.constraints.as_ref().unwrap().chebyshev_center();
                     filtered_samples = vec![(x_c, 0.43)]
                 }
-
-                //println!("filtered samples {:?}", filtered_samples);
                 filtered_samples
             } else {
                 let mvn = MultivariateNormal::new(reduced_mu, reduced_sigma);
@@ -382,23 +364,18 @@ where
         }
     }
 
-    pub fn step_relu(&self, index: usize) -> Vec<Star<T>> {
+    pub fn step_relu(&self, index: usize) -> Vec<Self> {
         let neg_one: T = std::convert::From::from(-1.);
-        let mut new_constr = Affine {
-            matrix: self
-                .representation
-                .get_eqn(index)
-                .to_owned()
-                .insert_axis(Axis(1))
-                * neg_one,
-            is_lhs: self.representation.is_lhs,
-        };
-        let neg_shift_part = &new_constr.get_shift() * neg_one;
-        new_constr.get_shift_mut().assign(&neg_shift_part);
 
+        let mut new_constr = {
+            let mut eqn = self.representation.get_eqn_affine(index) * neg_one;
+            let neg_shift_part = &eqn.get_shift() * neg_one;
+            eqn.get_shift_mut().assign(&neg_shift_part);
+            eqn
+        };
         let upper_star = self.clone().add_constraints(&new_constr);
 
-        new_constr.matrix = new_constr.matrix * neg_one;
+        new_constr *= neg_one;
         let mut lower_star = self.clone().add_constraints(&new_constr);
         lower_star
             .representation
@@ -430,7 +407,7 @@ mod tests {
     fn trunc_gaussian_cdf_works() {
         let constraint: Affine<f64> = Affine::from_raw(Array2::ones((3, 1)), false);
         let star = Star::new(Array2::ones([2, 4]), Array1::zeros(4)).add_constraints(&constraint);
-        star.trunc_gaussian_cdf(&Array1::zeros(2), &(&Array2::eye(2) * 3.), 1000);
+        star.trunc_gaussian_cdf(&Array1::zeros(2), &(&Array2::eye(2) * 3.), 1000, 10);
     }
 
     #[test]

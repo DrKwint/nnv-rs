@@ -1,21 +1,11 @@
+//! Utility functions
 #![allow(non_snake_case)]
-extern crate good_lp;
-
-use good_lp::solvers::highs::highs;
-use good_lp::solvers::highs::HighsSolution;
-use good_lp::Expression;
-use good_lp::IntoAffineExpression;
-use good_lp::ProblemVariables;
-use good_lp::ResolutionError;
-use good_lp::Variable;
-use good_lp::{variable, Solution, SolverModel};
-use ndarray::s;
-use ndarray::Array2;
-use ndarray::ArrayView1;
-use ndarray::Axis;
-use ndarray::Slice;
-use ndarray_linalg::EigVals;
-use ndarray_linalg::SVD;
+use good_lp::solvers::highs::{highs, HighsSolution};
+use good_lp::{variable, ResolutionError, Solution, SolverModel};
+use good_lp::{Expression, IntoAffineExpression, ProblemVariables, Variable};
+use ndarray::{s, Axis, Slice};
+use ndarray::{Array2, ArrayView1};
+use ndarray_linalg::{EigVals, SVD};
 use std::cmp::max;
 use std::collections::HashMap;
 use std::fmt::Debug;
@@ -24,6 +14,7 @@ pub fn l2_norm(x: ArrayView1<f64>) -> f64 {
     x.dot(&x).sqrt()
 }
 
+/// # Panics
 pub fn pinv(x: &Array2<f64>) -> Array2<f64> {
     let (u_opt, sigma, vt_opt) = x.svd(true, true).unwrap();
     let u = u_opt.unwrap();
@@ -41,6 +32,7 @@ pub fn pinv(x: &Array2<f64>) -> Array2<f64> {
     vt.t().dot(&final_sig.dot(&u.t()))
 }
 
+/// # Panics
 pub fn ensure_spd(A: Array2<f64>) -> Array2<f64> {
     let B = (&A + &A.t()) / 2.;
     let (_, sigma, vt_opt) = A.svd(false, true).unwrap();
@@ -79,6 +71,7 @@ impl IntoAffineExpression for LinearExpression {
     }
 }
 
+/// # Panics
 pub fn solve<'a, I, T: 'a + Debug>(
     A: I,
     b: ArrayView1<T>,
@@ -91,7 +84,7 @@ where
     I: IntoIterator<Item = ArrayView1<'a, T>>,
     f64: std::convert::From<T>,
 {
-    let _shh = shh::stdout().unwrap();
+    let _shh_out = shh::stdout().unwrap();
     let _shh_err = shh::stderr().unwrap();
     let mut problem = ProblemVariables::new();
     let vars = if let Some((lowers, uppers)) = c_lower_bounds.zip(c_upper_bounds) {
@@ -112,7 +105,7 @@ where
     let c_expression = LinearExpression {
         coefficients: vars
             .iter()
-            .cloned()
+            .copied()
             .zip(c.iter().map(|x| f64::from(*x)))
             .collect(),
     };
@@ -125,7 +118,7 @@ where
             let expr = LinearExpression {
                 coefficients: vars
                     .iter()
-                    .cloned()
+                    .copied()
                     .zip(coeffs.iter().map(|x| f64::from(*x)))
                     .collect(),
             };
@@ -137,26 +130,3 @@ where
     let fun = soln.as_ref().ok().map(|x| x.eval(c_expression));
     (soln, fun)
 }
-
-/*
-pub fn solve<'a, I, T: 'a>(A: I, b: ArrayView1<T>, c: ArrayView1<T>) -> SolvedModel
-where
-    T: std::convert::Into<f64> + std::clone::Clone + std::marker::Copy,
-    I: IntoIterator<Item = ArrayView1<'a, T>>,
-{
-    let mut pb = ColProblem::default();
-
-    let problem_cs = b.mapv(|x| pb.add_row(..=x)).to_vec();
-    A.into_iter().for_each(|var: ArrayView1<T>| {
-        let x: Vec<(Row, f64)> = problem_cs
-            .clone()
-            .into_iter()
-            .zip(var.into_iter().map(|x| T::into(*x)))
-            .collect();
-        pb.add_column(1., (0.).., x);
-    });
-    let mut model = pb.optimise(Sense::Maximise);
-    model.make_quiet();
-    model.solve()
-}
-*/

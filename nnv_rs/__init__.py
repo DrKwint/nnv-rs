@@ -1,7 +1,7 @@
 from .nnv_rs import *
 import numpy as np
 import time
-from scipy.stats import norm
+#from scipy.stats import norm
 
 
 def bounded_sample_constellation(affines,
@@ -30,6 +30,7 @@ def bounded_sample_constellation(affines,
 
 class Constellation:
     def __init__(self, network_weights, safe_value):
+        self.constellation = None
         self.network_weights = network_weights
         self.safe_value = safe_value
 
