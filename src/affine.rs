@@ -1,21 +1,117 @@
 //! Representation of affine transformations
 #![allow(non_snake_case)]
+use crate::tensorshape::TensorShape;
 use ndarray::concatenate;
+use ndarray::Array;
+use ndarray::Array4;
+use ndarray::Dimension;
 use ndarray::{s, Axis, Slice};
 use ndarray::{Array1, Array2};
 use ndarray::{ArrayView1, ArrayView2};
 use ndarray::{ArrayViewMut1, ArrayViewMut2};
+use ndarray::{Ix2, Ix4};
 use num::Float;
 use std::ops::{Mul, MulAssign};
 
+pub type Affine2<A> = Affine<A, Ix2>;
+
 /// Affine map data structure
 #[derive(Clone, Debug)]
-pub struct Affine<T: Float> {
-    matrix: Array2<T>,
-    is_lhs: bool,
+pub struct Affine<T: Float, D: Dimension> {
+    basis: Array<T, D>,
+    shift: Array1<T>,
 }
 
-impl<T: 'static + Float> Affine<T> {
+/// Assumes that the affine is f(x) = Ax + b
+impl<T: 'static + Float> Affine2<T> {
+    pub fn new(basis: Array2<T>, shift: Array1<T>) -> Self {
+        assert_eq!(basis.shape()[1], shift.len());
+        Self { basis, shift }
+    }
+
+    pub fn basis(&self) -> ArrayView2<T> {
+        self.basis.view()
+    }
+
+    pub fn shift(&self) -> ArrayView1<T> {
+        self.shift.view()
+    }
+
+    pub fn shift_mut(&mut self) -> ArrayViewMut1<T> {
+        self.shift.view_mut()
+    }
+
+    pub fn input_dim(&self) -> usize {
+        self.basis.shape()[1]
+    }
+
+    pub fn output_dim(&self) -> usize {
+        self.shift.len()
+    }
+
+    pub fn zero_eqn(&mut self, idx: usize) {
+        self.basis.index_axis_mut(Axis(0), idx).fill(num::zero());
+    }
+
+    pub fn apply(coordinates: Array2<T>) -> Array2<T> {
+        todo!()
+    }
+
+    /// Get a single equation (i.e., a set of coefficients and a shift/RHS)
+    pub fn get_eqn_affine(&self, index: usize) -> Affine2<T> {
+        let basis = self
+            .basis
+            .index_axis(Axis(0), index)
+            .to_owned()
+            .insert_axis(Axis(0));
+        let shift = self
+            .shift
+            .index_axis(Axis(0), index)
+            .to_owned()
+            .insert_axis(Axis(0));
+        Self { basis, shift }
+    }
+}
+
+/// Scale Affine by scalar
+impl<T: Float + ndarray::ScalarOperand + std::ops::Mul> Mul<T> for Affine2<T> {
+    type Output = Self;
+
+    fn mul(self, rhs: T) -> Self {
+        Self {
+            basis: &self.basis * rhs,
+            shift: &self.shift * rhs,
+        }
+    }
+}
+
+/// Apply Affine to Affine
+impl<T: Float + ndarray::ScalarOperand + std::ops::Mul> Mul<&Self> for Affine<T, Ix2> {
+    type Output = Self;
+
+    fn mul(self, rhs: &Self) -> Self {
+        let basis = self.basis.dot(&rhs.basis);
+        let shift = self.basis.dot(&rhs.shift) + self.shift;
+        Self { basis, shift }
+    }
+}
+
+impl<T: 'static + Float> Affine<T, Ix4> {
+    pub fn new(basis: Array4<T>, shift: Array1<T>) -> Self {
+        Self { basis, shift }
+    }
+
+    pub fn output_channels(&self) -> usize {
+        self.shift.len()
+    }
+
+    pub fn input_shape(&self) -> TensorShape {
+        TensorShape::new(vec![None, None, Some(self.basis.shape()[2])])
+    }
+}
+
+/*
+impl<T: 'static + Float> Affine<T, Ix2> {
     /// Instantiate Affine with given matrix and vector
     pub fn new(mul: Array2<T>, shift: Array1<T>) -> Self {
         if mul.ncols() == shift.len() {
@@ -71,37 +167,6 @@ impl<T: 'static + Float> Affine<T> {
         Ax + self.get_shift()
     }
 
-    /// Interpret Affine as a set of equations with upper bound and reduce the
-    /// equations by instantiating variable values
-    ///
-    /// Assumes that the zero valued
-    ///
-    /// # Panics
-    pub fn reduce_with_values(&self, x: ArrayView1<T>, idxs: ArrayView1<bool>) -> Affine<T> {
-        let coeffs = self.get_mul();
-        let ub_reduction = if self.is_lhs {
-            coeffs.dot(&x)
-        } else {
-            x.dot(&coeffs)
-        };
-        let new_ubs = &self.get_shift() - ub_reduction;
-
-        let eqns = self.get_mul();
-        let vars = if self.is_lhs {
-            eqns.columns()
-        } else {
-            eqns.rows()
-        };
-        let new_coeffs: Vec<ArrayView2<T>> = vars
-            .into_iter()
-            .zip(&idxs)
-            .filter(|x| *x.1)
-            .map(|x| x.0.insert_axis(Axis(0)))
-            .collect();
-        let new_eqns = concatenate(Axis(0), new_coeffs.as_slice()).unwrap();
-        Self::new(new_eqns, new_ubs)
-    }
-
     /// Add equations to the Affine with an augmented matrix
     ///
     /// It's assumes that the `is_lhs`ness of the input is the same as the Affine
@@ -126,28 +191,6 @@ impl<T: 'static + Float> Affine<T> {
     /// Get the coefficients of a variable
     pub fn get_var_mut(&mut self, index: usize) -> ArrayViewMut1<T> {
         let axis = if self.is_lhs { Axis(1) } else { Axis(0) };
-        self.matrix.index_axis_mut(axis, index)
-    }
-
-    /// Get a single equation (i.e., a set of coefficients and a shift/RHS)
-    pub fn get_eqn_affine(&self, index: usize) -> Affine<T> {
-        let axis = if self.is_lhs { Axis(0) } else { Axis(1) };
-        let eqn = self.matrix.index_axis(axis, index);
-        Self {
-            matrix: eqn.to_owned().insert_axis(axis),
-            is_lhs: self.is_lhs,
-        }
-    }
-
-    /// Get a single equation (i.e., a set of coefficients and a shift/RHS)
-    pub fn get_eqn(&self, index: usize) -> ArrayView1<T> {
-        let axis = if self.is_lhs { Axis(0) } else { Axis(1) };
-        self.matrix.index_axis(axis, index)
-    }
-
-    /// Get a single equation (i.e., a set of coefficients and a shift/RHS)
-    pub fn get_eqn_mut(&mut self, index: usize) -> ArrayViewMut1<T> {
-        let axis = if self.is_lhs { Axis(0) } else { Axis(1) };
         self.matrix.index_axis_mut(axis, index)
     }
 
@@ -338,3 +381,4 @@ mod tests {
         assert_eq!(lhs.output_dim(), 2);
     }
 }
+*/

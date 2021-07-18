@@ -1,11 +1,13 @@
 //! Implementation of [star sets](https://link.springer.com/chapter/10.1007/978-3-030-30942-8_39)
 //! for representing affine transformed sets
-use crate::affine::Affine;
+use crate::affine::{Affine, Affine2};
+use crate::inequality::Inequality;
 use crate::polytope::Polytope;
 use crate::util::{embed_identity, pinv, solve};
 use good_lp::ResolutionError;
+use ndarray::Dimension;
 use ndarray::{array, concatenate};
-use ndarray::{s, Axis, Ix1, Slice, Zip};
+use ndarray::{s, Axis, Ix1, Ix2, Slice, Zip};
 use ndarray::{Array, Array1, Array2};
 use ndarray::{ArrayView1, ArrayView2};
 use num::Float;
@@ -39,14 +41,14 @@ use truncnorm::truncnorm::{mv_truncnormal_cdf, mv_truncnormal_rand};
 /// constraints - \[num_constraints, input_dim\]
 /// upper_bounds - \[num_constraints\]
 #[derive(Clone, Debug)]
-pub struct Star<T: Float> {
+pub struct Star<T: Float, D: Dimension> {
     /// `representation` is the concatenation of [basis center] (where center is a column vector) and captures information about the transformed set
-    representation: Affine<T>,
+    representation: Affine<T, D>,
     /// `constraints` is the concatenation of [coeffs upper_bounds] and is a representation of the input polyhedron
     constraints: Option<Polytope<T>>,
 }
 
-impl<T: Float> Star<T>
+impl<T: Float> Star<T, Ix2>
 where
     T: std::convert::From<f64>
         + std::convert::Into<f64>
@@ -61,7 +63,7 @@ where
     /// By default this Star covers the space because it has no constraints. To add constraints call `.add_constraints`.
     pub fn default(dim: usize) -> Self {
         Self {
-            representation: Affine::new(Array2::eye(dim), Array1::zeros(dim)),
+            representation: Affine2::new(Array2::eye(dim), Array1::zeros(dim)),
             constraints: None,
         }
     }
@@ -71,7 +73,7 @@ where
     /// By default this Star covers the space because it has no constraints. To add constraints call `.add_constraints`.
     pub fn new(basis: Array2<T>, center: Array1<T>) -> Self {
         Self {
-            representation: Affine::new(basis, center),
+            representation: Affine2::new(basis, center),
             constraints: None,
         }
     }
@@ -108,6 +110,54 @@ where
         }
     }
 
+    /// Apply an affine transformation to the representation
+    pub fn affine_map(&self, affine: &Affine<T, Ix2>) -> Self {
+        Self {
+            representation: affine * &self.representation,
+            constraints: self.constraints.clone(),
+        }
+    }
+
+    pub fn step_relu(&self, index: usize) -> Vec<Self> {
+        let neg_one: T = std::convert::From::from(-1.);
+
+        let mut new_constr: Inequality<T> = {
+            let mut aff = self.representation.get_eqn_affine(index) * neg_one;
+            let neg_shift_part = &aff.shift() * neg_one;
+            aff.shift_mut().assign(&neg_shift_part);
+            aff.into()
+        };
+        let upper_star = self.clone().add_constraints(&new_constr);
+
+        new_constr *= neg_one;
+        let mut lower_star = self.clone().add_constraints(&new_constr);
+        lower_star.representation.zero_eqn(index);
+        vec![lower_star, upper_star]
+            .into_iter()
+            .filter(|x| !x.is_empty())
+            .collect()
+    }
+
+    /// Add constraints to restrict the input set. Each row represents a
+    /// constraint and the last column represents the upper bounds.
+    pub fn add_constraints(mut self, new_constraints: &Inequality<T>) -> Self {
+        // assert_eq!(self.representation.is_lhs, new_constraints.is_lhs);
+        if let Some(ref mut constrs) = self.constraints {
+            constrs.add_constraints(new_constraints);
+        } else {
+            self.constraints = Some(Polytope::from_halfspaces(new_constraints.clone()));
+        }
+        self
+    }
+
+    /// Check whether the Star set is empty.
+    pub fn is_empty(&self) -> bool {
+        self.constraints
+            .as_ref()
+            .map_or(false, crate::polytope::Polytope::is_empty)
+    }
+
+    /*
     /// `basis` is the matrix used to transform from the input space to the representation space.
     pub fn basis(&self) -> ArrayView2<T> {
         self.representation.get_mul()
@@ -128,34 +178,6 @@ where
         self.constraints
             .as_ref()
             .map(|constrs| constrs.eqn_upper_bounds())
-    }
-
-    /// Add constraints to restrict the input set. Each row represents a
-    /// constraint and the last column represents the upper bounds.
-    pub fn add_constraints(mut self, new_constraints: &Affine<T>) -> Self {
-        // assert_eq!(self.representation.is_lhs, new_constraints.is_lhs);
-        if let Some(ref mut constrs) = self.constraints {
-            constrs.add_constraints(new_constraints);
-        } else {
-            self.constraints = Some(Polytope::from_affine(new_constraints.clone()));
-        }
-        self
-    }
-
-    /// Apply an affine transformation to the representation polyhedron
-    pub fn affine_map(&self, affine: &Affine<T>) -> Self {
-        let new_repr = self.representation.rhs_mul(affine);
-        Self {
-            representation: new_repr,
-            constraints: self.constraints.clone(),
-        }
-    }
-
-    /// Check whether the Star set is empty.
-    pub fn is_empty(&self) -> bool {
-        self.constraints
-            .as_ref()
-            .map_or(false, crate::polytope::Polytope::is_empty)
     }
 
     /// # Panics
@@ -364,30 +386,10 @@ where
         }
     }
 
-    pub fn step_relu(&self, index: usize) -> Vec<Self> {
-        let neg_one: T = std::convert::From::from(-1.);
-
-        let mut new_constr = {
-            let mut eqn = self.representation.get_eqn_affine(index) * neg_one;
-            let neg_shift_part = &eqn.get_shift() * neg_one;
-            eqn.get_shift_mut().assign(&neg_shift_part);
-            eqn
-        };
-        let upper_star = self.clone().add_constraints(&new_constr);
-
-        new_constr *= neg_one;
-        let mut lower_star = self.clone().add_constraints(&new_constr);
-        lower_star
-            .representation
-            .get_eqn_mut(index)
-            .fill(num::zero());
-        vec![lower_star, upper_star]
-            .into_iter()
-            .filter(|x| !x.is_empty())
-            .collect()
-    }
+    */
 }
 
+/*
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -416,3 +418,4 @@ mod tests {
         let _child_stars = star.step_relu(0);
     }
 }
+*/

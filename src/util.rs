@@ -76,8 +76,6 @@ pub fn solve<'a, I, T: 'a + Debug>(
     A: I,
     b: ArrayView1<T>,
     c: ArrayView1<T>,
-    c_lower_bounds: Option<ArrayView1<T>>,
-    c_upper_bounds: Option<ArrayView1<T>>,
 ) -> (Result<HighsSolution, ResolutionError>, Option<f64>)
 where
     T: std::convert::Into<f64> + std::clone::Clone + std::marker::Copy,
@@ -87,21 +85,7 @@ where
     let _shh_out = shh::stdout().unwrap();
     let _shh_err = shh::stderr().unwrap();
     let mut problem = ProblemVariables::new();
-    let vars = if let Some((lowers, uppers)) = c_lower_bounds.zip(c_upper_bounds) {
-        lowers
-            .into_iter()
-            .zip(uppers)
-            .map(|bounds| {
-                problem.add(
-                    variable()
-                        .min(f64::from(*bounds.0))
-                        .max(f64::from(*bounds.1)),
-                )
-            })
-            .collect()
-    } else {
-        problem.add_vector(variable(), c.len())
-    };
+    let vars = problem.add_vector(variable(), c.len());
     let c_expression = LinearExpression {
         coefficients: vars
             .iter()

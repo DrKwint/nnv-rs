@@ -1,17 +1,18 @@
 //! Data structure representing the paths through a DNN with sets as input/output
 use crate::affine::Affine;
 use crate::star::Star;
+use crate::DNN;
+use indextree::{Arena, NodeId};
+use ndarray::Dimension;
 use ndarray::{Array1, Array2};
+use ndarray::{Ix2, Ix4};
 use num::Float;
 use rand::distributions::{Bernoulli, Distribution};
 
 /// Data structure representing the paths through a deep neural network (DNN)
-///
-/// It's assumed that the DNN is ReLU activated and fully connected
-#[derive(Debug)]
 pub struct Constellation<T: Float> {
-    arena: Vec<StarNode<T>>,
-    dnn_affines: Vec<Affine<T>>,
+    arena: Arena<StarNode<T>>,
+    dnn: DNN<T>,
 }
 
 impl<T: Float> Constellation<T>
@@ -25,25 +26,33 @@ where
     f64: std::convert::From<T>,
 {
     /// Instantiate a Constellation with given input set and network
-    pub fn new(star: Star<T>, dnn: Vec<Affine<T>>) -> Self {
-        let mut out = Self {
-            arena: Vec::new(),
-            dnn_affines: dnn,
-        };
+    pub fn new(input_star: PolyStar<T>, dnn: DNN<T>) -> Self {
         let star_node = StarNode {
-            idx: 0,
-            parent: None,
-            children: None,
-            star,
-            layer: 0,
-            remaining_steps: None,
-            cdf: Some(1.),
-            is_feasible: true,
+            star: input_star,
+            dnn_layer: 0,
+            remaining_steps: 0,
+            cdf: None,
+            output_bounds: None,
+            is_expanded: false,
         };
-        out.arena.push(star_node);
-        out
+        let arena = Arena::new();
+        let root = arena.new_node(star_node);
+        Self {
+            arena: arena,
+            dnn: dnn,
+        }
     }
 
+    fn expand_node(&mut self, id: NodeId) -> Vec<NodeId> {
+        let node = self.arena.get(id).unwrap().get_mut();
+        let children = node.expand(&self.dnn);
+        children
+            .into_iter()
+            .map(|x| self.arena.new_node(x))
+            .collect()
+    }
+
+    /*
     pub fn overestimate_output_range(&self, star: Star<T>, layer: usize) -> (T, T) {
         let est_star = self.dnn_affines[layer..]
             .iter()
@@ -257,78 +266,83 @@ where
         self.arena.push(node);
         idx
     }
+    */
+}
 
-    fn expand_node(&mut self, idx: usize) -> Vec<usize> {
-        let node_children = &self.arena[idx].children;
-        let node_layer = self.arena[idx].layer;
-        let children = if let Some(childs) = node_children {
-            // if children exist already, return them
-            childs.clone()
-        } else {
-            // check if there is a step relu to do
-            let node_remaining_steps = self.arena[idx].remaining_steps;
-            if let Some(remaining_steps) = node_remaining_steps {
-                let new_child_stars = self.arena[idx].star.step_relu(remaining_steps);
-                let new_remaining_steps = if remaining_steps == 0 {
-                    None
-                } else {
-                    Some(remaining_steps - 1)
-                };
-                new_child_stars
-                    .into_iter()
-                    .map(|x| self.add_node(x, idx, node_layer, new_remaining_steps))
-                    .collect()
-            } else {
-                // check if there's another affine to do
-                if node_layer < self.dnn_affines.len() {
-                    let affine = &self.dnn_affines[node_layer];
-                    let child_star = self.arena[idx].star.clone().affine_map(affine);
-                    let repr_space_dim = Some(child_star.representation_space_dim() - 1);
-                    vec![self.add_node(child_star, idx, node_layer + 1, repr_space_dim)]
-                } else {
-                    // No step relus and no layers remaining means this is a leaf
-                    Vec::new()
-                }
-            }
+#[derive(Debug, Clone)]
+/// Convenient uniform handling of different star types
+enum PolyStar<T: Float> {
+    VecStar(Star<T, Ix2>),
+    ImgStar(Star<T, Ix4>),
+}
+
+impl<T: Float> PolyStar<T>
+where
+    T: std::convert::From<f64>
+        + ndarray::ScalarOperand
+        + std::fmt::Display
+        + std::fmt::Debug
+        + std::ops::MulAssign,
+    f64: std::convert::From<T>,
+{
+    fn step_relu(&self, idx: usize) -> Vec<PolyStar<T>> {
+        let stars = match self {
+            PolyStar::VecStar(star) => star.step_relu(idx),
+            PolyStar::ImgStar(star) => panic!(), //star.step_relu(idx),
         };
-        self.arena[idx].children = Some(children.clone());
-        children
+        todo!()
+        vec![]
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct StarNode<T: num::Float> {
-    idx: usize,
-    parent: Option<usize>,
-    children: Option<Vec<usize>>,
-    star: Star<T>,
-    layer: usize,
-    remaining_steps: Option<usize>,
+    star: PolyStar<T>,
+    dnn_layer: usize,
+    remaining_steps: usize,
     cdf: Option<f64>,
-    is_feasible: bool,
+    output_bounds: Option<(f64, f64)>,
+    is_expanded: bool,
 }
 
-impl<T: num::Float> StarNode<T> {
-    fn new(
-        idx: usize,
-        parent: Option<usize>,
-        star: Star<T>,
-        layer: usize,
-        remaining_steps: Option<usize>,
-    ) -> Self {
-        Self {
-            idx,
-            parent,
-            star,
-            children: None,
-            layer,
-            remaining_steps,
-            cdf: None,
-            is_feasible: true,
+impl<T: num::Float> StarNode<T>
+where
+    T: std::convert::From<f64>
+        + std::convert::Into<f64>
+        + ndarray::ScalarOperand
+        + std::fmt::Display
+        + std::fmt::Debug
+        + std::ops::MulAssign,
+    f64: std::convert::From<T>,
+{
+    pub fn expand(&self, dnn: &DNN<T>) -> Vec<Self> {
+        // check if there is a step relu to do
+        if self.remaining_steps > 0 {
+            let new_child_stars = self.star.step_relu(self.remaining_steps);
+            let new_remaining_steps = self.remaining_steps - 1;
+            new_child_stars
+                .into_iter()
+                .map(|star| Self {
+                    star,
+                    dnn_layer: self.dnn_layer,
+                    remaining_steps: new_remaining_steps,
+                    cdf: None,
+                    output_bounds: None,
+                    is_expanded: false,
+                })
+                .collect()
+        } else {
+            if let Some(layer) = dnn.get_layer(self.dnn_layer + 1) {
+                vec![layer.apply(&self)]
+            } else {
+                // leaf node
+                vec![]
+            }
         }
     }
 }
 
+/*
 #[cfg(test)]
 mod tests {
     extern crate ndarray_rand;
@@ -369,3 +383,4 @@ mod tests {
         print!("{:?}", val);
     }
 }
+*/
