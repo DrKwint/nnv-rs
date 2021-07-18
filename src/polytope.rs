@@ -63,7 +63,7 @@ where
     }
 
     pub fn ubs(&self) -> ArrayView1<T> {
-        self.halfspaces.rhs().view()
+        self.halfspaces.rhs()
     }
 
     pub fn add_constraints(&mut self, constraints: &Inequality<T>) {

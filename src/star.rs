@@ -111,7 +111,7 @@ where
     }
 
     /// Apply an affine transformation to the representation
-    pub fn affine_map(&self, affine: &Affine<T, Ix2>) -> Self {
+    pub fn affine_map(&self, affine: Affine<T, Ix2>) -> Self {
         Self {
             representation: affine * &self.representation,
             constraints: self.constraints.clone(),

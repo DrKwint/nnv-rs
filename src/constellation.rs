@@ -35,7 +35,7 @@ where
             output_bounds: None,
             is_expanded: false,
         };
-        let arena = Arena::new();
+        let mut arena = Arena::new();
         let root = arena.new_node(star_node);
         Self {
             arena: arena,
@@ -44,7 +44,7 @@ where
     }
 
     fn expand_node(&mut self, id: NodeId) -> Vec<NodeId> {
-        let node = self.arena.get(id).unwrap().get_mut();
+        let node = self.arena.get_mut(id).unwrap().get_mut();
         let children = node.expand(&self.dnn);
         children
             .into_iter()
@@ -271,7 +271,7 @@ where
 
 #[derive(Debug, Clone)]
 /// Convenient uniform handling of different star types
-enum PolyStar<T: Float> {
+pub enum PolyStar<T: Float> {
     VecStar(Star<T, Ix2>),
     ImgStar(Star<T, Ix4>),
 }
@@ -290,13 +290,13 @@ where
             PolyStar::VecStar(star) => star.step_relu(idx),
             PolyStar::ImgStar(star) => panic!(), //star.step_relu(idx),
         };
-        todo!()
+        todo!();
         vec![]
     }
 }
 
 #[derive(Debug, Clone)]
-struct StarNode<T: num::Float> {
+pub struct StarNode<T: num::Float> {
     star: PolyStar<T>,
     dnn_layer: usize,
     remaining_steps: usize,
@@ -333,7 +333,7 @@ where
                 .collect()
         } else {
             if let Some(layer) = dnn.get_layer(self.dnn_layer + 1) {
-                vec![layer.apply(&self)]
+                layer.apply(&self)
             } else {
                 // leaf node
                 vec![]

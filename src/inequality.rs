@@ -19,7 +19,7 @@ impl<T: 'static + Float> Inequality<T> {
 	}
 
 	pub fn coeffs(&self) -> ArrayView2<T> {
-		self.coeffs().view()
+		self.coeffs()
 	}
 
 	pub fn rhs(&self) -> ArrayView1<T> {
@@ -35,8 +35,6 @@ impl<T: 'static + Float> Inequality<T> {
 		self.rhs.append(Axis(0), eqns.rhs.view()).unwrap();
 	}
 
-	///
-	///
 	/// Assumes that the zero valued
 	///
 	/// # Panics

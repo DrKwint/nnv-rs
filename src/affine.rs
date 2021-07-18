@@ -86,7 +86,7 @@ impl<T: Float + ndarray::ScalarOperand + std::ops::Mul> Mul<T> for Affine2<T> {
 }
 
 /// Apply Affine to Affine
-impl<T: Float + ndarray::ScalarOperand + std::ops::Mul> Mul<&Self> for Affine<T, Ix2> {
+impl<T: Float + ndarray::ScalarOperand + std::ops::Mul> Mul<&Affine2<T>> for Affine2<T> {
     type Output = Self;
 
     fn mul(self, rhs: &Self) -> Self {

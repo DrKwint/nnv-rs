@@ -18,6 +18,7 @@ pub mod star;
 mod tensorshape;
 pub mod util;
 
+use crate::constellation::PolyStar;
 use crate::dnn::Layer;
 use crate::dnn::DNN;
 use affine::Affine;
@@ -34,7 +35,7 @@ use star::Star;
 #[pyclass]
 #[derive(Clone)]
 struct PyDNN {
-    dnn: DNN<f32>,
+    dnn: DNN<f64>,
 }
 
 #[pymethods]
@@ -48,15 +49,15 @@ impl PyDNN {
 
     fn add_dense(&mut self, filters: PyReadonlyArray2<f32>, bias: PyReadonlyArray1<f32>) {
         self.dnn.add_layer(Layer::new_dense(
-            filters.as_array().to_owned(),
-            bias.as_array().to_owned(),
+            filters.as_array().to_owned().mapv(|x| f64::from(x)),
+            bias.as_array().to_owned().mapv(|x| f64::from(x)),
         ))
     }
 
     fn add_conv(&mut self, filters: PyReadonlyArray4<f32>, bias: PyReadonlyArray1<f32>) {
         self.dnn.add_layer(Layer::new_conv(
-            filters.as_array().to_owned(),
-            bias.as_array().to_owned(),
+            filters.as_array().to_owned().mapv(|x| f64::from(x)),
+            bias.as_array().to_owned().mapv(|x| f64::from(x)),
         ))
     }
 
@@ -97,8 +98,9 @@ impl PyConstellation {
                 upper_bounds.as_array().to_owned(),
             );
         }
+        let star = PolyStar::VecStar(star);
         Self {
-            constellation: Constellation::new(star, Vec::new()),
+            constellation: Constellation::new(star, dnn),
         }
     }
 }

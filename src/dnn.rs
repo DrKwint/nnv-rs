@@ -1,3 +1,4 @@
+use crate::constellation::StarNode;
 use crate::tensorshape::TensorShape;
 use crate::Affine;
 use ndarray::Ix4;
@@ -37,7 +38,7 @@ pub enum Layer<T: num::Float> {
 	BatchNorm(Affine<T, Ix2>),
 	MaxPooling2D(usize),
 	Flatten,
-	ReLU(BitVec),
+	ReLU(usize),
 }
 
 impl<T: 'static + num::Float> Layer<T> {
@@ -62,12 +63,12 @@ impl<T: 'static + num::Float> Layer<T> {
 	}
 
 	pub fn new_relu(num_dims: usize) -> Self {
-		Layer::ReLU(BitVec::from_elem(num_dims, true))
+		Layer::ReLU(num_dims)
 	}
 
-	pub fn apply(&self, starnode: &StarNode) -> Vec<StarNode> {
+	pub fn apply(&self, starnode: &StarNode<T>) -> Vec<StarNode<T>> {
 		match self {
-			Layer::Dense(aff) => None,
+			Layer::Dense(aff) => todo!(),
 			_ => panic!(),
 		}
 	}
