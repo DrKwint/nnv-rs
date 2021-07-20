@@ -1,3 +1,4 @@
+#![feature(slice_as_chunks)]
 extern crate bitvec;
 extern crate good_lp;
 extern crate highs;
@@ -21,6 +22,7 @@ pub mod util;
 use crate::constellation::PolyStar;
 use crate::dnn::Layer;
 use crate::dnn::DNN;
+use crate::star::Star4;
 use affine::Affine;
 use constellation::Constellation;
 use numpy::PyArray1;
@@ -30,10 +32,10 @@ use pyo3::prelude::*;
 use pyo3::types::PyList;
 use pyo3::wrap_pyfunction;
 use pyo3::PyObjectProtocol;
-use star::Star;
+use star::Star2;
 
 #[pyclass]
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 struct PyDNN {
     dnn: DNN<f64>,
 }
@@ -90,17 +92,29 @@ impl PyConstellation {
         input_bounds: Option<(PyReadonlyArray1<f64>, PyReadonlyArray1<f64>)>,
     ) -> Self {
         let dnn = py_dnn.dnn;
-        let input_shape = dnn.input_shape()[0];
-        let mut star = Star::default(input_shape.unwrap());
-        if let Some((lower_bounds, upper_bounds)) = input_bounds {
-            star = star.with_input_bounds(
-                lower_bounds.as_array().to_owned(),
-                upper_bounds.as_array().to_owned(),
-            );
-        }
-        let star = PolyStar::VecStar(star);
+        let input_shape = dnn.input_shape();
+
+        let polystar = match input_shape.rank() {
+            2 => {
+                let mut star = Star2::default(&input_shape);
+                if let Some((lower_bounds, upper_bounds)) = input_bounds {
+                    star = star.with_input_bounds(
+                        lower_bounds.as_array().to_owned(),
+                        upper_bounds.as_array().to_owned(),
+                    );
+                }
+                PolyStar::from_star2(star)
+            }
+            4 => {
+                let mut star = Star4::default(&input_shape);
+                PolyStar::from_star4(star)
+            }
+            _ => {
+                panic!()
+            }
+        };
         Self {
-            constellation: Constellation::new(star, dnn),
+            constellation: Constellation::new(polystar, dnn),
         }
     }
 }
@@ -221,12 +235,12 @@ pub fn sample_constellation(
         branch_logp,
     )
 }
+*/
 
 #[pymodule]
 pub fn nnv_rs(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_class::<PyConstellation>()?;
     m.add_class::<PyDNN>()?;
-    m.add_function(wrap_pyfunction!(sample_constellation, m)?)?;
+    //m.add_function(wrap_pyfunction!(sample_constellation, m)?)?;
     Ok(())
 }
-*/

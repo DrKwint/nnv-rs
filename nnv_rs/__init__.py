@@ -1,4 +1,4 @@
-from .nnv_rs import *
+from .nnv_rs import PyConstellation, PyDNN
 import numpy as np
 import tree
 
@@ -73,6 +73,7 @@ class DNN:
 
 class Constellation:
     def __init__(self, network, input_bounds=None, safe_value=np.inf):
+        print(type(network.dnn))
         self.constellation = PyConstellation(network.dnn, input_bounds)
         self.safe_value = safe_value
 

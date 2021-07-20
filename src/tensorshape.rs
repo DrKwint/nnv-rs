@@ -9,8 +9,21 @@ impl TensorShape {
 		Self { dims }
 	}
 
+	pub fn rank(&self) -> usize {
+		self.dims.len()
+	}
+
 	pub fn is_fully_defined(&self) -> bool {
 		self.dims.iter().all(|x| x.is_some())
+	}
+
+	pub fn as_defined_slice(&self) -> Option<Vec<usize>> {
+		let slice: Vec<usize> = self.dims.iter().filter_map(|&x| x).collect();
+		if slice.len() == self.rank() {
+			Some(slice)
+		} else {
+			None
+		}
 	}
 
 	pub fn is_compatible_with(&self, other: &Self) -> bool {

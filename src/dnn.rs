@@ -5,7 +5,7 @@ use ndarray::Ix4;
 use ndarray::{Array1, Array2, Array4, Ix2};
 use std::fmt;
 
-#[derive(Default, Clone)]
+#[derive(Default, Clone, Debug)]
 pub struct DNN<T: num::Float> {
 	layers: Vec<Layer<T>>,
 }
@@ -31,7 +31,7 @@ impl<T: 'static + num::Float> fmt::Display for DNN<T> {
 	}
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum Layer<T: num::Float> {
 	Dense(Affine<T, Ix2>),
 	Conv(Affine<T, Ix4>),

@@ -1,6 +1,9 @@
 //! Data structure representing the paths through a DNN with sets as input/output
 use crate::affine::Affine;
 use crate::star::Star;
+use crate::star::Star2;
+use crate::star::Star4;
+use crate::tensorshape::TensorShape;
 use crate::DNN;
 use indextree::{Arena, NodeId};
 use ndarray::Dimension;
@@ -285,13 +288,28 @@ where
         + std::ops::MulAssign,
     f64: std::convert::From<T>,
 {
+    pub fn from_star2(star: Star2<T>) -> Self {
+        Self::VecStar(star)
+    }
+
+    pub fn from_star4(star: Star4<T>) -> Self {
+        Self::ImgStar(star)
+    }
+
+    pub fn from_shape(shape: &TensorShape) -> Self {
+        match shape.rank() {
+            1 => PolyStar::VecStar(Star2::default(shape)),
+            3 => todo!(), //PolyStar::ImgStar(Star4::default(shape)),
+            _ => panic!(),
+        }
+    }
+
     fn step_relu(&self, idx: usize) -> Vec<PolyStar<T>> {
         let stars = match self {
             PolyStar::VecStar(star) => star.step_relu(idx),
-            PolyStar::ImgStar(star) => panic!(), //star.step_relu(idx),
+            PolyStar::ImgStar(star) => todo!(), //star.step_relu(idx),
         };
         todo!();
-        vec![]
     }
 }
 

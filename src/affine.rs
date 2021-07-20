@@ -14,6 +14,7 @@ use num::Float;
 use std::ops::{Mul, MulAssign};
 
 pub type Affine2<A> = Affine<A, Ix2>;
+pub type Affine4<A> = Affine<A, Ix4>;
 
 /// Affine map data structure
 #[derive(Clone, Debug)]
