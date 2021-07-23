@@ -4,17 +4,19 @@ use crate::star::Star;
 use crate::star::Star2;
 use crate::star::Star4;
 use crate::tensorshape::TensorShape;
+use crate::Layer;
 use crate::DNN;
 use indextree::{Arena, NodeId};
 use ndarray::Dimension;
 use ndarray::{Array1, Array2};
-use ndarray::{Ix2, Ix4};
+use ndarray::{Ix2, Ix4, IxDyn};
 use num::Float;
 use rand::distributions::{Bernoulli, Distribution};
 
 /// Data structure representing the paths through a deep neural network (DNN)
 pub struct Constellation<T: Float> {
     arena: Arena<StarNode<T>>,
+    root: NodeId,
     dnn: DNN<T>,
 }
 
@@ -25,11 +27,13 @@ where
         + ndarray::ScalarOperand
         + std::ops::MulAssign
         + std::fmt::Display
-        + std::fmt::Debug,
+        + std::fmt::Debug
+        + std::ops::AddAssign
+        + Float,
     f64: std::convert::From<T>,
 {
     /// Instantiate a Constellation with given input set and network
-    pub fn new(input_star: PolyStar<T>, dnn: DNN<T>) -> Self {
+    pub fn new(input_star: Star<T, IxDyn>, dnn: DNN<T>) -> Self {
         let star_node = StarNode {
             star: input_star,
             dnn_layer: 0,
@@ -37,13 +41,11 @@ where
             cdf: None,
             output_bounds: None,
             is_expanded: false,
+            is_feasible: true,
         };
         let mut arena = Arena::new();
         let root = arena.new_node(star_node);
-        Self {
-            arena: arena,
-            dnn: dnn,
-        }
+        Self { arena, root, dnn }
     }
 
     fn expand_node(&mut self, id: NodeId) -> Vec<NodeId> {
@@ -55,14 +57,122 @@ where
             .collect()
     }
 
-    /*
-    pub fn overestimate_output_range(&self, star: Star<T>, layer: usize) -> (T, T) {
-        let est_star = self.dnn_affines[layer..]
-            .iter()
-            .fold(star, |x: Star<T>, a| x.affine_map(a));
-        (est_star.get_min(0), est_star.get_max(0))
+    pub fn bounded_sample_multivariate_gaussian(
+        &mut self,
+        loc: &Array1<T>,
+        scale: &Array2<T>,
+        safe_value: T,
+        cdf_samples: usize,
+        num_samples: usize,
+        max_iters: usize,
+    ) -> (Vec<(Array1<T>, f64)>, f64) {
+        let safe_star = self.sample_safe_star(safe_value);
+        todo!()
     }
 
+    pub fn sample_safe_star(&mut self, safe_value: T) -> Option<StarNode<T>> {
+        let mut rng = rand::thread_rng();
+        let mut current_node = self.root;
+        let mut path = vec![];
+        let mut path_logp = T::zero();
+        let root = self.root.clone();
+        let mut infeasible_reset = |arena: &mut Arena<StarNode<T>>,
+                                    x: NodeId,
+                                    path: &mut Vec<NodeId>,
+                                    path_logp: &mut T|
+         -> NodeId {
+            arena[x].get_mut().set_feasible(false);
+            let mut infeas_cdf = arena[x].get_mut().get_cdf();
+            path.drain(..).rev().for_each(|x| {
+                // check if all chilren are infeasible
+                if !x.children(arena).any(|x| arena[x].get().is_feasible) {
+                    arena[x].get_mut().set_feasible(false);
+                    infeas_cdf = arena[x].get_mut().get_cdf()
+                } else {
+                    // if not infeasible, update CDF
+                    arena[x].get_mut().add_cdf(T::neg(T::one()) * infeas_cdf);
+                }
+            });
+            *path_logp = T::zero();
+            root
+        };
+        loop {
+            // base case for feasability
+            if current_node == self.root && !self.arena[current_node].get().get_feasible() {
+                return None;
+            }
+            // check feasibility of current node
+            {
+                // makes the assumption that bounds are on 0th dimension of output
+                let output_bounds = self.arena[current_node]
+                    .get_mut()
+                    .get_output_bounds(&self.dnn, 0);
+                if output_bounds.1 < safe_value {
+                    // handle case where star is safe
+                    return Some(self.arena[current_node].get().clone());
+                } else if output_bounds.0 > safe_value {
+                    // handle case where star is infeasible
+                    self.arena[current_node].get_mut().set_feasible(false);
+                    infeasible_reset(&mut self.arena, current_node, &mut path, &mut path_logp);
+                    continue;
+                } else {
+                    // otherwise, push to path and continue expanding
+                    path.push(current_node);
+                }
+            }
+            // expand node
+            {
+                let children: Vec<NodeId> = if self.arena[current_node].get().get_expanded() {
+                    current_node.children(&self.arena).collect()
+                } else {
+                    self.arena[current_node].get_mut().set_expanded();
+                    self.expand_node(current_node)
+                };
+                current_node = match children.len() {
+                    // leaf node, which must be partially safe and partially unsafe
+                    0 => {
+                        return Some(self.arena[current_node].get().clone());
+                    }
+                    1 => children[0],
+                    2 => {
+                        // check feasibility
+                        match (
+                            self.arena[children[0]].get().get_feasible(),
+                            self.arena[children[1]].get().get_feasible(),
+                        ) {
+                            (false, false) => infeasible_reset(
+                                &mut self.arena,
+                                current_node,
+                                &mut path,
+                                &mut path_logp,
+                            ),
+                            (true, false) => children[0],
+                            (false, true) => children[1],
+                            (true, true) => {
+                                let fst_cdf = self.arena[children[0]].get_mut().get_cdf();
+                                let snd_cdf = self.arena[children[1]].get_mut().get_cdf();
+                                let fst_prob = fst_cdf / (fst_cdf + snd_cdf);
+                                let dist = Bernoulli::new(fst_prob.into()).unwrap();
+                                match dist.sample(&mut rng) {
+                                    true => {
+                                        path_logp += fst_prob.ln();
+                                        children[0]
+                                    }
+                                    false => {
+                                        path_logp += (T::one() - fst_prob).ln();
+                                        children[1]
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    _ => panic!(),
+                };
+            }
+        }
+    }
+
+    /*
     /// Sample from a Gaussian distribution with an upper bound on the output value
     ///
     /// This function uses a two step sampling process. The first walks the Constellation's binary
@@ -256,7 +366,9 @@ where
         }
         (output, path_logp)
     }
+    */
 
+    /*
     fn add_node(
         &mut self,
         star: Star<T>,
@@ -273,53 +385,13 @@ where
 }
 
 #[derive(Debug, Clone)]
-/// Convenient uniform handling of different star types
-pub enum PolyStar<T: Float> {
-    VecStar(Star<T, Ix2>),
-    ImgStar(Star<T, Ix4>),
-}
-
-impl<T: Float> PolyStar<T>
-where
-    T: std::convert::From<f64>
-        + ndarray::ScalarOperand
-        + std::fmt::Display
-        + std::fmt::Debug
-        + std::ops::MulAssign,
-    f64: std::convert::From<T>,
-{
-    pub fn from_star2(star: Star2<T>) -> Self {
-        Self::VecStar(star)
-    }
-
-    pub fn from_star4(star: Star4<T>) -> Self {
-        Self::ImgStar(star)
-    }
-
-    pub fn from_shape(shape: &TensorShape) -> Self {
-        match shape.rank() {
-            1 => PolyStar::VecStar(Star2::default(shape)),
-            3 => todo!(), //PolyStar::ImgStar(Star4::default(shape)),
-            _ => panic!(),
-        }
-    }
-
-    fn step_relu(&self, idx: usize) -> Vec<PolyStar<T>> {
-        let stars = match self {
-            PolyStar::VecStar(star) => star.step_relu(idx),
-            PolyStar::ImgStar(star) => todo!(), //star.step_relu(idx),
-        };
-        todo!();
-    }
-}
-
-#[derive(Debug, Clone)]
 pub struct StarNode<T: num::Float> {
-    star: PolyStar<T>,
+    star: Star<T, IxDyn>,
     dnn_layer: usize,
     remaining_steps: usize,
-    cdf: Option<f64>,
-    output_bounds: Option<(f64, f64)>,
+    cdf: Option<T>,
+    output_bounds: Option<(T, T)>,
+    is_feasible: bool,
     is_expanded: bool,
 }
 
@@ -330,9 +402,62 @@ where
         + ndarray::ScalarOperand
         + std::fmt::Display
         + std::fmt::Debug
-        + std::ops::MulAssign,
+        + std::ops::MulAssign
+        + std::ops::AddAssign,
     f64: std::convert::From<T>,
 {
+    pub fn get_feasible(&self) -> bool {
+        self.is_feasible
+    }
+
+    pub fn set_feasible(&mut self, val: bool) {
+        self.is_feasible = val
+    }
+
+    pub fn get_cdf(&mut self) -> T {
+        if let Some(cdf) = self.cdf {
+            cdf
+        } else {
+            todo!()
+        }
+    }
+
+    pub fn add_cdf(&mut self, add: T) {
+        if let Some(ref mut cdf) = self.cdf {
+            *cdf += add
+        } else {
+            todo!()
+        }
+    }
+
+    pub fn get_output_bounds(&mut self, dnn: &DNN<T>, idx: usize) -> (T, T) {
+        if let Some(bounds) = self.output_bounds {
+            bounds
+        } else {
+            // TODO: update this to use DeepPoly to get proper bounds rather than this estimate
+            let bounds = {
+                let out_star = dnn
+                    .get_layers()
+                    .iter()
+                    .skip(self.dnn_layer)
+                    .fold(self.star.clone(), |s: Star<T, IxDyn>, l: &Layer<T>| {
+                        l.apply(&s)
+                    });
+                (out_star.get_min(idx), out_star.get_max(idx))
+            };
+            self.output_bounds = Some(bounds);
+            bounds
+        }
+    }
+
+    pub fn get_expanded(&self) -> bool {
+        self.is_expanded
+    }
+
+    pub fn set_expanded(&mut self) {
+        self.is_expanded = true;
+    }
+
     pub fn expand(&self, dnn: &DNN<T>) -> Vec<Self> {
         // check if there is a step relu to do
         if self.remaining_steps > 0 {
@@ -347,11 +472,21 @@ where
                     cdf: None,
                     output_bounds: None,
                     is_expanded: false,
+                    is_feasible: true,
                 })
                 .collect()
         } else {
             if let Some(layer) = dnn.get_layer(self.dnn_layer + 1) {
-                layer.apply(&self)
+                vec![Self {
+                    star: layer.apply(&self.star),
+                    dnn_layer: self.dnn_layer + 1,
+                    remaining_steps: dnn.get_layer(self.dnn_layer).unwrap().output_shape()[-1]
+                        .unwrap(),
+                    cdf: None,
+                    output_bounds: None,
+                    is_expanded: false,
+                    is_feasible: true,
+                }]
             } else {
                 // leaf node
                 vec![]

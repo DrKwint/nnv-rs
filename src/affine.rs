@@ -5,6 +5,7 @@ use ndarray::concatenate;
 use ndarray::Array;
 use ndarray::Array4;
 use ndarray::Dimension;
+use ndarray::IxDyn;
 use ndarray::{s, Axis, Slice};
 use ndarray::{Array1, Array2};
 use ndarray::{ArrayView1, ArrayView2};
@@ -21,6 +22,19 @@ pub type Affine4<A> = Affine<A, Ix4>;
 pub struct Affine<T: Float, D: Dimension> {
     basis: Array<T, D>,
     shift: Array1<T>,
+}
+
+impl<T: Float, D: Dimension> Affine<T, D> {
+    pub fn ndim(&self) -> usize {
+        self.basis.ndim()
+    }
+
+    pub fn into_dyn(self) -> Affine<T, IxDyn> {
+        Affine {
+            basis: self.basis.into_dyn(),
+            shift: self.shift,
+        }
+    }
 }
 
 /// Assumes that the affine is f(x) = Ax + b

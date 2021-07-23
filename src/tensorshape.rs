@@ -43,11 +43,14 @@ impl TensorShape {
 	}
 }
 
-impl Index<usize> for TensorShape {
+impl Index<isize> for TensorShape {
 	type Output = Option<usize>;
 
-	fn index(&self, idx: usize) -> &Option<usize> {
-		&self.dims[idx]
+	fn index(&self, mut idx: isize) -> &Option<usize> {
+		if idx < 0 {
+			idx = self.dims.len() as isize - idx;
+		}
+		&self.dims[idx as usize]
 	}
 }
 

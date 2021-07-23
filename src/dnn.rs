@@ -1,7 +1,8 @@
-use crate::constellation::StarNode;
+use crate::star::Star;
 use crate::tensorshape::TensorShape;
 use crate::Affine;
 use ndarray::Ix4;
+use ndarray::IxDyn;
 use ndarray::{Array1, Array2, Array4, Ix2};
 use std::fmt;
 
@@ -21,6 +22,10 @@ impl<T: 'static + num::Float> DNN<T> {
 
 	pub fn get_layer(&self, idx: usize) -> Option<&Layer<T>> {
 		self.layers.get(idx)
+	}
+
+	pub fn get_layers(&self) -> &[Layer<T>] {
+		&self.layers
 	}
 }
 
@@ -50,6 +55,14 @@ impl<T: 'static + num::Float> Layer<T> {
 		}
 	}
 
+	pub fn output_shape(&self) -> TensorShape {
+		todo!()
+	}
+
+	pub fn calculate_output_shape(&self, input_shape: &TensorShape) -> TensorShape {
+		todo!()
+	}
+
 	pub fn new_dense(mul: Array2<T>, shift: Array1<T>) -> Self {
 		Layer::Dense(Affine::<T, Ix2>::new(mul, shift))
 	}
@@ -66,9 +79,9 @@ impl<T: 'static + num::Float> Layer<T> {
 		Layer::ReLU(num_dims)
 	}
 
-	pub fn apply(&self, starnode: &StarNode<T>) -> Vec<StarNode<T>> {
+	pub fn apply(&self, star: &Star<T, IxDyn>) -> Star<T, IxDyn> {
 		match self {
-			Layer::Dense(aff) => todo!(),
+			Layer::Dense(aff) => star.affine_map(&aff.clone().into_dyn()),
 			_ => panic!(),
 		}
 	}

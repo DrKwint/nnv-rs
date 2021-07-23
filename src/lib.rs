@@ -14,12 +14,13 @@ pub mod affine;
 pub mod constellation;
 mod dnn;
 mod inequality;
+//mod polystar;
 pub mod polytope;
 pub mod star;
 mod tensorshape;
 pub mod util;
 
-use crate::constellation::PolyStar;
+//use crate::constellation::PolyStar;
 use crate::dnn::Layer;
 use crate::dnn::DNN;
 use crate::star::Star4;
@@ -94,8 +95,8 @@ impl PyConstellation {
         let dnn = py_dnn.dnn;
         let input_shape = dnn.input_shape();
 
-        let polystar = match input_shape.rank() {
-            2 => {
+        let star = match input_shape.rank() {
+            1 => {
                 let mut star = Star2::default(&input_shape);
                 if let Some((lower_bounds, upper_bounds)) = input_bounds {
                     star = star.with_input_bounds(
@@ -103,19 +104,49 @@ impl PyConstellation {
                         upper_bounds.as_array().to_owned(),
                     );
                 }
-                PolyStar::from_star2(star)
+                star.into_dyn()
             }
-            4 => {
+            3 => {
                 let mut star = Star4::default(&input_shape);
-                PolyStar::from_star4(star)
+                star.into_dyn()
             }
             _ => {
+                println!("{}", input_shape.rank());
                 panic!()
             }
         };
         Self {
-            constellation: Constellation::new(polystar, dnn),
+            constellation: Constellation::new(star, dnn),
         }
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn bounded_sample_multivariate_gaussian(
+        &mut self,
+        loc: PyReadonlyArray1<f64>,
+        scale: PyReadonlyArray2<f64>,
+        safe_value: f64,
+        cdf_samples: usize,
+        num_samples: usize,
+        max_iters: usize,
+    ) -> (Py<PyArray1<f64>>, f64, f64) {
+        let loc = loc.as_array().to_owned();
+        let scale = scale.as_array().to_owned();
+        let (samples, branch_logp) = self.constellation.bounded_sample_multivariate_gaussian(
+            &loc,
+            &scale,
+            safe_value,
+            cdf_samples,
+            num_samples,
+            max_iters,
+        );
+        let gil = Python::acquire_gil();
+        let py = gil.python();
+        (
+            PyArray1::from_array(py, &samples[0].0).to_owned(),
+            samples[0].1,
+            branch_logp,
+        )
     }
 }
 
