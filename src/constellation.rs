@@ -441,7 +441,7 @@ where
                     .iter()
                     .skip(self.dnn_layer)
                     .fold(self.star.clone(), |s: Star<T, IxDyn>, l: &Layer<T>| {
-                        l.apply(&s)
+                        l.apply(s)
                     });
                 (out_star.get_min(idx), out_star.get_max(idx))
             };
@@ -478,7 +478,7 @@ where
         } else {
             if let Some(layer) = dnn.get_layer(self.dnn_layer + 1) {
                 vec![Self {
-                    star: layer.apply(&self.star),
+                    star: layer.apply(self.star.clone()),
                     dnn_layer: self.dnn_layer + 1,
                     remaining_steps: dnn.get_layer(self.dnn_layer).unwrap().output_shape()[-1]
                         .unwrap(),

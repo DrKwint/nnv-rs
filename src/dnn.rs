@@ -4,6 +4,7 @@ use crate::Affine;
 use ndarray::Ix4;
 use ndarray::IxDyn;
 use ndarray::{Array1, Array2, Array4, Ix2};
+use num::Float;
 use std::fmt;
 
 #[derive(Default, Clone, Debug)]
@@ -11,7 +12,18 @@ pub struct DNN<T: num::Float> {
 	layers: Vec<Layer<T>>,
 }
 
-impl<T: 'static + num::Float> DNN<T> {
+impl<T> DNN<T>
+where
+	T: 'static
+		+ Float
+		+ std::convert::From<f64>
+		+ std::convert::Into<f64>
+		+ ndarray::ScalarOperand
+		+ std::fmt::Display
+		+ std::fmt::Debug
+		+ std::ops::MulAssign,
+	f64: std::convert::From<T>,
+{
 	pub fn add_layer(&mut self, layer: Layer<T>) {
 		self.layers.push(layer)
 	}
@@ -46,7 +58,18 @@ pub enum Layer<T: num::Float> {
 	ReLU(usize),
 }
 
-impl<T: 'static + num::Float> Layer<T> {
+impl<T> Layer<T>
+where
+	T: 'static
+		+ Float
+		+ std::convert::From<f64>
+		+ std::convert::Into<f64>
+		+ ndarray::ScalarOperand
+		+ std::fmt::Display
+		+ std::fmt::Debug
+		+ std::ops::MulAssign,
+	f64: std::convert::From<T>,
+{
 	pub fn input_shape(&self) -> TensorShape {
 		match self {
 			Layer::Dense(aff) => TensorShape::new(vec![Some(aff.input_dim())]),
@@ -79,9 +102,15 @@ impl<T: 'static + num::Float> Layer<T> {
 		Layer::ReLU(num_dims)
 	}
 
-	pub fn apply(&self, star: &Star<T, IxDyn>) -> Star<T, IxDyn> {
+	pub fn apply(&self, star: Star<T, IxDyn>) -> Star<T, IxDyn> {
 		match self {
-			Layer::Dense(aff) => star.affine_map(&aff.clone().into_dyn()),
+			Layer::Dense(aff) => {
+				assert_eq!(star.ndim(), 2);
+				star.into_dimensionality::<Ix2>()
+					.unwrap()
+					.affine_map2(&aff)
+					.into_dyn()
+			}
 			_ => panic!(),
 		}
 	}

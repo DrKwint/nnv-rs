@@ -6,6 +6,7 @@ use ndarray::Array;
 use ndarray::Array4;
 use ndarray::Dimension;
 use ndarray::IxDyn;
+use ndarray::ShapeError;
 use ndarray::{s, Axis, Slice};
 use ndarray::{Array1, Array2};
 use ndarray::{ArrayView1, ArrayView2};
@@ -34,6 +35,15 @@ impl<T: Float, D: Dimension> Affine<T, D> {
             basis: self.basis.into_dyn(),
             shift: self.shift,
         }
+    }
+}
+
+impl<T: Float> Affine<T, IxDyn> {
+    pub fn into_dimensionality<D: Dimension>(self) -> Result<Affine<T, D>, ShapeError> {
+        let shift = self.shift;
+        self.basis
+            .into_dimensionality::<D>()
+            .map(|basis| Affine { basis, shift })
     }
 }
 
@@ -97,6 +107,16 @@ impl<T: Float + ndarray::ScalarOperand + std::ops::Mul> Mul<T> for Affine2<T> {
             basis: &self.basis * rhs,
             shift: &self.shift * rhs,
         }
+    }
+}
+
+impl<'a, 'b, T: 'static + Float> Mul<&'b Affine2<T>> for &'a Affine2<T> {
+    type Output = Affine2<T>;
+
+    fn mul(self, rhs: &'b Affine2<T>) -> Affine2<T> {
+        let basis = self.basis.dot(&rhs.basis);
+        let shift = self.basis.dot(&rhs.shift) + self.shift.clone();
+        Affine { basis, shift }
     }
 }
 

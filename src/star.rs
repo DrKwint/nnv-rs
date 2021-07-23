@@ -9,6 +9,7 @@ use good_lp::ResolutionError;
 use ndarray::Array4;
 use ndarray::Dimension;
 use ndarray::Ix4;
+use ndarray::ShapeError;
 use ndarray::{array, concatenate};
 use ndarray::{s, Axis, Ix1, Ix2, IxDyn, Slice, Zip};
 use ndarray::{Array, Array1, Array2};
@@ -55,16 +56,41 @@ pub struct Star<T: Float, D: Dimension> {
 }
 
 impl<T: Float, D: Dimension> Star<T, D> {
-    pub fn dim(&self) -> usize {
+    pub fn ndim(&self) -> usize {
         self.representation.ndim()
     }
 
+    pub fn into_dyn(self) -> Star<T, IxDyn> {
+        Star {
+            representation: self.representation.into_dyn(),
+            constraints: self.constraints,
+        }
+    }
+}
+
+impl<T: Float> Star<T, IxDyn>
+where
+    T: std::convert::From<f64>
+        + std::convert::Into<f64>
+        + ndarray::ScalarOperand
+        + std::fmt::Display
+        + std::fmt::Debug
+        + std::ops::MulAssign,
+    f64: std::convert::From<T>,
+{
     pub fn step_relu(&self, idx: usize) -> Vec<Self> {
         todo!()
     }
 
-    pub fn affine_map(&self, aff: &Affine<T, IxDyn>) -> Self {
-        todo!()
+    pub fn affine_map(self, aff: Affine<T, IxDyn>) -> Self {
+        match self.ndim() {
+            2 => {
+                let star: Star2<T> = self.into_dimensionality::<Ix2>().unwrap();
+                let aff: Affine2<T> = aff.into_dimensionality::<Ix2>().unwrap();
+                star.affine_map2(&aff).into_dyn()
+            }
+            _ => panic!(),
+        }
     }
 
     pub fn get_min(&self, idx: usize) -> T {
@@ -75,11 +101,14 @@ impl<T: Float, D: Dimension> Star<T, D> {
         todo!()
     }
 
-    pub fn into_dyn(self) -> Star<T, IxDyn> {
-        Star {
-            representation: self.representation.into_dyn(),
-            constraints: self.constraints,
-        }
+    pub fn into_dimensionality<D: Dimension>(self) -> Result<Star<T, D>, ShapeError> {
+        let constraints = self.constraints;
+        self.representation
+            .into_dimensionality::<D>()
+            .map(|representation| Star {
+                representation,
+                constraints,
+            })
     }
 }
 
@@ -149,7 +178,7 @@ where
     }
 
     /// Apply an affine transformation to the representation
-    pub fn affine_map2(&self, affine: Affine<T, Ix2>) -> Self {
+    pub fn affine_map2(&self, affine: &Affine<T, Ix2>) -> Self {
         Self {
             representation: affine * &self.representation,
             constraints: self.constraints.clone(),
