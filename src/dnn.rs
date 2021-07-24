@@ -78,10 +78,15 @@ where
 		}
 	}
 
+	/// Give output shape as generically as possible
 	pub fn output_shape(&self) -> TensorShape {
-		todo!()
+		match self {
+			Layer::Dense(aff) => TensorShape::new(vec![Some(aff.output_dim())]),
+			_ => panic!(),
+		}
 	}
 
+	/// Give the concrete output shape that results from giving an input with the specified shape
 	pub fn calculate_output_shape(&self, input_shape: &TensorShape) -> TensorShape {
 		todo!()
 	}

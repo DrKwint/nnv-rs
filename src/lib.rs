@@ -107,7 +107,7 @@ impl PyConstellation {
                 star.into_dyn()
             }
             3 => {
-                let mut star = Star4::default(&input_shape);
+                let star = Star4::default(&input_shape);
                 star.into_dyn()
             }
             _ => {

@@ -55,15 +55,52 @@ pub struct Star<T: Float, D: Dimension> {
     constraints: Option<Polytope<T>>,
 }
 
-impl<T: Float, D: Dimension> Star<T, D> {
+impl<T: Float, D: Dimension> Star<T, D>
+where
+    T: std::fmt::Debug + std::fmt::Display + ndarray::ScalarOperand,
+    f64: std::convert::From<T>,
+{
     pub fn ndim(&self) -> usize {
         self.representation.ndim()
+    }
+
+    pub fn input_space_polytope(&self) -> Option<&Polytope<T>> {
+        self.constraints.as_ref()
+    }
+
+    pub fn center(&self) -> ArrayView1<T> {
+        self.representation.shift()
+    }
+
+    pub fn num_constraints(&self) -> usize {
+        match &self.constraints {
+            Some(polytope) => polytope.num_constraints(),
+            None => 0,
+        }
     }
 
     pub fn into_dyn(self) -> Star<T, IxDyn> {
         Star {
             representation: self.representation.into_dyn(),
             constraints: self.constraints,
+        }
+    }
+
+    /// TODO: doc this
+    ///
+    /// # Panics
+    pub fn trunc_gaussian_cdf(
+        &self,
+        mu: &Array1<T>,
+        sigma: &Array2<T>,
+        n: usize,
+        max_iters: usize,
+    ) -> (f64, f64, f64) {
+        if let Some(input_region) = &self.constraints {
+            input_region.gaussian_cdf(mu, sigma, n, max_iters)
+        } else {
+            // No constraints means the entire distribution is in the input region
+            (1., 0., 1.)
         }
     }
 }
@@ -78,8 +115,17 @@ where
         + std::ops::MulAssign,
     f64: std::convert::From<T>,
 {
-    pub fn step_relu(&self, idx: usize) -> Vec<Self> {
-        todo!()
+    pub fn step_relu(self, idx: usize) -> Vec<Self> {
+        match self.ndim() {
+            2 => {
+                let star: Star2<T> = self.into_dimensionality::<Ix2>().unwrap();
+                star.step_relu2(idx)
+                    .into_iter()
+                    .map(|x| x.into_dyn())
+                    .collect()
+            }
+            _ => panic!(),
+        }
     }
 
     pub fn affine_map(self, aff: Affine<T, IxDyn>) -> Self {
@@ -93,12 +139,18 @@ where
         }
     }
 
-    pub fn get_min(&self, idx: usize) -> T {
-        todo!()
+    pub fn get_min(self, idx: usize) -> T {
+        match self.ndim() {
+            2 => self.into_dimensionality::<Ix2>().unwrap().get_min(idx),
+            _ => panic!(),
+        }
     }
 
-    pub fn get_max(&self, idx: usize) -> T {
-        todo!()
+    pub fn get_max(self, idx: usize) -> T {
+        match self.ndim() {
+            2 => self.into_dimensionality::<Ix2>().unwrap().get_max(idx),
+            _ => panic!(),
+        }
     }
 
     pub fn into_dimensionality<D: Dimension>(self) -> Result<Star<T, D>, ShapeError> {
@@ -156,10 +208,6 @@ where
         self
     }
 
-    pub fn input_space_polytope(&self) -> Option<&Polytope<T>> {
-        self.constraints.as_ref()
-    }
-
     /// Get the dimension of the input space
     pub fn input_space_dim(&self) -> usize {
         self.representation.input_dim()
@@ -168,13 +216,6 @@ where
     /// Get the dimension of the representation space
     pub fn representation_space_dim(&self) -> usize {
         self.representation.output_dim()
-    }
-
-    pub fn num_constraints(&self) -> usize {
-        match &self.constraints {
-            Some(polytope) => polytope.num_constraints(),
-            None => 0,
-        }
     }
 
     /// Apply an affine transformation to the representation
@@ -189,7 +230,7 @@ where
         let neg_one: T = std::convert::From::from(-1.);
 
         let mut new_constr: Inequality<T> = {
-            let mut aff = self.representation.get_eqn_affine(index) * neg_one;
+            let mut aff = self.representation.get_eqn(index) * neg_one;
             let neg_shift_part = &aff.shift() * neg_one;
             aff.shift_mut().assign(&neg_shift_part);
             aff.into()
@@ -203,6 +244,43 @@ where
             .into_iter()
             .filter(|x| !x.is_empty())
             .collect()
+    }
+
+    /// # Panics
+    pub fn get_min(&self, idx: usize) -> T {
+        let eqn = self.representation.get_eqn(idx).get_raw_augmented();
+        let c = &eqn.index_axis(Axis(0), 0);
+
+        if let Some(ref poly) = self.constraints {
+            let solved = solve(poly.coeffs().rows(), poly.ubs(), c.view());
+            let val = match solved.0 {
+                Ok(_) => std::convert::From::from(solved.1.unwrap()),
+                Err(ResolutionError::Unbounded) => T::neg_infinity(),
+                _ => panic!(),
+            };
+            self.center()[idx] + val
+        } else {
+            T::neg_infinity()
+        }
+    }
+
+    /// # Panics
+    pub fn get_max(&self, idx: usize) -> T {
+        let neg_one: T = std::convert::From::from(-1.);
+        let eqn = self.representation.get_eqn(idx).get_raw_augmented();
+        let c = &eqn.index_axis(Axis(0), 0) * neg_one;
+
+        if let Some(ref poly) = self.constraints {
+            let solved = solve(poly.coeffs().rows(), poly.ubs(), c.view());
+            let val = match solved.0 {
+                Ok(_) => std::convert::From::from(solved.1.unwrap()),
+                Err(ResolutionError::Unbounded) => T::neg_infinity(),
+                _ => panic!(),
+            };
+            self.center()[idx] - val
+        } else {
+            T::infinity()
+        }
     }
 
     /// Add constraints to restrict the input set. Each row represents a
@@ -267,88 +345,6 @@ pub fn constraint_upper_bounds(&self) -> Option<ArrayView1<T>> {
     self.constraints
         .as_ref()
         .map(|constrs| constrs.eqn_upper_bounds())
-}
-
-/// # Panics
-pub fn get_min(&self, idx: usize) -> T {
-    let eqn = self.representation.get_eqn(idx);
-    let len = eqn.len();
-    let c = &eqn.slice(s![..len - 1]);
-
-    let poly = self.constraints.as_ref().unwrap();
-    if poly.get_coeffs_as_rows().is_none() {
-        return T::neg_infinity();
-    }
-    let solved = solve(
-        poly.get_coeffs_as_rows().unwrap().rows(),
-        self.constraint_upper_bounds().unwrap(),
-        c.view(),
-        poly.get_input_lower_bound(),
-        poly.get_input_upper_bound(),
-    );
-    let val = match solved.0 {
-        Ok(_) => std::convert::From::from(solved.1.unwrap()),
-        Err(ResolutionError::Unbounded) => T::neg_infinity(),
-        _ => panic!(),
-    };
-    self.center()[idx] + val
-}
-
-/// # Panics
-pub fn get_max(&self, idx: usize) -> T {
-    let neg_one: T = std::convert::From::from(-1.);
-    let eqn = self.representation.get_eqn(idx);
-    let len = eqn.len();
-    let c = &eqn.slice(s![..len - 1]) * neg_one;
-
-    let poly = self.constraints.as_ref().unwrap();
-    if poly.get_coeffs_as_rows().is_none() {
-        return T::infinity();
-    }
-    let solved = solve(
-        poly.get_coeffs_as_rows().unwrap().rows(),
-        self.constraint_upper_bounds().unwrap(),
-        c.view(),
-        poly.get_input_lower_bound(),
-        poly.get_input_upper_bound(),
-    );
-
-    let val = match solved.0 {
-        Ok(_) => std::convert::From::from(solved.1.unwrap()),
-        Err(ResolutionError::Unbounded) => T::neg_infinity(),
-        _ => panic!(),
-    };
-    self.center()[idx] - val
-}
-
-/// TODO: doc this
-///
-/// # Panics
-pub fn trunc_gaussian_cdf(
-    &self,
-    mu: &Array1<T>,
-    sigma: &Array2<T>,
-    n: usize,
-    max_iters: usize,
-) -> (f64, f64, f64) {
-    if let Some(poly) = &self.constraints {
-        let mu = mu.mapv(std::convert::Into::into);
-        let sigma = sigma.mapv(std::convert::Into::into);
-
-        if poly.coeffs().is_none() {
-            return (1., 0., 1.);
-        }
-        let constraint_coeffs = poly.coeffs().unwrap().mapv(std::convert::Into::into);
-        let upper_bounds = poly.eqn_upper_bounds().mapv(std::convert::Into::into);
-        let mut sigma_star = constraint_coeffs.t().dot(&sigma.dot(&constraint_coeffs));
-        let pos_def_guarator = Array2::from_diag(&Array1::from_elem(sigma_star.nrows(), 1e-12));
-        sigma_star = sigma_star + pos_def_guarator;
-        let ub = &upper_bounds - &mu.dot(&constraint_coeffs);
-        let lb = Array1::from_elem(ub.len(), f64::NEG_INFINITY);
-        mv_truncnormal_cdf(lb, ub, sigma_star, n, max_iters)
-    } else {
-        (1., 0., 1.)
-    }
 }
 
 /// # Panics

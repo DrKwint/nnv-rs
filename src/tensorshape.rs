@@ -48,7 +48,7 @@ impl Index<isize> for TensorShape {
 
 	fn index(&self, mut idx: isize) -> &Option<usize> {
 		if idx < 0 {
-			idx = self.dims.len() as isize - idx;
+			idx = self.dims.len() as isize + idx;
 		}
 		&self.dims[idx as usize]
 	}

@@ -19,7 +19,7 @@ impl<T: 'static + Float> Inequality<T> {
 	}
 
 	pub fn coeffs(&self) -> ArrayView2<T> {
-		self.coeffs()
+		self.coeffs.view()
 	}
 
 	pub fn rhs(&self) -> ArrayView1<T> {
@@ -31,7 +31,7 @@ impl<T: 'static + Float> Inequality<T> {
 	}
 
 	pub fn add_eqns(&mut self, eqns: &Inequality<T>) {
-		self.coeffs.append(Axis(1), eqns.coeffs.view()).unwrap();
+		self.coeffs.append(Axis(0), eqns.coeffs.view()).unwrap();
 		self.rhs.append(Axis(0), eqns.rhs.view()).unwrap();
 	}
 

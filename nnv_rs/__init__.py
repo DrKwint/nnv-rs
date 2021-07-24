@@ -54,7 +54,7 @@ class DNN:
                 pass  # we don't need to do anything in this case
             elif isinstance(layer, Dense):
                 weights = layer.get_weights()
-                self.dnn.add_dense(weights[0], weights[1])
+                self.dnn.add_dense(weights[0].T, weights[1])
             elif isinstance(layer, Conv2D):
                 weights = layer.get_weights()
                 self.dnn.add_conv(weights[0], weights[1])
