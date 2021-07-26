@@ -5,7 +5,7 @@ use good_lp::{variable, ResolutionError, Solution, SolverModel};
 use good_lp::{Expression, IntoAffineExpression, ProblemVariables, Variable};
 use ndarray::{s, Axis, Slice};
 use ndarray::{Array2, ArrayView1};
-use ndarray_linalg::{EigVals, SVD};
+use ndarray_linalg::SVD;
 use std::cmp::max;
 use std::collections::HashMap;
 use std::fmt::Debug;
@@ -41,8 +41,6 @@ pub fn ensure_spd(A: Array2<f64>) -> Array2<f64> {
     let mut a_hat = (B + H) / 2.;
     // ensure symmetry
     a_hat = (&a_hat + &a_hat.t()) / 2.;
-    let min_eig = a_hat.eigvals().unwrap();
-    println!("min_eig {}", min_eig);
     a_hat
 }
 

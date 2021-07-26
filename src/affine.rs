@@ -4,17 +4,17 @@ use crate::tensorshape::TensorShape;
 use ndarray::concatenate;
 use ndarray::Array;
 use ndarray::Array4;
+use ndarray::ArrayViewMut1;
+use ndarray::Axis;
 use ndarray::Dimension;
 use ndarray::IxDyn;
 use ndarray::ShapeError;
-use ndarray::{s, stack, Axis, Slice};
 use ndarray::{Array1, Array2};
 use ndarray::{ArrayView1, ArrayView2};
-use ndarray::{ArrayViewMut1, ArrayViewMut2};
 use ndarray::{Ix2, Ix4};
 use num::Float;
 use std::fmt::Display;
-use std::ops::{Mul, MulAssign};
+use std::ops::Mul;
 
 pub type Affine2<A> = Affine<A, Ix2>;
 pub type Affine4<A> = Affine<A, Ix4>;
@@ -59,6 +59,7 @@ impl<T: Float, D: Dimension> Affine<T, D> {
 }
 
 impl<T: Float> Affine<T, IxDyn> {
+    /// # Errors
     pub fn into_dimensionality<D: Dimension>(self) -> Result<Affine<T, D>, ShapeError> {
         let shift = self.shift;
         self.basis
@@ -68,6 +69,9 @@ impl<T: Float> Affine<T, IxDyn> {
 }
 
 /// Assumes that the affine is f(x) = Ax + b
+///
+/// # Panics
+/// If improper shapes are passed in
 impl<T: 'static + Float> Affine2<T> {
     pub fn new(basis: Array2<T>, shift: Array1<T>) -> Self {
         assert_eq!(basis.shape()[0], shift.len());
@@ -90,16 +94,12 @@ impl<T: 'static + Float> Affine2<T> {
         self.basis.index_axis_mut(Axis(0), idx).fill(num::zero());
     }
 
-    pub fn apply(coordinates: Array2<T>) -> Array2<T> {
-        todo!()
-    }
-
     pub fn get_raw_augmented(&self) -> Array2<T> {
         concatenate![Axis(1), self.basis, self.shift.clone().insert_axis(Axis(0))]
     }
 
     /// Get a single equation (i.e., a set of coefficients and a shift/RHS)
-    pub fn get_eqn(&self, index: usize) -> Affine2<T> {
+    pub fn get_eqn(&self, index: usize) -> Self {
         let basis = self
             .basis
             .index_axis(Axis(0), index)
@@ -129,6 +129,7 @@ impl<T: Float + ndarray::ScalarOperand + std::ops::Mul> Mul<T> for Affine2<T> {
 impl<'a, 'b, T: 'static + Float + std::fmt::Debug> Mul<&'b Affine2<T>> for &'a Affine2<T> {
     type Output = Affine2<T>;
 
+    #[allow(clippy::suspicious_arithmetic_impl)]
     fn mul(self, rhs: &'b Affine2<T>) -> Affine2<T> {
         let basis = self.basis.dot(&rhs.basis);
         let shift = self.basis.dot(&rhs.shift) + self.shift.clone();
@@ -140,6 +141,7 @@ impl<'a, 'b, T: 'static + Float + std::fmt::Debug> Mul<&'b Affine2<T>> for &'a A
 impl<T: Float + ndarray::ScalarOperand + std::ops::Mul> Mul<&Affine2<T>> for Affine2<T> {
     type Output = Self;
 
+    #[allow(clippy::suspicious_arithmetic_impl)]
     fn mul(self, rhs: &Self) -> Self {
         let basis = self.basis.dot(&rhs.basis);
         let shift = self.basis.dot(&rhs.shift) + self.shift;

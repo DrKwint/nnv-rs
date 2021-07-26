@@ -48,7 +48,7 @@ impl Index<isize> for TensorShape {
 
 	fn index(&self, mut idx: isize) -> &Option<usize> {
 		if idx < 0 {
-			idx = self.dims.len() as isize + idx;
+			idx += self.dims.len() as isize;
 		}
 		&self.dims[idx as usize]
 	}
@@ -57,7 +57,7 @@ impl Index<isize> for TensorShape {
 impl From<Vec<usize>> for TensorShape {
 	fn from(v: Vec<usize>) -> Self {
 		Self {
-			dims: v.into_iter().map(|x| Some(x)).collect(),
+			dims: v.into_iter().map(Some).collect(),
 		}
 	}
 }

@@ -1,6 +1,7 @@
 from .nnv_rs import PyConstellation, PyDNN
 import numpy as np
 import tree
+from scipy.stats import norm
 
 
 def bounded_sample_constellation(affines,

@@ -29,7 +29,7 @@ where
 	}
 
 	pub fn input_shape(&self) -> TensorShape {
-		self.layers[0].input_shape().into()
+		self.layers[0].input_shape()
 	}
 
 	pub fn get_layer(&self, idx: usize) -> Option<&Layer<T>> {

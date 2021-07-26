@@ -4,21 +4,19 @@ use crate::affine::{Affine, Affine2, Affine4};
 use crate::inequality::Inequality;
 use crate::polytope::Polytope;
 use crate::tensorshape::TensorShape;
-use crate::util::{embed_identity, pinv, solve};
+use crate::util::solve;
 use good_lp::ResolutionError;
+use ndarray::concatenate;
 use ndarray::Array4;
 use ndarray::Dimension;
 use ndarray::Ix4;
 use ndarray::ShapeError;
-use ndarray::{array, concatenate};
-use ndarray::{s, Axis, Ix1, Ix2, IxDyn, Slice, Zip};
-use ndarray::{Array, Array1, Array2};
+use ndarray::{Array1, Array2};
 use ndarray::{ArrayView1, ArrayView2};
+use ndarray::{Axis, Ix2, IxDyn, Zip};
 use num::Float;
-use rand::distributions::Distribution;
+use rand::Rng;
 use std::fmt::Debug;
-use truncnorm::distributions::{MultivariateNormal, MultivariateTruncatedNormal};
-use truncnorm::truncnorm::{mv_truncnormal_cdf, mv_truncnormal_rand};
 
 pub type Star2<A> = Star<A, Ix2>;
 pub type Star4<A> = Star<A, Ix4>;
@@ -57,7 +55,7 @@ pub struct Star<T: Float, D: Dimension> {
 
 impl<T: Float, D: Dimension> Star<T, D>
 where
-    T: std::fmt::Debug + std::fmt::Display + ndarray::ScalarOperand,
+    T: std::convert::From<f64> + std::fmt::Debug + std::fmt::Display + ndarray::ScalarOperand,
     f64: std::convert::From<T>,
 {
     pub fn ndim(&self) -> usize {
@@ -115,6 +113,27 @@ where
         + std::ops::MulAssign,
     f64: std::convert::From<T>,
 {
+    pub fn gaussian_sample<R: Rng>(
+        self,
+        rng: &mut R,
+        mu: &Array1<T>,
+        sigma: &Array2<T>,
+        n: usize,
+        max_iters: usize,
+        input_bounds: &Option<(Array1<T>, Array1<T>)>,
+    ) -> Vec<(Array1<T>, T)> {
+        match self.ndim() {
+            2 => {
+                let star: Star2<T> = self.into_dimensionality::<Ix2>().unwrap();
+                star.gaussian_sample(rng, mu, sigma, n, max_iters, input_bounds)
+                    .into_iter()
+                    .map(|(sample, logp)| (sample.mapv(|x| x.into()), logp.into()))
+                    .collect()
+            }
+            _ => panic!(),
+        }
+    }
+
     pub fn step_relu(self, idx: usize) -> Vec<Self> {
         match self.ndim() {
             2 => {
@@ -300,6 +319,54 @@ where
         self.constraints
             .as_ref()
             .map_or(false, crate::polytope::Polytope::is_empty)
+    }
+
+    #[allow(clippy::too_many_lines)]
+    pub fn gaussian_sample<R: Rng>(
+        &self,
+        rng: &mut R,
+        mu: &Array1<T>,
+        sigma: &Array2<T>,
+        n: usize,
+        max_iters: usize,
+        input_bounds: &Option<(Array1<T>, Array1<T>)>,
+    ) -> Vec<(Array1<f64>, f64)> {
+        // remove fixed dimensions from mu and sigma
+        if let Some(poly) = &self.constraints {
+            if let Some((lbs, ubs)) = input_bounds {
+                let unfixed_idxs = Zip::from(lbs).and(ubs).map_collect(|&lb, &ub| lb != ub);
+                let sigma_rows: Vec<ArrayView2<T>> = sigma
+                    .rows()
+                    .into_iter()
+                    .zip(&unfixed_idxs)
+                    .filter(|(_row, &fix)| fix)
+                    .map(|(row, _fix)| row.insert_axis(Axis(0)))
+                    .collect();
+                let mut reduced_sigma = concatenate(Axis(0), sigma_rows.as_slice()).unwrap();
+                let sigma_cols: Vec<ArrayView2<T>> = reduced_sigma
+                    .columns()
+                    .into_iter()
+                    .zip(&unfixed_idxs)
+                    .filter(|(_row, &fix)| fix)
+                    .map(|(row, _fix)| row.insert_axis(Axis(1)))
+                    .collect();
+                reduced_sigma = concatenate(Axis(1), sigma_cols.as_slice()).unwrap();
+                let reduced_mu: Array1<T> = mu
+                    .into_iter()
+                    .zip(&unfixed_idxs)
+                    .filter(|(_val, &fix)| fix)
+                    .map(|(&val, _fix)| val)
+                    .collect();
+                let (reduced_poly, (_reduced_lbs, _reduced_ubs)) =
+                    poly.reduce_fixed_inputs(lbs, ubs);
+                reduced_poly.gaussian_sample(rng, &reduced_mu, &reduced_sigma, n, max_iters)
+            } else {
+                poly.gaussian_sample(rng, mu, sigma, n, max_iters)
+            }
+        } else {
+            // Unbounded sample from Gaussian
+            todo!()
+        }
     }
 }
 
