@@ -33,8 +33,8 @@ pub fn pinv(x: &Array2<f64>) -> Array2<f64> {
 }
 
 /// # Panics
-pub fn ensure_spd(A: Array2<f64>) -> Array2<f64> {
-    let B = (&A + &A.t()) / 2.;
+pub fn ensure_spd(A: &Array2<f64>) -> Array2<f64> {
+    let B = (A + &A.t()) / 2.;
     let (_, sigma, vt_opt) = A.svd(false, true).unwrap();
     let vt = vt_opt.unwrap();
     let H = vt.t().dot(&sigma).dot(&vt);
@@ -50,7 +50,7 @@ pub fn embed_identity(A: &Array2<f64>, dim_opt: Option<usize>) -> Array2<f64> {
         None => max(A.nrows(), A.ncols()),
     };
     let mut eye = Array2::eye(dim);
-    eye.slice_mut(s![..A.nrows(), ..A.ncols()]).assign(&A);
+    eye.slice_mut(s![..A.nrows(), ..A.ncols()]).assign(A);
     eye
 }
 

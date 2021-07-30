@@ -2,6 +2,15 @@
 name = "nnv-rs"
 version = "0.1.0"
 edition = "2018"
+description   = "Verification and Statistics on Deep Neural Networks"
+readme        = "README.md"
+repository    = "https://github.com/drkwint/nnv-rs"
+license       = "MIT"
+keywords      = ["ndarray", "statistics", "verification", "machine learning"]
+categories    = ["algorithms", "simulation", "science"]
+exclude = [
+    ".github",
+]
 
 [lib]
 name = "nnv_rs_py"
@@ -22,9 +31,9 @@ truncnorm = "^0.1.0"
 shh = "^1.0.1"
 
 [dev-dependencies]
-quickcheck = "*"
-quickcheck_macros = "*"
-ndarray-rand = "*"
+quickcheck = "^1.0.3"
+quickcheck_macros = "^1.0.0"
+ndarray-rand = "^0.14.0"
 
 [profile.release]
 lto = true

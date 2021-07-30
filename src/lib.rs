@@ -1,3 +1,4 @@
+#![allow(clippy::must_use_candidate)]
 extern crate good_lp;
 extern crate highs;
 extern crate ndarray;
@@ -9,7 +10,9 @@ extern crate shh;
 extern crate truncnorm;
 
 pub mod affine;
+mod bounds;
 pub mod constellation;
+mod deeppoly;
 mod dnn;
 mod inequality;
 pub mod polytope;
@@ -17,6 +20,7 @@ pub mod star;
 mod tensorshape;
 pub mod util;
 
+use crate::bounds::Bounds;
 use crate::dnn::Layer;
 use crate::dnn::DNN;
 use crate::star::Star4;
@@ -89,14 +93,14 @@ impl PyConstellation {
         let dnn = py_dnn.dnn;
         let input_shape = dnn.input_shape();
 
-        let bounds =
-            input_bounds.map(|(lbs, ubs)| (lbs.as_array().to_owned(), ubs.as_array().to_owned()));
+        let bounds = input_bounds
+            .map(|(lbs, ubs)| Bounds::new(lbs.as_array().to_owned(), ubs.as_array().to_owned()));
 
         let star = match input_shape.rank() {
             1 => {
                 let mut star = Star2::default(&input_shape);
-                if let Some((ref lower_bounds, ref upper_bounds)) = bounds {
-                    star = star.with_input_bounds(lower_bounds.clone(), upper_bounds.clone());
+                if let Some(ref b) = bounds {
+                    star = star.with_input_bounds((*b).clone());
                 }
                 star.into_dyn()
             }
@@ -145,6 +149,7 @@ impl PyConstellation {
     }
 }
 
+/// # Errors
 #[pymodule]
 pub fn nnv_rs(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_class::<PyConstellation>()?;

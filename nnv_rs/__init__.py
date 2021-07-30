@@ -4,30 +4,6 @@ import tree
 from scipy.stats import norm
 
 
-def bounded_sample_constellation(affines,
-                                 loc,
-                                 scale,
-                                 safe_value,
-                                 cdf_samples=100,
-                                 num_samples=20,
-                                 input_lower_bounds=None,
-                                 input_upper_bounds=None):
-    full_input_lower_bounds = np.concatenate(
-        [input_lower_bounds,
-         np.full(loc.shape, (-4 * scale) + loc)])
-    full_input_upper_bounds = np.concatenate(
-        [input_upper_bounds,
-         np.full(loc.shape, (4 * scale) + loc)])
-    loc = np.concatenate([input_lower_bounds, loc]).astype(np.float64)
-    scale = np.diag(
-        np.concatenate([np.zeros_like(input_lower_bounds),
-                        scale]).astype(np.float64))
-    samples, sample_logp, branch_logp = sample_constellation(
-        affines, loc, scale, safe_value, cdf_samples, num_samples,
-        full_input_lower_bounds, full_input_upper_bounds)
-    return samples, sample_logp, branch_logp
-
-
 class DNN:
     def __init__(self, network):
         self.dnn = PyDNN()
@@ -81,6 +57,9 @@ class Constellation:
     def _weights(self, network_weights):
         self.network_weights = network_weights
 
+    def importance_sample(self, loc, scale):
+        pass
+
     def bounded_sample(self, loc, scale, input_lower_bounds,
                        input_upper_bounds):
         if self.safe_value == np.inf:
@@ -105,12 +84,3 @@ class Constellation:
         if not np.all(np.isfinite(sample)):
             raise ValueError()
         return sample, (normal_logp - sample_logp) + branch_logp
-
-    """
-    except:
-        sample = np.random.normal(loc, scale)
-        prob = 1.
-        for (samp, l, s) in zip(sample, loc, scale):
-            prob *= norm.pdf(samp, l, s)
-        return sample, np.log(prob + 1e-12)
-    """

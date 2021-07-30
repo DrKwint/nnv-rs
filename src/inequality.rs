@@ -30,7 +30,7 @@ impl<T: 'static + Float> Inequality<T> {
 		self.rhs.len()
 	}
 
-	pub fn add_eqns(&mut self, eqns: &Inequality<T>) {
+	pub fn add_eqns(&mut self, eqns: &Self) {
 		self.coeffs.append(Axis(0), eqns.coeffs.view()).unwrap();
 		self.rhs.append(Axis(0), eqns.rhs.view()).unwrap();
 	}

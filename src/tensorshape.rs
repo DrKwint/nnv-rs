@@ -14,7 +14,7 @@ impl TensorShape {
 	}
 
 	pub fn is_fully_defined(&self) -> bool {
-		self.dims.iter().all(|x| x.is_some())
+		self.dims.iter().all(Option::is_some)
 	}
 
 	pub fn as_defined_slice(&self) -> Option<Vec<usize>> {
@@ -50,6 +50,7 @@ impl Index<isize> for TensorShape {
 		if idx < 0 {
 			idx += self.dims.len() as isize;
 		}
+		assert!(idx > 0);
 		&self.dims[idx as usize]
 	}
 }

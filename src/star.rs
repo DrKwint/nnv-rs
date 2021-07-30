@@ -1,6 +1,8 @@
+#![allow(clippy::module_name_repetitions, clippy::similar_names)]
 //! Implementation of [star sets](https://link.springer.com/chapter/10.1007/978-3-030-30942-8_39)
 //! for representing affine transformed sets
 use crate::affine::{Affine, Affine2, Affine4};
+use crate::bounds::Bounds1;
 use crate::inequality::Inequality;
 use crate::polytope::Polytope;
 use crate::tensorshape::TensorShape;
@@ -39,12 +41,6 @@ pub type Star4<A> = Star<A, Ix4>;
 /// Based on: Tran, Hoang-Dung, et al. "Star-based reachability analysis of
 /// deep neural networks." International Symposium on Formal Methods. Springer,
 /// Cham, 2019.
-///
-/// Shapes
-/// basis - \[input_dim, repr_dim\]
-/// center - \[repr_dim\]
-/// constraints - \[num_constraints, input_dim\]
-/// upper_bounds - \[num_constraints\]
 #[derive(Clone, Debug)]
 pub struct Star<T: Float, D: Dimension> {
     /// `representation` is the concatenation of [basis center] (where center is a column vector) and captures information about the transformed set
@@ -94,12 +90,11 @@ where
         n: usize,
         max_iters: usize,
     ) -> (f64, f64, f64) {
-        if let Some(input_region) = &self.constraints {
-            input_region.gaussian_cdf(mu, sigma, n, max_iters)
-        } else {
-            // No constraints means the entire distribution is in the input region
-            (1., 0., 1.)
-        }
+        self.constraints
+            .as_ref()
+            .map_or((1., 0., 1.), |input_region| {
+                input_region.gaussian_cdf(mu, sigma, n, max_iters)
+            })
     }
 }
 
@@ -113,6 +108,7 @@ where
         + std::ops::MulAssign,
     f64: std::convert::From<T>,
 {
+    /// # Panics
     pub fn gaussian_sample<R: Rng>(
         self,
         rng: &mut R,
@@ -120,7 +116,7 @@ where
         sigma: &Array2<T>,
         n: usize,
         max_iters: usize,
-        input_bounds: &Option<(Array1<T>, Array1<T>)>,
+        input_bounds: &Option<Bounds1<T>>,
     ) -> Vec<(Array1<T>, T)> {
         match self.ndim() {
             2 => {
@@ -134,19 +130,21 @@ where
         }
     }
 
+    /// # Panics
     pub fn step_relu(self, idx: usize) -> Vec<Self> {
         match self.ndim() {
             2 => {
                 let star: Star2<T> = self.into_dimensionality::<Ix2>().unwrap();
                 star.step_relu2(idx)
                     .into_iter()
-                    .map(|x| x.into_dyn())
+                    .map(Star::into_dyn)
                     .collect()
             }
             _ => panic!(),
         }
     }
 
+    /// # Panics
     pub fn affine_map(self, aff: Affine<T, IxDyn>) -> Self {
         match self.ndim() {
             2 => {
@@ -158,6 +156,7 @@ where
         }
     }
 
+    /// # Panics
     pub fn get_min(self, idx: usize) -> T {
         match self.ndim() {
             2 => self.into_dimensionality::<Ix2>().unwrap().get_min(idx),
@@ -165,6 +164,7 @@ where
         }
     }
 
+    /// # Panics
     pub fn get_max(self, idx: usize) -> T {
         match self.ndim() {
             2 => self.into_dimensionality::<Ix2>().unwrap().get_max(idx),
@@ -172,6 +172,7 @@ where
         }
     }
 
+    /// # Errors
     pub fn into_dimensionality<D: Dimension>(self) -> Result<Star<T, D>, ShapeError> {
         let constraints = self.constraints;
         self.representation
@@ -196,6 +197,8 @@ where
     /// Create a new Star with given dimension.
     ///
     /// By default this Star covers the space because it has no constraints. To add constraints call `.add_constraints`.
+    ///
+    /// # Panics
     pub fn default(input_shape: &TensorShape) -> Self {
         assert_eq!(input_shape.rank(), 1);
         assert!(input_shape.is_fully_defined());
@@ -216,13 +219,11 @@ where
         }
     }
 
-    pub fn with_input_bounds(mut self, lower_bounds: Array1<T>, upper_bounds: Array1<T>) -> Self {
+    pub fn with_input_bounds(mut self, input_bounds: Bounds1<T>) -> Self {
         if self.constraints.is_some() {
-            self.constraints = self
-                .constraints
-                .map(|x| x.with_input_bounds(lower_bounds, upper_bounds));
+            self.constraints = self.constraints.map(|x| x.with_input_bounds(input_bounds));
         } else {
-            self.constraints = Some(Polytope::from_input_bounds(lower_bounds, upper_bounds));
+            self.constraints = Some(Polytope::from(input_bounds));
         }
         self
     }
@@ -321,7 +322,9 @@ where
             .map_or(false, crate::polytope::Polytope::is_empty)
     }
 
-    #[allow(clippy::too_many_lines)]
+    /// # Panics
+    // Allow if_let_else because rng is used in both branches, so closures don't work
+    #[allow(clippy::too_many_lines, clippy::option_if_let_else)]
     pub fn gaussian_sample<R: Rng>(
         &self,
         rng: &mut R,
@@ -329,11 +332,13 @@ where
         sigma: &Array2<T>,
         n: usize,
         max_iters: usize,
-        input_bounds: &Option<(Array1<T>, Array1<T>)>,
+        input_bounds: &Option<Bounds1<T>>,
     ) -> Vec<(Array1<f64>, f64)> {
         // remove fixed dimensions from mu and sigma
         if let Some(poly) = &self.constraints {
-            if let Some((lbs, ubs)) = input_bounds {
+            if let Some(bounds) = input_bounds {
+                let lbs = bounds.lower();
+                let ubs = bounds.upper();
                 let unfixed_idxs = Zip::from(lbs).and(ubs).map_collect(|&lb, &ub| lb != ub);
                 let sigma_rows: Vec<ArrayView2<T>> = sigma
                     .rows()
@@ -358,7 +363,7 @@ where
                     .map(|(&val, _fix)| val)
                     .collect();
                 let (reduced_poly, (_reduced_lbs, _reduced_ubs)) =
-                    poly.reduce_fixed_inputs(lbs, ubs);
+                    poly.reduce_fixed_inputs(&lbs, &ubs);
                 reduced_poly.gaussian_sample(rng, &reduced_mu, &reduced_sigma, n, max_iters)
             } else {
                 poly.gaussian_sample(rng, mu, sigma, n, max_iters)
@@ -374,6 +379,8 @@ impl<T: 'static + Float> Star4<T> {
     /// Create a new Star with given dimension.
     ///
     /// By default this Star covers the space because it has no constraints. To add constraints call `.add_constraints`.
+    ///
+    /// # Panics
     pub fn default(input_shape: &TensorShape) -> Self {
         assert_eq!(input_shape.rank(), 3);
         assert!(input_shape.is_fully_defined());

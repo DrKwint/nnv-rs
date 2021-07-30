@@ -1,3 +1,6 @@
+use crate::affine::Affine2;
+use crate::bounds::Bounds1;
+use crate::deeppoly::deep_poly_relu;
 use crate::star::Star;
 use crate::tensorshape::TensorShape;
 use crate::Affine;
@@ -87,35 +90,62 @@ where
 	}
 
 	/// Give the concrete output shape that results from giving an input with the specified shape
-	pub fn calculate_output_shape(&self, input_shape: &TensorShape) -> TensorShape {
+	pub fn calculate_output_shape(&self, _input_shape: &TensorShape) -> TensorShape {
 		todo!()
 	}
 
 	pub fn new_dense(mul: Array2<T>, shift: Array1<T>) -> Self {
-		Layer::Dense(Affine::<T, Ix2>::new(mul, shift))
+		Self::Dense(Affine::<T, Ix2>::new(mul, shift))
 	}
 
 	pub fn new_conv(filters: Array4<T>, shift: Array1<T>) -> Self {
-		Layer::Conv(Affine::<T, Ix4>::new(filters, shift))
+		Self::Conv(Affine::<T, Ix4>::new(filters, shift))
 	}
 
 	pub fn new_maxpool(pool_size: usize) -> Self {
-		Layer::MaxPooling2D(pool_size)
+		Self::MaxPooling2D(pool_size)
 	}
 
 	pub fn new_relu(num_dims: usize) -> Self {
-		Layer::ReLU(num_dims)
+		Self::ReLU(num_dims)
 	}
 
-	pub fn apply(&self, star: Star<T, IxDyn>) -> Star<T, IxDyn> {
+	pub fn apply_star(&self, star: Star<T, IxDyn>) -> Star<T, IxDyn> {
 		match self {
 			Layer::Dense(aff) => {
 				assert_eq!(star.ndim(), 2);
 				star.into_dimensionality::<Ix2>()
 					.unwrap()
-					.affine_map2(&aff)
+					.affine_map2(aff)
 					.into_dyn()
 			}
+			_ => panic!(),
+		}
+	}
+}
+
+impl<T> Layer<T>
+where
+	T: 'static
+		+ Float
+		+ std::convert::From<f64>
+		+ std::convert::Into<f64>
+		+ ndarray::ScalarOperand
+		+ std::fmt::Display
+		+ std::fmt::Debug
+		+ std::ops::MulAssign
+		+ Default,
+	f64: std::convert::From<T>,
+{
+	pub fn apply_bounds(
+		&self,
+		lower_aff: &Affine2<T>,
+		upper_aff: &Affine2<T>,
+		bounds: &Bounds1<T>,
+	) -> (Bounds1<T>, (Affine2<T>, Affine2<T>)) {
+		match self {
+			Layer::Dense(aff) => (bounds.clone(), (aff * lower_aff, aff * upper_aff)),
+			Layer::ReLU(ndims) => deep_poly_relu(bounds, lower_aff, upper_aff),
 			_ => panic!(),
 		}
 	}

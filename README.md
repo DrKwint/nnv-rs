@@ -17,6 +17,12 @@ Build Python package
 6. Switch to nightly Rust with `rustup default nightly`
 7. Build and install the Rust-backed Python package with `python ./setup.py install`
 
+To do
+-----
+1. Implement proper bounds checking with DeepPoly
+  - Figure out how to run DeepPoly from a star rather than input bounds
+2. Implement constellation importance sampling
+
 Troubleshooting
 ---------------
 

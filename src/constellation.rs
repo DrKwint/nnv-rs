@@ -1,4 +1,5 @@
 //! Data structure representing the paths through a DNN with sets as input/output
+use crate::bounds::Bounds1;
 use crate::star::Star;
 use crate::Layer;
 use crate::DNN;
@@ -14,7 +15,7 @@ pub struct Constellation<T: Float> {
 	arena: Arena<StarNode<T>>,
 	root: NodeId,
 	dnn: DNN<T>,
-	input_bounds: Option<(Array1<T>, Array1<T>)>,
+	input_bounds: Option<Bounds1<T>>,
 }
 
 impl<T: Float> Constellation<T>
@@ -25,16 +26,11 @@ where
 		+ std::ops::MulAssign
 		+ std::fmt::Display
 		+ std::fmt::Debug
-		+ std::ops::AddAssign
-		+ Float,
+		+ std::ops::AddAssign,
 	f64: std::convert::From<T>,
 {
 	/// Instantiate a Constellation with given input set and network
-	pub fn new(
-		input_star: Star<T, IxDyn>,
-		dnn: DNN<T>,
-		input_bounds: Option<(Array1<T>, Array1<T>)>,
-	) -> Self {
+	pub fn new(input_star: Star<T, IxDyn>, dnn: DNN<T>, input_bounds: Option<Bounds1<T>>) -> Self {
 		let star_node = StarNode {
 			star: input_star,
 			dnn_layer: 0,
@@ -78,6 +74,8 @@ where
 	/// * `cdf_samples` - Number of samples to use in estimating a polytope's CDF under the Gaussian
 	/// * `num_samples` - Number of samples to return from the final star that's sampled
 	///
+	/// # Panics
+	///
 	/// # Returns
 	///
 	/// (Vec of samples, Array of sample probabilities, branch probability)
@@ -111,6 +109,8 @@ where
 		}
 	}
 
+	/// # Panics
+	#[allow(clippy::too_many_lines)]
 	pub fn sample_safe_star(
 		&mut self,
 		loc: &Array1<T>,
@@ -136,14 +136,14 @@ where
 					.gaussian_cdf(loc, scale, cdf_samples, max_iters);
 			path.drain(..).rev().for_each(|x| {
 				// check if all chilren are infeasible
-				if !x.children(arena).any(|x| arena[x].get().is_feasible) {
+				if x.children(arena).any(|x| arena[x].get().is_feasible) {
+					// if not infeasible, update CDF
+					arena[x].get_mut().add_cdf(T::neg(T::one()) * infeas_cdf);
+				} else {
 					arena[x].get_mut().set_feasible(false);
 					infeas_cdf = arena[x]
 						.get_mut()
 						.gaussian_cdf(loc, scale, cdf_samples, max_iters)
-				} else {
-					// if not infeasible, update CDF
-					arena[x].get_mut().add_cdf(T::neg(T::one()) * infeas_cdf);
 				}
 			});
 			*path_logp = T::zero();
@@ -248,15 +248,12 @@ where
 								};
 								// Safe unwrap due to above handling
 								let dist = Bernoulli::new(fst_prob.into()).unwrap();
-								match dist.sample(&mut rng) {
-									true => {
-										path_logp += fst_prob.ln();
-										children[0]
-									}
-									false => {
-										path_logp += (T::one() - fst_prob).ln();
-										children[1]
-									}
+								if dist.sample(&mut rng) {
+									path_logp += fst_prob.ln();
+									children[0]
+								} else {
+									path_logp += (T::one() - fst_prob).ln();
+									children[1]
 								}
 							}
 						}
@@ -266,197 +263,6 @@ where
 			}
 		}
 	}
-
-	/*
-	#[allow(clippy::too_many_lines)]
-	pub fn sample_multivariate_gaussian(
-		&mut self,
-		loc: &Array1<T>,
-		scale: &Array2<T>,
-		safe_value: T,
-		cdf_samples: usize,
-		num_samples: usize,
-		max_iters: usize,
-	) -> (Vec<(Array1<f64>, f64)>, f64) {
-		let mut current_node = 0;
-		let mut rng = rand::thread_rng();
-		let mut path = vec![];
-		let mut path_logp = 0.;
-		let output: Vec<(Array1<f64>, f64)>;
-		loop {
-			if current_node == 0 {
-				path = vec![0];
-				path_logp = 0.
-			} else {
-				path.push(current_node);
-			}
-			// base case for feasability
-			if current_node == 0 && !self.arena[current_node].is_feasible {
-				output = self.arena[current_node].star.trunc_gaussian_sample(
-					loc,
-					scale,
-					num_samples,
-					max_iters,
-				);
-				break;
-			}
-			let bounds = self.overestimate_output_range(
-				self.arena[current_node].star.clone(),
-				self.arena[current_node].layer,
-			);
-			if self.arena[current_node].cdf.is_none() {
-				self.arena[current_node].cdf = Some(
-					self.arena[current_node]
-						.star
-						.trunc_gaussian_cdf(loc, scale, cdf_samples, max_iters)
-						.0,
-				);
-			}
-			current_node = if bounds.1 <= safe_value {
-				// sample current node
-				output = self.arena[current_node].star.trunc_gaussian_sample(
-					loc,
-					scale,
-					num_samples,
-					max_iters,
-				);
-				break;
-			} else if bounds.0 > safe_value {
-				// at root, if lb is too high then no output will be safe, so just sample
-				if current_node == 0 {
-					output = self.arena[current_node].star.trunc_gaussian_sample(
-						loc,
-						scale,
-						num_samples,
-						max_iters,
-					);
-					break;
-				}
-				// restart
-				self.arena[current_node].is_feasible = false;
-				let current_cdf = self.arena[current_node].cdf.unwrap();
-				for idx in &path {
-					if let Some(x) = self.arena[*idx].cdf.as_mut() {
-						*x -= current_cdf
-					};
-				}
-				0
-			} else {
-				// expand
-				let children = self.expand_node(current_node);
-				match children.len() {
-					// leaf node
-					0 => {
-						output = self.arena[current_node].star.trunc_gaussian_sample(
-							loc,
-							scale,
-							num_samples,
-							max_iters,
-						);
-						break;
-					}
-					// affine or pos def stepRelu
-					1 => {
-						if self.arena[children[0]].is_feasible {
-							children[0]
-						} else {
-							self.arena[current_node].is_feasible = false;
-							let current_cdf = self.arena[current_node].cdf.unwrap();
-							for idx in &path {
-								if let Some(x) = self.arena[*idx].cdf.as_mut() {
-									*x -= current_cdf
-								}
-							}
-							0
-						}
-					}
-					// stepRelu with pos and neg children
-					// In this branch, there can only be exactly two children
-					_ => {
-						match (
-							self.arena[children[0]].is_feasible,
-							self.arena[children[1]].is_feasible,
-						) {
-							(false, false) => {
-								self.arena[current_node].is_feasible = false;
-								let current_cdf = self.arena[current_node].cdf.unwrap();
-								for idx in &path {
-									if let Some(x) = self.arena[*idx].cdf.as_mut() {
-										*x -= current_cdf
-									};
-								}
-								0
-							}
-							(false, true) => children[1],
-							(true, false) => children[0],
-							(true, true) => {
-								// Bernoulli trial to choose child
-								let a_prob = if self.arena[children[0]].cdf.is_some() {
-									self.arena[children[0]].cdf.unwrap()
-								} else {
-									let prob = self.arena[children[0]]
-										.star
-										.trunc_gaussian_cdf(loc, scale, cdf_samples, max_iters)
-										.0;
-									self.arena[children[0]].cdf = Some(prob);
-									prob
-								};
-								let b_prob = if self.arena[children[1]].cdf.is_some() {
-									self.arena[children[0]].cdf.unwrap()
-								} else {
-									let prob = self.arena[children[1]]
-										.star
-										.trunc_gaussian_cdf(loc, scale, cdf_samples, max_iters)
-										.0;
-									self.arena[children[0]].cdf = Some(prob);
-									prob
-								};
-								match Bernoulli::new(a_prob / (a_prob + b_prob)) {
-									// bernoulli error restart
-									Err(_) => {
-										self.arena[current_node].is_feasible = false;
-										let current_cdf = self.arena[current_node].cdf.unwrap();
-										for idx in &path {
-											if let Some(x) = self.arena[*idx].cdf.as_mut() {
-												*x -= current_cdf
-											};
-										}
-										0
-									} // if there's an error, return to the root
-									Ok(bernoulli) => {
-										if bernoulli.sample(&mut rng) {
-											path_logp -= (a_prob / (a_prob + b_prob)).ln();
-											children[0]
-										} else {
-											path_logp -= (b_prob / (a_prob + b_prob)).ln();
-											children[1]
-										}
-									}
-								}
-							}
-						}
-					}
-				}
-			};
-		}
-		(output, path_logp)
-	}
-	*/
-
-	/*
-	fn add_node(
-		&mut self,
-		star: Star<T>,
-		parent: usize,
-		layer: usize,
-		remaining_steps: Option<usize>,
-	) -> usize {
-		let idx = self.arena.len();
-		let node = StarNode::new(idx, Some(parent), star, layer, remaining_steps);
-		self.arena.push(node);
-		idx
-	}
-	*/
 }
 
 #[derive(Debug, Clone)]
@@ -496,20 +302,22 @@ where
 		n: usize,
 		max_iters: usize,
 	) -> T {
-		if let Some(cdf) = self.cdf {
-			cdf
-		} else {
-			let out = self.star.trunc_gaussian_cdf(mu, sigma, n, max_iters);
-			let cdf = out.0.into();
-			self.cdf = Some(cdf);
-			cdf
-		}
+		self.cdf.map_or_else(
+			|| {
+				let out = self.star.trunc_gaussian_cdf(mu, sigma, n, max_iters);
+				let cdf = out.0.into();
+				self.cdf = Some(cdf);
+				cdf
+			},
+			|cdf| cdf,
+		)
 	}
 
 	pub fn set_cdf(&mut self, val: T) {
 		self.cdf = Some(val);
 	}
 
+	/// # Panics
 	pub fn add_cdf(&mut self, add: T) {
 		if let Some(ref mut cdf) = self.cdf {
 			*cdf += add
@@ -525,7 +333,7 @@ where
 		sigma: &Array2<T>,
 		n: usize,
 		max_iters: usize,
-		input_bounds: &Option<(Array1<T>, Array1<T>)>,
+		input_bounds: &Option<Bounds1<T>>,
 	) -> Vec<(Array1<T>, T)> {
 		self.star
 			.clone()
@@ -533,23 +341,24 @@ where
 	}
 
 	pub fn get_output_bounds(&mut self, dnn: &DNN<T>, idx: usize) -> (T, T) {
-		if let Some(bounds) = self.output_bounds {
-			bounds
-		} else {
-			// TODO: update this to use DeepPoly to get proper bounds rather than this estimate
-			let bounds = {
-				let out_star = dnn
-					.get_layers()
-					.iter()
-					.skip(self.dnn_layer)
-					.fold(self.star.clone(), |s: Star<T, IxDyn>, l: &Layer<T>| {
-						l.apply(s)
-					});
-				(out_star.clone().get_min(idx), out_star.get_max(idx))
-			};
-			self.output_bounds = Some(bounds);
-			bounds
-		}
+		self.output_bounds.map_or_else(
+			|| {
+				// TODO: update this to use DeepPoly to get proper bounds rather than this estimate
+				let bounds = {
+					let out_star = dnn
+						.get_layers()
+						.iter()
+						.skip(self.dnn_layer)
+						.fold(self.star.clone(), |s: Star<T, IxDyn>, l: &Layer<T>| {
+							l.apply_star(s)
+						});
+					(out_star.clone().get_min(idx), out_star.get_max(idx))
+				};
+				self.output_bounds = Some(bounds);
+				bounds
+			},
+			|bounds| bounds,
+		)
 	}
 
 	pub fn get_expanded(&self) -> bool {
@@ -560,6 +369,7 @@ where
 		self.is_expanded = true;
 	}
 
+	/// # Panics
 	pub fn expand(&self, dnn: &DNN<T>) -> Vec<Self> {
 		// check if there is a step relu to do
 		if let Some(relu_step) = self.remaining_steps {
@@ -583,7 +393,7 @@ where
 				.collect()
 		} else if let Some(layer) = dnn.get_layer(self.dnn_layer) {
 			vec![Self {
-				star: layer.apply(self.star.clone()),
+				star: layer.apply_star(self.star.clone()),
 				dnn_layer: self.dnn_layer + 1,
 				remaining_steps: Some(
 					dnn.get_layer(self.dnn_layer).unwrap().output_shape()[-1].unwrap() - 1,
@@ -599,46 +409,3 @@ where
 		}
 	}
 }
-
-/*
-#[cfg(test)]
-mod tests {
-	extern crate ndarray_rand;
-	use super::*;
-	use ndarray_rand::rand_distr::Normal;
-	use ndarray_rand::RandomExt;
-
-	#[test]
-	fn it_works() {
-		let star = Star::default(2);
-		let normal = Normal::new(0., 1.).unwrap();
-		let layers = vec![(3, 2), (2, 1)];
-		let a = layers.iter().map(|&x| Array2::random(x, normal));
-		let b = layers.iter().map(|&x| Array1::random(x.1, normal));
-		let dnn = a.zip(b).map(|x| Affine::new(x.0, x.1)).collect();
-
-		let _constellation = Constellation::new(star, dnn);
-	}
-
-	#[test]
-	fn sample_test() {
-		let dist = Normal::new(0., 1.).unwrap();
-		let generate_layer = |in_, out_| {
-			Affine::new(
-				Array2::random((in_, out_), dist),
-				Array1::random(out_, dist),
-			)
-		};
-		let star = Star::default(4);
-		let a = generate_layer(4, 64);
-		let b = generate_layer(64, 2);
-		let c = generate_layer(2, 1);
-		let mut constellation = Constellation::new(star, vec![a, b, c]);
-
-		let loc = Array1::zeros(4);
-		let scale = Array2::eye(4);
-		let val = constellation.sample_multivariate_gaussian(&loc, &scale, -100., 10000, 10, 10);
-		print!("{:?}", val);
-	}
-}
-*/
