@@ -5,6 +5,8 @@ extern crate ndarray;
 extern crate ndarray_linalg;
 extern crate ndarray_stats;
 extern crate num;
+#[cfg(test)]
+extern crate proptest;
 extern crate rand;
 extern crate shh;
 extern crate truncnorm;
@@ -18,9 +20,12 @@ mod inequality;
 pub mod polytope;
 pub mod star;
 mod tensorshape;
+#[cfg(test)]
+mod test_util;
 pub mod util;
 
 use crate::bounds::Bounds;
+use crate::bounds::Bounds1;
 use crate::dnn::Layer;
 use crate::dnn::DNN;
 use crate::star::Star4;
@@ -29,6 +34,7 @@ use constellation::Constellation;
 use numpy::PyArray1;
 use numpy::{PyReadonlyArray1, PyReadonlyArray2, PyReadonlyArray4};
 use pyo3::prelude::*;
+use pyo3::types::PyTuple;
 use pyo3::PyObjectProtocol;
 use rand::thread_rng;
 use star::Star2;
@@ -68,6 +74,22 @@ impl PyDNN {
 
     fn add_flatten(&mut self) {
         self.dnn.add_layer(Layer::Flatten)
+    }
+
+    fn deeppoly_output_bounds(
+        &self,
+        lower_input_bounds: PyReadonlyArray1<f64>,
+        upper_input_bounds: PyReadonlyArray1<f64>,
+    ) -> Py<PyTuple> {
+        let lbs = lower_input_bounds.as_array().to_owned();
+        let ubs = upper_input_bounds.as_array().to_owned();
+        let input_bounds = Bounds1::new(lbs, ubs);
+        let output_bounds = deeppoly::deep_poly(input_bounds, &self.dnn);
+        let gil = Python::acquire_gil();
+        let py = gil.python();
+        let out_lbs = PyArray1::from_array(py, &output_bounds.lower());
+        let out_ubs = PyArray1::from_array(py, &output_bounds.upper());
+        PyTuple::new(py, &[out_lbs, out_ubs]).into()
     }
 }
 

@@ -31,9 +31,9 @@ truncnorm = "^0.1.0"
 shh = "^1.0.1"
 
 [dev-dependencies]
-quickcheck = "^1.0.3"
-quickcheck_macros = "^1.0.0"
 ndarray-rand = "^0.14.0"
+proptest = "1.0.0"
+proptest-derive = "0.2.0"
 
 [profile.release]
 lto = true

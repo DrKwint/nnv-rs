@@ -22,6 +22,7 @@ To do
 1. Implement proper bounds checking with DeepPoly
   - Figure out how to run DeepPoly from a star rather than input bounds
 2. Implement constellation importance sampling
+3. Implement neural network argmax
 
 Troubleshooting
 ---------------

@@ -8,7 +8,6 @@ use ndarray::{Array2, ArrayView1};
 use ndarray_linalg::SVD;
 use std::cmp::max;
 use std::collections::HashMap;
-use std::fmt::Debug;
 
 pub fn l2_norm(x: ArrayView1<f64>) -> f64 {
     x.dot(&x).sqrt()
@@ -70,7 +69,7 @@ impl IntoAffineExpression for LinearExpression {
 }
 
 /// # Panics
-pub fn solve<'a, I, T: 'a + Debug>(
+pub fn solve<'a, I, T: 'a>(
     A: I,
     b: ArrayView1<T>,
     c: ArrayView1<T>,

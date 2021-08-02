@@ -15,6 +15,9 @@ class DNN:
         else:
             raise NotImplementedError()
 
+    def deeppoly_bounds(self, lower, upper):
+        return self.dnn.deeppoly_output_bounds(lower, upper)
+
     def build_from_tensorflow_module(self, network):
         from tensorflow.keras.layers import InputLayer, Dense, Conv2D, MaxPooling2D, Flatten
 
