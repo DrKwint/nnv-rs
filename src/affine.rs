@@ -230,3 +230,28 @@ impl<T: 'static + Float> Affine<T, Ix4> {
         TensorShape::new(vec![None, None, Some(self.basis.shape()[2])])
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::test_util::affine2;
+    use crate::test_util::array1;
+    use proptest::prelude::*;
+
+    proptest! {
+
+        #[test]
+        fn test_affine_composability(start in array1(16), aff_1 in affine2(16, 16), aff_2 in affine2(16, 16)) {
+            let result_1 = (&aff_1 * &aff_2).apply(&start.view());
+            let result_2 = aff_1.apply(&aff_2.apply(&start.view()).view());
+            prop_assert_eq!(result_1, result_2);
+        }
+    }
+
+    /*
+    #[test]
+    fn get_eqn_works() {}
+
+    #[test]
+    fn apply_works() {}
+     */
+}

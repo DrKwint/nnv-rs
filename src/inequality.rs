@@ -82,3 +82,10 @@ impl<T: 'static + Float> From<Affine2<T>> for Inequality<T> {
         }
     }
 }
+/*
+#tests
+
+test_add_eqns
+
+test_reduce_with_values
+*/
