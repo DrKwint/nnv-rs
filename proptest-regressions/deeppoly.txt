@@ -1,0 +1,7 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 8533443d339b8469164f04b03c699fec5ee2b97edbf885680217ec3d3d27ce30 # shrinks to dnn = DNN { layers: [Dense(Affine { basis: [[0.0, 0.0, 0.0, -0.0]], shape=[1, 4], strides=[4, 1], layout=CFcf (0xf), const ndim=2, shift: [0.0], shape=[1], strides=[1], layout=CFcf (0xf), const ndim=1 }), ReLU(1), Dense(Affine { basis: [[0.0]], shape=[1, 1], strides=[1, 1], layout=CFcf (0xf), const ndim=2, shift: [0.0], shape=[1], strides=[1], layout=CFcf (0xf), const ndim=1 }), ReLU(1), Dense(Affine { basis: [[0.0]], shape=[1, 1], strides=[1, 1], layout=CFcf (0xf), const ndim=2, shift: [0.0], shape=[1], strides=[1], layout=CFcf (0xf), const ndim=1 }), ReLU(1), Dense(Affine { basis: [[0.0]], shape=[1, 1], strides=[1, 1], layout=CFcf (0xf), const ndim=2, shift: [0.0], shape=[1], strides=[1], layout=CFcf (0xf), const ndim=1 }), ReLU(1)] }, input_bounds = Bounds { data: [[0.0, 0.0, 0.0, 0.0],  [0.0, 0.0, 0.0, 0.0]], shape=[2, 4], strides=[4, 1], layout=Cc (0x5), const ndim=2 }
