@@ -9,15 +9,17 @@ use ndarray::ArrayView;
 use ndarray::ArrayViewMut;
 use ndarray::Axis;
 use ndarray::Ix2;
+use ndarray::RemoveAxis;
 use ndarray::Zip;
 use ndarray::{stack, Array, Dimension};
 use num::Float;
 use rand::distributions::Uniform;
 use rand::rngs::StdRng;
+use std::fmt::Display;
 
 pub type Bounds1<T> = Bounds<T, Ix2>;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Bounds<T: Float, D: Dimension> {
 	data: Array<T, D>,
 }
@@ -62,7 +64,7 @@ impl<T: Float, D: Dimension + ndarray::RemoveAxis> Bounds<T, D> {
 	pub fn is_member(&self, x: &ArrayView<T, D::Smaller>) -> bool {
 		Zip::from(x)
 			.and(self.bounds_iter())
-			.all(|&x, bounds| bounds[0] < x && x < bounds[1])
+			.all(|&x, bounds| bounds[0] <= x && x <= bounds[1])
 	}
 }
 
@@ -89,6 +91,12 @@ impl<T: 'static + Float + Default> Bounds1<T> {
 		let lower = aff.apply(&self.lower());
 		let upper = aff.apply(&self.upper());
 		Self::new(lower, upper)
+	}
+}
+
+impl<T: Float + Display, D: Dimension + RemoveAxis> Display for Bounds<T, D> {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::result::Result<(), std::fmt::Error> {
+		write!(f, "Lower: {}\nUpper: {}", self.lower(), self.upper())
 	}
 }
 

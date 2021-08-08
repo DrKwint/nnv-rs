@@ -210,3 +210,19 @@ impl<T: 'static + num::Float> fmt::Display for Layer<T> {
 		}
 	}
 }
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+	use crate::test_util::*;
+	use proptest::prelude::{prop_assert, proptest};
+
+	proptest! {
+		#[test]
+		fn test_relu_forward(arr in array1(4)) {
+			let relu = Layer::new_relu(4);
+			let out = relu.forward(arr.into_dyn());
+			prop_assert!(out.iter().all(|&x| x >= 0.))
+		}
+	}
+}

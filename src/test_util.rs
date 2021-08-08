@@ -16,7 +16,7 @@ use proptest::sample::SizeRange;
 use std::mem;
 
 prop_compose! {
-	pub fn array1(len: usize)(v in Vec::lift1_with(any::<f64>(), SizeRange::new(len..=len))) -> Array1<f64> {
+	pub fn array1(len: usize)(v in Vec::lift1_with(-10. .. 10., SizeRange::new(len..=len))) -> Array1<f64> {
 		Array1::from_vec(v)
 	}
 }
