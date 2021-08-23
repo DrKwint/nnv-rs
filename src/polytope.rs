@@ -1,10 +1,21 @@
-#![allow(non_snake_case)]
+#![allow(non_snake_case, clippy::similar_names)]
 //! Implementation of H-representation polytopes
-use crate::affine::Affine;
+use crate::bounds::Bounds1;
+use crate::inequality::Inequality;
+use crate::rand::distributions::Distribution;
+use rand::Rng;
+
+use crate::util::embed_identity;
 use crate::util::l2_norm;
 use crate::util::solve;
 use crate::util::LinearExpression;
 use good_lp::solvers::highs::highs;
+use ndarray::Slice;
+use ndarray::{concatenate, s, Array};
+use ndarray_linalg::solve::Inverse;
+use truncnorm::distributions::MultivariateTruncatedNormal;
+use truncnorm::truncnorm::mv_truncnormal_cdf;
+use truncnorm::truncnorm::mv_truncnormal_rand;
 
 use good_lp::Expression;
 
@@ -13,12 +24,13 @@ use good_lp::ResolutionError;
 
 use good_lp::Variable;
 use good_lp::{variable, Solution, SolverModel};
-use ndarray::Array1;
 use ndarray::Array2;
 use ndarray::ArrayView1;
 use ndarray::ArrayView2;
+use ndarray::Ix1;
 use ndarray::ScalarOperand;
 use ndarray::Zip;
+use ndarray::{array, Array1, Axis};
 
 use num::Float;
 use std::collections::HashMap;
@@ -27,211 +39,168 @@ use std::fmt::Debug;
 /// H-representation polytope
 #[derive(Clone, Debug)]
 pub struct Polytope<T: Float> {
-    halfspaces: Option<Affine<T>>,
-    lower_bounds: Option<Array1<T>>,
-    upper_bounds: Option<Array1<T>>,
+    halfspaces: Inequality<T>,
 }
 
-impl<T: 'static + Float + Debug> Polytope<T>
+impl<T: 'static> Polytope<T>
 where
-    T: std::convert::Into<f64> + std::fmt::Display + ScalarOperand,
-    f64: std::convert::From<T>,
+    T: Float + ScalarOperand + From<f64>,
+    f64: From<T>,
 {
     pub fn new(constraint_coeffs: Array2<T>, upper_bounds: Array1<T>) -> Self {
         Self {
-            halfspaces: Some(Affine::new(constraint_coeffs, upper_bounds)),
-            lower_bounds: None,
-            upper_bounds: None,
+            halfspaces: Inequality::new(constraint_coeffs, upper_bounds),
         }
     }
 
-    pub fn from_affine(halfspaces: Affine<T>) -> Self {
-        Self {
-            halfspaces: Some(halfspaces),
-            lower_bounds: None,
-            upper_bounds: None,
-        }
-    }
-
-    pub fn from_input_bounds(lower_bounds: Array1<T>, upper_bounds: Array1<T>) -> Self {
-        Self {
-            halfspaces: None,
-            lower_bounds: Some(lower_bounds),
-            upper_bounds: Some(upper_bounds),
-        }
-        //poly.with_input_bounds(lower_bounds, upper_bounds)
+    pub fn from_halfspaces(halfspaces: Inequality<T>) -> Self {
+        Self { halfspaces }
     }
 
     /// # Panics
-    pub fn with_input_bounds(mut self, lower_bounds: Array1<T>, upper_bounds: Array1<T>) -> Self {
-        self.lower_bounds = Some(lower_bounds.clone());
-        self.upper_bounds = Some(upper_bounds.clone());
-        let lbs = Affine::new(
-            Array2::eye(lower_bounds.len()) * T::from(-1.).unwrap(),
-            lower_bounds,
-        );
-        self.add_constraints(&lbs);
-        let ubs = Affine::new(Array2::eye(upper_bounds.len()), upper_bounds);
-        self.add_constraints(&ubs);
+    pub fn with_input_bounds(mut self, input_bounds: Bounds1<T>) -> Self {
+        let item = Self::from(input_bounds);
+        self.halfspaces.add_eqns(&item.halfspaces);
         self
     }
 
-    pub fn get_input_bounds(&self) -> Option<(ArrayView1<T>, ArrayView1<T>)> {
-        self.lower_bounds
-            .as_ref()
-            .map(ndarray::ArrayBase::view)
-            .zip(self.upper_bounds.as_ref().map(ndarray::ArrayBase::view))
+    pub fn coeffs(&self) -> ArrayView2<T> {
+        self.halfspaces.coeffs()
     }
 
-    pub fn get_input_lower_bound(&self) -> Option<ArrayView1<T>> {
-        self.lower_bounds.as_ref().map(ndarray::ArrayBase::view)
+    pub fn ubs(&self) -> ArrayView1<T> {
+        self.halfspaces.rhs()
     }
 
-    pub fn get_input_upper_bound(&self) -> Option<ArrayView1<T>> {
-        self.upper_bounds.as_ref().map(ndarray::ArrayBase::view)
+    pub fn add_constraints(&mut self, constraints: &Inequality<T>) {
+        self.halfspaces.add_eqns(constraints)
     }
 
-    /// # Panics
-    pub fn in_bounds(&self, x: &ArrayView1<T>) -> bool {
-        let lbs = self.lower_bounds.as_ref().unwrap();
-        let ubs = self.upper_bounds.as_ref().unwrap();
-        let fixed_idxs = Zip::from(x)
-            .and(lbs)
-            .and(ubs)
-            .map_collect(|&v, &lb, &ub| v >= lb && v <= ub);
-        fixed_idxs.iter().all(|&x| x)
-    }
-
-    pub fn reduce_fixed_inputs(&self) -> Self {
-        if let Some((halfspaces, (lbs, ubs))) = self
-            .halfspaces
-            .as_ref()
-            .zip(self.lower_bounds.as_ref().zip(self.upper_bounds.as_ref()))
-        {
-            let fixed_idxs = Zip::from(lbs).and(ubs).map_collect(|&lb, &ub| !(lb == ub));
-            let fixed_vals =
-                Zip::from(lbs)
-                    .and(ubs)
-                    .map_collect(|&lb, &ub| if lb == ub { lb } else { T::zero() });
-
-            // update eqns
-            let new_halfspaces =
-                halfspaces.reduce_with_values(fixed_vals.view(), fixed_idxs.view());
-
-            // update bounds
-            let new_lbs: Array1<T> = lbs
-                .into_iter()
-                .zip(&fixed_idxs)
-                .filter(|(_lb, &is_fix)| is_fix)
-                .map(|(&lb, _is_fix)| lb)
-                .collect();
-            let new_ubs: Array1<T> = ubs
-                .into_iter()
-                .zip(&fixed_idxs)
-                .filter(|(_ub, &is_fix)| is_fix)
-                .map(|(&ub, _is_fix)| ub)
-                .collect();
-
-            Self {
-                halfspaces: Some(new_halfspaces),
-                lower_bounds: Some(new_lbs),
-                upper_bounds: Some(new_ubs),
-            }
-        } else {
-            self.clone()
-        }
-    }
-
-    pub fn coeffs(&self) -> Option<ArrayView2<T>> {
-        self.halfspaces.as_ref().map(crate::affine::Affine::get_mul)
-    }
-
-    pub fn get_coeffs_as_rows(&self) -> Option<ArrayView2<T>> {
-        self.halfspaces
-            .as_ref()
-            .map(crate::affine::Affine::get_coeffs_as_rows)
-    }
-
-    /// # Panics
-    pub fn eqn_upper_bounds(&self) -> ArrayView1<T> {
-        self.halfspaces.as_ref().unwrap().get_shift()
-    }
-
-    /// # Panics
     pub fn num_constraints(&self) -> usize {
-        self.halfspaces.as_ref().unwrap().output_dim()
+        self.halfspaces.num_constraints()
     }
 
-    pub fn add_constraints(&mut self, constraints: &Affine<T>) {
-        match self.halfspaces.as_mut() {
-            Some(x) => x.add_eqns(constraints),
-            None => self.halfspaces = Some(constraints.clone()),
-        }
-    }
-
-    /// # Panics
     pub fn is_member(&self, point: &ArrayView1<T>) -> bool {
-        if self.coeffs().is_none() {
-            return true;
-        }
-        let vals = point.dot(&self.coeffs().unwrap());
-        Zip::from(self.eqn_upper_bounds())
+        let vals = self.coeffs().dot(point);
+        Zip::from(self.ubs())
             .and(&vals)
             .fold(true, |acc, ub, v| acc && (v <= ub))
     }
 
-    /// Check whether the Star set is empty.
-    ///
-    /// # Panics
-    pub fn is_empty(&self) -> bool {
-        let mut c = Array1::zeros(self.eqn_upper_bounds().len());
-        c[[0]] = T::one();
+    pub fn gaussian_cdf(
+        &self,
+        mu: &Array1<T>,
+        sigma: &Array2<T>,
+        n: usize,
+        max_iters: usize,
+    ) -> (f64, f64, f64) {
+        let mu = mu.mapv(std::convert::Into::into);
+        let sigma = sigma.mapv(std::convert::Into::into);
 
-        let solved = solve(
-            self.halfspaces
-                .as_ref()
-                .unwrap()
-                .get_coeffs_as_rows()
-                .rows(),
-            self.eqn_upper_bounds(),
-            c.view(),
-            self.lower_bounds.as_ref().map(ndarray::ArrayBase::view),
-            self.upper_bounds.as_ref().map(ndarray::ArrayBase::view),
-        )
-        .0;
-        !matches!(solved, Ok(_) | Err(ResolutionError::Unbounded))
+        let constraint_coeffs = self.coeffs().mapv(std::convert::Into::into);
+        let upper_bounds = self.ubs().mapv(std::convert::Into::into);
+        let mut sigma_star = constraint_coeffs.dot(&sigma.dot(&constraint_coeffs.t()));
+        let pos_def_guarator = Array2::from_diag(&Array1::from_elem(sigma_star.nrows(), 1e-12));
+        sigma_star = &sigma_star + pos_def_guarator;
+        let ub = &upper_bounds - &constraint_coeffs.dot(&mu);
+        let lb = Array1::from_elem(ub.len(), f64::NEG_INFINITY);
+        mv_truncnormal_cdf(lb, ub, sigma_star, n, max_iters)
+    }
+
+    /// # Panics
+    #[allow(clippy::too_many_lines)]
+    pub fn gaussian_sample<R: Rng>(
+        &self,
+        rng: &mut R,
+        mu: &Array1<T>,
+        sigma: &Array2<T>,
+        n: usize,
+        max_iters: usize,
+    ) -> Vec<(Array1<f64>, f64)> {
+        // convert T to f64 in inputs
+        let mu = mu.mapv(std::convert::Into::into);
+        let sigma = sigma.mapv(std::convert::Into::into);
+
+        // sample unfixed dimensions
+        let mut constraint_coeffs: Array2<f64> = self.coeffs().mapv(|x| x.into());
+        // normalise each equation
+        let row_norms: Array1<f64> = constraint_coeffs
+            .rows()
+            .into_iter()
+            .map(|row| row.mapv(|x| x * x).sum().sqrt())
+            .collect();
+        constraint_coeffs = (&constraint_coeffs.t() / &row_norms).reversed_axes();
+        let ub = self.ubs().mapv(std::convert::Into::into) / row_norms;
+
+        // embed constraint coeffs in an identity matrix
+        let sq_coeffs = embed_identity(&constraint_coeffs, None).reversed_axes();
+        // if there are more constraints than variables, add dummy variables
+        let sq_sigma = embed_identity(&sigma, Some(sq_coeffs.nrows()));
+        let sq_constr_sigma = {
+            let sigma: Array2<f64> = sq_coeffs.dot(&sq_sigma.dot(&sq_coeffs.t()));
+            let diag_addn = Array2::from_diag(&Array1::from_elem(sigma.nrows(), 1e-12));
+            sigma + diag_addn
+        };
+        let mut sq_ub = Array::from_elem(sq_coeffs.nrows(), f64::INFINITY);
+        sq_ub.slice_mut(s![..ub.len()]).assign(&ub);
+
+        let extended_reduced_mu = if sq_coeffs.nrows() == mu.len() {
+            mu.clone()
+        } else {
+            let mut e_r_mu = Array1::zeros(sq_coeffs.nrows());
+            e_r_mu.slice_mut(s![..mu.len()]).assign(&mu);
+            e_r_mu
+        };
+
+        let sq_constr_ub = &sq_ub - &sq_coeffs.dot(&extended_reduced_mu);
+        let sq_constr_lb = Array1::from_elem(sq_constr_ub.len(), f64::NEG_INFINITY);
+        let (centered_samples, logp) = if sq_constr_sigma.len() == 1 {
+            let sample = MultivariateTruncatedNormal::<Ix1>::new(
+                array![0.],
+                sq_constr_sigma.index_axis(Axis(0), 0).to_owned(),
+                sq_constr_lb,
+                sq_constr_ub,
+                max_iters,
+            )
+            .sample(rng);
+            (sample.insert_axis(Axis(1)), array![1.])
+        } else {
+            mv_truncnormal_rand(sq_constr_lb, sq_constr_ub, sq_constr_sigma, n, max_iters)
+        };
+        let inv_constraint_coeffs = &sq_coeffs.inv().unwrap();
+        let mut samples = inv_constraint_coeffs
+            .dot(&centered_samples.t())
+            .reversed_axes();
+        samples = samples
+            .slice_axis(Axis(1), Slice::from(0..sigma.nrows()))
+            .to_owned();
+        let mut filtered_samples: Vec<(Array1<f64>, f64)> = samples
+            .rows()
+            .into_iter()
+            .zip(logp)
+            .map(|(x, logp)| (x.to_owned() + &mu, logp))
+            .filter(|(x, _logp)| self.is_member(&x.mapv(|v| v.into()).view()))
+            .collect();
+        if filtered_samples.is_empty() {
+            filtered_samples = if let Some((x_c, _r)) = self.chebyshev_center() {
+                vec![(x_c, 0.43)]
+            } else {
+                vec![(mu, 0.43)]
+            };
+        };
+        filtered_samples
     }
 
     /// Source: <https://stanford.edu/class/ee364a/lectures/problems.pdf>
-    ///
-    /// # Panics
-    pub fn chebyshev_center(&self) -> (Array1<f64>, f64) {
-        let b = self.eqn_upper_bounds();
+    pub fn chebyshev_center(&self) -> Option<(Array1<f64>, f64)> {
+        let b = self.halfspaces.rhs();
         let mut problem = ProblemVariables::new();
         let r = problem.add_variable();
-        let x_c = if self.lower_bounds.is_some() {
-            let lowers = self.lower_bounds.as_ref().unwrap();
-            let uppers = self.upper_bounds.as_ref().unwrap();
-            lowers
-                .into_iter()
-                .zip(uppers)
-                .map(|bounds| {
-                    problem.add(
-                        variable()
-                            .min(f64::from(*bounds.0))
-                            .max(f64::from(*bounds.1)),
-                    )
-                })
-                .collect()
-        } else {
-            problem.add_vector(variable(), b.len())
-        };
+        let x_c = problem.add_vector(variable(), b.len());
         let mut unsolved = problem.maximise(r).using(highs);
 
         self.halfspaces
-            .as_ref()
-            .unwrap()
-            .get_coeffs_as_rows()
+            .coeffs()
             .rows()
             .into_iter()
             .zip(b.into_iter())
@@ -249,39 +218,86 @@ where
                     good_lp::constraint::leq(Expression::from_other_affine(expr), f64::from(*ub));
                 unsolved.add_constraint(constr);
             });
-        let soln = unsolved.solve().unwrap();
-        let x_c: Array1<f64> = x_c.into_iter().map(|x| soln.value(x)).collect();
-        (x_c, soln.value(r))
+        if let Ok(soln) = unsolved.solve() {
+            let x_c: Array1<f64> = x_c.into_iter().map(|x| soln.value(x)).collect();
+            Some((x_c, soln.value(r)))
+        } else {
+            None
+        }
     }
 
-    // <https://mathoverflow.net/questions/9854/uniformly-sampling-from-convex-polytopes>
-    // <https://arxiv.org/pdf/2007.01578.pdf>
-    //pub fn uniform_sample()
+    pub fn reduce_fixed_inputs(
+        &self,
+        lbs: &ArrayView1<T>,
+        ubs: &ArrayView1<T>,
+    ) -> (Self, (Array1<T>, Array1<T>)) {
+        let fixed_idxs = Zip::from(lbs).and(ubs).map_collect(|&lb, &ub| !(lb == ub));
+        let fixed_vals = Zip::from(lbs)
+            .and(ubs)
+            .map_collect(|&lb, &ub| if lb == ub { lb } else { T::zero() });
+
+        // update eqns
+        let new_halfspaces = self
+            .halfspaces
+            .reduce_with_values(fixed_vals.view(), fixed_idxs.view());
+
+        // update bounds
+        let new_lbs: Array1<T> = lbs
+            .into_iter()
+            .zip(&fixed_idxs)
+            .filter(|(_lb, &is_fix)| is_fix)
+            .map(|(&lb, _is_fix)| lb)
+            .collect();
+        let new_ubs: Array1<T> = ubs
+            .into_iter()
+            .zip(&fixed_idxs)
+            .filter(|(_ub, &is_fix)| is_fix)
+            .map(|(&ub, _is_fix)| ub)
+            .collect();
+
+        let reduced_poly = Self {
+            halfspaces: new_halfspaces,
+        };
+        (reduced_poly, (new_lbs, new_ubs))
+    }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use ndarray::array;
+impl<T: 'static> Polytope<T>
+where
+    T: Float + ScalarOperand + From<f64> + Debug,
+    f64: From<T>,
+{
+    /// Check whether the Star set is empty.
+    ///
+    /// # Panics
+    pub fn is_empty(&self) -> bool {
+        let mut c = Array1::zeros(self.halfspaces.rhs().len());
+        c[[0]] = T::one();
 
-    #[test]
-    fn test_is_empty() {
-        let coeffs = array![[0., 1.], [1., 0.]];
-        let ubs = array![0., 0.];
-        let pt = Polytope::new(coeffs, ubs);
-        assert!(!pt.is_empty());
-        let coeffs = array![[0., 0., 1.], [0., 0., -1.]];
-        let ubs = array![0., -1.];
-        let pt = Polytope::new(coeffs, ubs);
-        assert!(pt.is_empty());
+        let solved = solve(
+            self.halfspaces.coeffs().rows(),
+            self.halfspaces.rhs(),
+            c.view(),
+        )
+        .0;
+        !matches!(solved, Ok(_) | Err(ResolutionError::Unbounded))
     }
+}
 
-    #[test]
-    fn test_member() {
-        let coeffs = array![[1., 0.], [0., 1.], [1., -1.]].reversed_axes();
-        let ubs = array![0., 0., 0.];
-        let pt = Polytope::new(coeffs, ubs);
-        let _points = vec![array![0., 0.], array![1., 1.], array![0., 1.]];
-        todo!()
+// Allow a technically fallible from because we're matching array shapes in the fn body
+#[allow(clippy::fallible_impl_from)]
+impl<T: Float + ScalarOperand> From<Bounds1<T>> for Polytope<T> {
+    fn from(item: Bounds1<T>) -> Self {
+        let coeffs = concatenate(
+            Axis(0),
+            &[
+                (Array2::eye(item.ndim()) * T::neg(T::one())).view(),
+                Array2::eye(item.ndim()).view(),
+            ],
+        )
+        .unwrap();
+        let rhs = concatenate(Axis(0), &[item.lower(), item.upper()]).unwrap();
+        let halfspaces = Inequality::new(coeffs, rhs);
+        Self { halfspaces }
     }
 }
