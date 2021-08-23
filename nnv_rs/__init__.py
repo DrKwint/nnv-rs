@@ -19,6 +19,7 @@ class DNN:
         return self.dnn.deeppoly_output_bounds(lower, upper)
 
     def build_from_tensorflow_module(self, network):
+        import tensorflow as tf
         from tensorflow.keras.layers import InputLayer, Dense, Conv2D, MaxPooling2D, Flatten
 
         submodules = network.layers
@@ -35,6 +36,8 @@ class DNN:
             elif isinstance(layer, Dense):
                 weights = layer.get_weights()
                 self.dnn.add_dense(weights[0].T, weights[1])
+                if layer.activation == tf.nn.relu:
+                    self.dnn.add_relu(len(weights[1]))
             elif isinstance(layer, Conv2D):
                 weights = layer.get_weights()
                 self.dnn.add_conv(weights[0], weights[1])

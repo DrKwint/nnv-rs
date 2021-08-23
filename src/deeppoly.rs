@@ -2,6 +2,7 @@ use crate::affine::Affine2;
 use crate::bounds::Bounds1;
 use crate::DNN;
 use ndarray::Array1;
+use ndarray::Array2;
 use ndarray::ArrayView1;
 use ndarray::ArrayViewMut1;
 use ndarray::ScalarOperand;
@@ -9,6 +10,7 @@ use ndarray::Zip;
 use num::Float;
 use std::fmt::Debug;
 use std::fmt::Display;
+use std::iter::Sum;
 use std::ops::MulAssign;
 
 pub fn deep_poly_relu<
@@ -69,7 +71,7 @@ pub fn deep_poly_relu<
 
 pub fn deep_poly<T: 'static + Float>(input_bounds: Bounds1<T>, dnn: &DNN<T>) -> Bounds1<T>
 where
-	T: ScalarOperand + Display + Debug + Default + MulAssign + std::convert::From<f64>,
+	T: ScalarOperand + Display + Debug + Default + MulAssign + std::convert::From<f64> + Sum,
 	f64: std::convert::From<T>,
 {
 	let ndim = input_bounds.ndim();
@@ -78,29 +80,42 @@ where
 	let mut i = 0;
 	let aff_bounds = dnn.get_layers().iter().fold(
 		// Initialize with identity
-		(Affine2::identity(ndim), Affine2::identity(ndim)),
+		//(Affine2::identity(ndim), Affine2::identity(ndim)),
+		(
+			Affine2::new(
+				Array2::from_diag(&input_bounds.lower()),
+				Array1::zeros(ndim),
+			),
+			Affine2::new(
+				Array2::from_diag(&input_bounds.upper()),
+				Array1::zeros(ndim),
+			),
+		),
 		|(laff, uaff), layer| {
-			println!("Layer {}: {}", i, layer);
+			//println!("Layer {}: {}", i, layer);
 			i += 1;
 			// Substitute input concrete bounds into current abstract bounds
 			// to get current concrete bounds
 			let bounds_concrete = Bounds1::new(
-				laff.apply(&input_bounds.lower()),
-				uaff.apply(&input_bounds.upper()),
+				//laff.apply(&input_bounds.lower()),
+				//uaff.apply(&input_bounds.upper()),
+				laff.apply(&Array1::ones(ndim).view()),
+				uaff.apply(&Array1::ones(ndim).view()),
 			);
-			println!("concrete bounds: {}", bounds_concrete);
+			//println!("concrete bounds: {}", bounds_concrete);
 			// Calculate new abstract bounds from concrete bounds and layer
 			let out = layer.apply_bounds(&laff, &uaff, &bounds_concrete);
-			println!("abstract bounds: {}", out.0);
-			println!("affine: {:?}", out.1);
+			//println!("abstract bounds: {}", out.0);
+			//println!("affine: {:?}", out.1);
 			out.1
 		},
 	);
 	// Final substitution to get output bounds
 	Bounds1::new(
-		aff_bounds.0.apply(&input_bounds.lower()),
-		aff_bounds.1.apply(&input_bounds.upper()),
+		aff_bounds.0.apply(&Array1::ones(ndim).view()),
+		aff_bounds.1.apply(&Array1::ones(ndim).view()),
 	)
+	//aff_bounds
 }
 
 #[cfg(test)]
@@ -110,16 +125,41 @@ mod tests {
 	use crate::test_util::{bounds1, fc_dnn};
 	use crate::Layer;
 	use ndarray::Array2;
+	use ndarray::Axis;
 	use ndarray::Ix1;
 	use proptest::{prop_assert, proptest};
 
+	#[test]
+	fn test_deeppoly_concrete() {
+		let aff1: Affine2<f64> = Affine2::new(
+			Array1::from_vec(vec![0.0, 0.0, 0.0]).insert_axis(Axis(0)),
+			Array1::from_vec(vec![7.85]),
+		);
+		let dense1 = Layer::new_dense(aff1);
+		let relu1: Layer<f64> = Layer::new_relu(1);
+		let aff2 = Affine2::new(
+			Array1::from_vec(vec![9.49, 0.0]).insert_axis(Axis(1)),
+			Array1::from_vec(vec![0., 0.]),
+		);
+		let dense2 = Layer::new_dense(aff2);
+		let relu2: Layer<f64> = Layer::new_relu(2);
+		let dnn = DNN::new(vec![dense1, relu1, dense2, relu2]);
+		let bounds: Bounds1<f64> =
+			Bounds1::new(Array1::from_vec(vec![0.0, 0.0, 0.]), Array1::zeros(3));
+		println!("deep_poly: {}", deep_poly(bounds, &dnn));
+		println!(
+			"actual out: {}",
+			dnn.forward(Array1::from_vec(vec![0., 0., 0.]).into_dyn())
+		);
+	}
+
 	proptest! {
 		#[test]
-		fn test_deeppoly_correctness(dnn in fc_dnn(2, 1,0, 2), input_bounds in bounds1(2)) {
+		fn test_deeppoly_correctness(dnn in fc_dnn(8, 4, 5, 5), input_bounds in bounds1(8)) {
 			let concrete_input = input_bounds.sample_uniform(0u64);
 			let output_bounds = deep_poly(input_bounds, &dnn);
 			let concrete_output = dnn.forward(concrete_input.into_dyn()).into_dimensionality::<Ix1>().unwrap();
-			prop_assert!(output_bounds.is_member(&concrete_output.view()), "\nConcrete output: {}\nOutput bounds: {}", concrete_output, output_bounds)
+			prop_assert!(output_bounds.is_member(&concrete_output.view()), "\n\nConcrete output: {}\nOutput bounds: {}\n\n", concrete_output, output_bounds)
 		}
 	}
 

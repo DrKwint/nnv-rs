@@ -1,6 +1,7 @@
 use std::fmt::Display;
 use std::ops::Index;
 
+#[derive(Debug, Clone)]
 pub struct TensorShape {
 	dims: Vec<Option<usize>>,
 }
@@ -51,7 +52,7 @@ impl Index<isize> for TensorShape {
 		if idx < 0 {
 			idx += self.dims.len() as isize;
 		}
-		assert!(idx > 0);
+		assert!(idx >= 0, "idx {} < 0", idx);
 		&self.dims[idx as usize]
 	}
 }

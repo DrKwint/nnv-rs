@@ -62,9 +62,10 @@ impl<T: Float, D: Dimension + ndarray::RemoveAxis> Bounds<T, D> {
 	}
 
 	pub fn is_member(&self, x: &ArrayView<T, D::Smaller>) -> bool {
+		let eps = T::from(1e-5).unwrap();
 		Zip::from(x)
 			.and(self.bounds_iter())
-			.all(|&x, bounds| bounds[0] <= x && x <= bounds[1])
+			.all(|&x, bounds| bounds[0] - eps <= x && x <= bounds[1] + eps)
 	}
 }
 

@@ -43,7 +43,7 @@ prop_compose! {
 }
 
 prop_compose! {
-	pub fn sample_bounds1(bounds: Bounds1<f64>)(seed in any::<u64>()) -> Array1<f64> {
+	pub fn bounds1_sample(bounds: Bounds1<f64>)(seed in any::<u64>()) -> Array1<f64> {
 		bounds.sample_uniform(seed)
 	}
 }

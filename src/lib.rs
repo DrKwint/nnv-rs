@@ -3,6 +3,7 @@
 #![feature(unboxed_closures)]
 extern crate good_lp;
 extern crate highs;
+extern crate itertools;
 extern crate ndarray;
 extern crate ndarray_linalg;
 extern crate ndarray_stats;
@@ -35,6 +36,7 @@ use crate::dnn::DNN;
 use crate::star::Star4;
 use affine::Affine;
 use constellation::Constellation;
+use ndarray::Ix2;
 use numpy::PyArray1;
 use numpy::{PyReadonlyArray1, PyReadonlyArray2, PyReadonlyArray4};
 use pyo3::prelude::*;
@@ -80,14 +82,19 @@ impl PyDNN {
 		self.dnn.add_layer(Layer::Flatten)
 	}
 
+	fn add_relu(&mut self, ndim: usize) {
+		self.dnn.add_layer(Layer::new_relu(ndim))
+	}
+
 	fn deeppoly_output_bounds(
 		&self,
 		lower_input_bounds: PyReadonlyArray1<f64>,
 		upper_input_bounds: PyReadonlyArray1<f64>,
 	) -> Py<PyTuple> {
-		let lbs = lower_input_bounds.as_array().to_owned();
-		let ubs = upper_input_bounds.as_array().to_owned();
-		let input_bounds = Bounds1::new(lbs, ubs);
+		let input_bounds = Bounds1::new(
+			lower_input_bounds.as_array().to_owned(),
+			upper_input_bounds.as_array().to_owned(),
+		);
 		let output_bounds = deeppoly::deep_poly(input_bounds, &self.dnn);
 		let gil = Python::acquire_gil();
 		let py = gil.python();
@@ -106,7 +113,7 @@ impl PyObjectProtocol for PyDNN {
 
 #[pyclass]
 struct PyConstellation {
-	constellation: Constellation<f64>,
+	constellation: Constellation<f64, Ix2>,
 }
 
 #[pymethods]
@@ -124,15 +131,12 @@ impl PyConstellation {
 
 		let star = match input_shape.rank() {
 			1 => {
+				println!("{:?}", input_shape);
 				let mut star = Star2::default(&input_shape);
 				if let Some(ref b) = bounds {
 					star = star.with_input_bounds((*b).clone());
 				}
-				star.into_dyn()
-			}
-			3 => {
-				let star = Star4::default(&input_shape);
-				star.into_dyn()
+				star
 			}
 			_ => {
 				panic!()

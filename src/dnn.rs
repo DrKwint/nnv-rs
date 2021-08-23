@@ -5,13 +5,16 @@ use crate::deeppoly::deep_poly_relu;
 use crate::star::Star;
 use crate::tensorshape::TensorShape;
 use crate::Affine;
+use ndarray::Array;
 use ndarray::ArrayD;
 use ndarray::Ix1;
 use ndarray::Ix2;
 use ndarray::Ix4;
 use ndarray::IxDyn;
+use ndarray::Zip;
 use num::Float;
 use std::fmt;
+use std::iter::Sum;
 
 #[derive(Default, Clone, Debug)]
 pub struct DNN<T: num::Float> {
@@ -145,7 +148,11 @@ where
 
 	/// Give the concrete output shape that results from giving an input with the specified shape
 	pub fn calculate_output_shape(&self, _input_shape: &TensorShape) -> TensorShape {
-		todo!()
+		todo!();
+	}
+
+	pub fn forward2(&self, input: Array<T, Ix2>) -> Array<T, Ix2> {
+		todo!();
 	}
 
 	pub fn forward(&self, input: ArrayD<T>) -> ArrayD<T> {
@@ -160,6 +167,7 @@ where
 		}
 	}
 
+	/*
 	pub fn apply_star(&self, star: Star<T, IxDyn>) -> Star<T, IxDyn> {
 		match self {
 			Layer::Dense(aff) => {
@@ -169,6 +177,14 @@ where
 					.affine_map2(aff)
 					.into_dyn()
 			}
+			_ => panic!(),
+		}
+	}
+	*/
+
+	pub fn apply_star2(&self, star: Star<T, Ix2>) -> Star<T, Ix2> {
+		match self {
+			Layer::Dense(aff) => star.affine_map2(aff),
 			_ => panic!(),
 		}
 	}
@@ -182,7 +198,8 @@ where
 		+ std::fmt::Display
 		+ std::fmt::Debug
 		+ std::ops::MulAssign
-		+ Default,
+		+ Default
+		+ Sum,
 {
 	pub fn apply_bounds(
 		&self,
@@ -191,7 +208,13 @@ where
 		bounds: &Bounds1<T>,
 	) -> (Bounds1<T>, (Affine2<T>, Affine2<T>)) {
 		match self {
-			Layer::Dense(aff) => (bounds.clone(), (aff * lower_aff, aff * upper_aff)),
+			Layer::Dense(aff) => {
+				println!("lower_aff {}", lower_aff);
+				println!("aff {}", aff);
+				let new_lower = aff.signed_compose(lower_aff, upper_aff);
+				let new_upper = aff.signed_compose(upper_aff, lower_aff);
+				(bounds.clone(), (new_lower, new_upper))
+			}
 			Layer::ReLU(_ndims) => deep_poly_relu(bounds, lower_aff, upper_aff),
 			_ => panic!(),
 		}
