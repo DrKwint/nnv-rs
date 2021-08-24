@@ -298,15 +298,101 @@ where
 	}
 }
 
+#[derive(Debug, Clone, Copy, Default)]
+pub struct DNNIndex {
+	layer: usize,
+	remaining_steps: Option<usize>,
+}
+
 #[derive(Debug, Clone)]
+pub struct DNNIterator<'a, T: num::Float> {
+	dnn: &'a DNN<T>,
+	idx: DNNIndex,
+	finished: bool,
+}
+
+impl<T: Float> DNNIterator<'_, T> {
+	pub fn get_idx(&self) -> DNNIndex {
+		self.idx
+	}
+}
+
+impl<T: num::Float> Iterator for DNNIterator<'_, T> {
+	type Item = StarNodeType;
+
+	fn next(&mut self) -> Option<Self::Item> {
+		if self.finished {
+			return None;
+		}
+		if let Some(ref step) = self.idx.remaining_steps {
+			*step -= 1;
+			Some(StarNodeType::StepRelu {
+				dim: *step,
+				fst_child_idx: 0,
+				snd_child_idx: None,
+			})
+		} else {
+			let layer = self.dnn.get_layer(self.idx.layer);
+			match layer {
+				None => {
+					self.finished = true;
+					Some(StarNodeType::Leaf)
+				}
+				Some(Layer::Dense(aff)) => Some(StarNodeType::Affine { child_idx: 0 }),
+				Some(Layer::ReLU(ndim)) => {
+					self.idx.remaining_steps = Some(*ndim);
+					Some(StarNodeType::StepRelu {
+						dim: *ndim,
+						fst_child_idx: 0,
+						snd_child_idx: None,
+					})
+				}
+				_ => todo!(),
+			}
+		}
+	}
+}
+
+#[derive(Debug, Clone)]
+enum StarNodeType {
+	Leaf,
+	Affine {
+		child_idx: usize,
+	},
+	StepRelu {
+		dim: usize,
+		fst_child_idx: usize,
+		snd_child_idx: Option<usize>,
+	},
+	StepReluDropOut {
+		dim: usize,
+		fst_child_idx: usize,
+		snd_child_idx: Option<usize>,
+		trd_child_idx: Option<usize>,
+	},
+}
+
+#[derive(Debug)]
 pub struct StarNode<T: num::Float, D: Dimension> {
 	star: Star<T, D>,
-	dnn_layer: usize,
-	remaining_steps: Option<usize>,
-	cdf: Option<T>,
+	children: Option<StarNodeType>,
+	dnn_index: DNNIndex,
+	star_cdf: Option<T>,
 	output_bounds: Option<(T, T)>,
 	is_feasible: bool,
-	is_expanded: bool,
+}
+
+impl<T: num::Float, D: Dimension> StarNode<T, D> {
+	pub fn default(star: Star<T, D>) -> Self {
+		Self {
+			star,
+			children: None,
+			dnn_index: DNNIndex::default(),
+			star_cdf: None,
+			output_bounds: None,
+			is_feasible: true,
+		}
+	}
 }
 
 impl<T: num::Float, D: Dimension> StarNode<T, D>
@@ -328,6 +414,10 @@ where
 		self.is_feasible = val
 	}
 
+	pub fn get_expanded(&self) -> bool {
+		todo!()
+	}
+
 	pub fn gaussian_cdf(
 		&mut self,
 		mu: &Array1<T>,
@@ -335,11 +425,11 @@ where
 		n: usize,
 		max_iters: usize,
 	) -> T {
-		self.cdf.map_or_else(
+		self.star_cdf.map_or_else(
 			|| {
 				let out = self.star.trunc_gaussian_cdf(mu, sigma, n, max_iters);
 				let cdf = out.0.into();
-				self.cdf = Some(cdf);
+				self.star_cdf = Some(cdf);
 				cdf
 			},
 			|cdf| cdf,
@@ -347,24 +437,16 @@ where
 	}
 
 	pub fn set_cdf(&mut self, val: T) {
-		self.cdf = Some(val);
+		self.star_cdf = Some(val);
 	}
 
 	/// # Panics
 	pub fn add_cdf(&mut self, add: T) {
-		if let Some(ref mut cdf) = self.cdf {
+		if let Some(ref mut cdf) = self.star_cdf {
 			*cdf += add
 		} else {
 			todo!()
 		}
-	}
-
-	pub fn get_expanded(&self) -> bool {
-		self.is_expanded
-	}
-
-	pub fn set_expanded(&mut self) {
-		self.is_expanded = true;
 	}
 }
 
@@ -381,8 +463,49 @@ where
 		+ std::iter::Sum,
 	f64: std::convert::From<T>,
 {
+	pub fn expand(
+		&mut self,
+		node_arena: &mut Vec<Self>,
+		dnn_iter: &mut DNNIterator<T>,
+	) -> Vec<usize> {
+		if self.children.is_some() {
+			vec![]
+		} else {
+			// Get this node's operation from the dnn_iter
+			self.children = dnn_iter.next();
+			// Do this node's operation to produce its children
+			match self.children {
+				Some(StarNodeType::Leaf) => vec![],
+				Some(StarNodeType::StepRelu {
+					dim,
+					fst_child_idx,
+					snd_child_idx,
+				}) => {
+					let child_stars = self.star.clone().step_relu2(dim);
+					child_stars
+						.into_iter()
+						.map(|star| {
+							let idx = node_arena.len();
+							node_arena.push(Self {
+								star,
+								children: None,
+								dnn_index: dnn_iter.get_idx(),
+								star_cdf: None,
+								output_bounds: None,
+								is_feasible: false,
+							});
+							idx
+						})
+						.collect()
+				}
+				None => panic!(),
+				_ => todo!(),
+			}
+		}
+	}
+
 	/// # Panics
-	pub fn expand(&self, dnn: &DNN<T>) -> Vec<Self> {
+	pub fn expand_old(&self, dnn: &DNN<T>) -> Vec<Self> {
 		// check if there is a step relu to do
 		if let Some(relu_step) = self.remaining_steps {
 			let new_child_stars = self.star.clone().step_relu2(relu_step);
@@ -397,7 +520,7 @@ where
 					star,
 					dnn_layer: self.dnn_layer,
 					remaining_steps: new_remaining_steps,
-					cdf: None,
+					star_cdf: None,
 					output_bounds: None,
 					is_expanded: false,
 					is_feasible: true,
@@ -410,7 +533,7 @@ where
 				remaining_steps: Some(
 					dnn.get_layer(self.dnn_layer).unwrap().output_shape()[-1].unwrap() - 1,
 				),
-				cdf: None,
+				star_cdf: None,
 				output_bounds: None,
 				is_expanded: false,
 				is_feasible: true,
