@@ -56,59 +56,59 @@ struct PyDNN {
 
 #[pymethods]
 impl PyDNN {
-	#[new]
-	fn new() -> Self {
-		Self {
-			dnn: DNN::default(),
-		}
-	}
+    #[new]
+    fn new() -> Self {
+        Self {
+            dnn: DNN::default(),
+        }
+    }
 
-	pub fn input_shape(&self) -> Vec<Option<usize>> {
-		self.dnn.input_shape().into()
-	}
+    pub fn input_shape(&self) -> Vec<Option<usize>> {
+        self.dnn.input_shape().into()
+    }
 
-	fn add_dense(&mut self, filters: PyReadonlyArray2<f32>, bias: PyReadonlyArray1<f32>) {
-		self.dnn.add_layer(Layer::new_dense(Affine2::new(
-			filters.as_array().to_owned().mapv(f64::from),
-			bias.as_array().to_owned().mapv(f64::from),
-		)))
-	}
+    fn add_dense(&mut self, filters: PyReadonlyArray2<f32>, bias: PyReadonlyArray1<f32>) {
+        self.dnn.add_layer(Layer::new_dense(Affine2::new(
+            filters.as_array().to_owned().mapv(f64::from),
+            bias.as_array().to_owned().mapv(f64::from),
+        )))
+    }
 
-	fn add_conv(&mut self, filters: PyReadonlyArray4<f32>, bias: PyReadonlyArray1<f32>) {
-		self.dnn.add_layer(Layer::new_conv(Affine4::new(
-			filters.as_array().to_owned().mapv(f64::from),
-			bias.as_array().to_owned().mapv(f64::from),
-		)))
-	}
+    fn add_conv(&mut self, filters: PyReadonlyArray4<f32>, bias: PyReadonlyArray1<f32>) {
+        self.dnn.add_layer(Layer::new_conv(Affine4::new(
+            filters.as_array().to_owned().mapv(f64::from),
+            bias.as_array().to_owned().mapv(f64::from),
+        )))
+    }
 
-	fn add_maxpool(&mut self, pool_size: usize) {
-		self.dnn.add_layer(Layer::new_maxpool(pool_size))
-	}
+    fn add_maxpool(&mut self, pool_size: usize) {
+        self.dnn.add_layer(Layer::new_maxpool(pool_size))
+    }
 
-	fn add_flatten(&mut self) {
-		self.dnn.add_layer(Layer::Flatten)
-	}
+    fn add_flatten(&mut self) {
+        self.dnn.add_layer(Layer::Flatten)
+    }
 
-	fn add_relu(&mut self, ndim: usize) {
-		self.dnn.add_layer(Layer::new_relu(ndim))
-	}
+    fn add_relu(&mut self, ndim: usize) {
+        self.dnn.add_layer(Layer::new_relu(ndim))
+    }
 
-	fn deeppoly_output_bounds(
-		&self,
-		lower_input_bounds: PyReadonlyArray1<f64>,
-		upper_input_bounds: PyReadonlyArray1<f64>,
-	) -> Py<PyTuple> {
-		let input_bounds = Bounds1::new(
-			lower_input_bounds.as_array().to_owned(),
-			upper_input_bounds.as_array().to_owned(),
-		);
-		let output_bounds = deeppoly::deep_poly(input_bounds, &self.dnn);
-		let gil = Python::acquire_gil();
-		let py = gil.python();
-		let out_lbs = PyArray1::from_array(py, &output_bounds.lower());
-		let out_ubs = PyArray1::from_array(py, &output_bounds.upper());
-		PyTuple::new(py, &[out_lbs, out_ubs]).into()
-	}
+    fn deeppoly_output_bounds(
+        &self,
+        lower_input_bounds: PyReadonlyArray1<f64>,
+        upper_input_bounds: PyReadonlyArray1<f64>,
+    ) -> Py<PyTuple> {
+        let input_bounds = Bounds1::new(
+            lower_input_bounds.as_array().to_owned(),
+            upper_input_bounds.as_array().to_owned(),
+        );
+        let output_bounds = deeppoly::deep_poly(input_bounds, &self.dnn);
+        let gil = Python::acquire_gil();
+        let py = gil.python();
+        let out_lbs = PyArray1::from_array(py, &output_bounds.lower());
+        let out_ubs = PyArray1::from_array(py, &output_bounds.upper());
+        PyTuple::new(py, &[out_lbs, out_ubs]).into()
+    }
 }
 
 #[pyproto]

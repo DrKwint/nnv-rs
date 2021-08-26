@@ -249,7 +249,15 @@ pub struct DNNIterator<'a, T: num::Float> {
     finished: bool,
 }
 
-impl<T: Float> DNNIterator<'_, T> {
+impl<'a, T: Float> DNNIterator<'a, T> {
+    pub fn new(dnn: &'a DNN<T>, idx: DNNIndex) -> Self {
+        Self {
+            dnn,
+            idx,
+            finished: false,
+        }
+    }
+
     pub fn get_idx(&self) -> DNNIndex {
         self.idx
     }
@@ -262,7 +270,7 @@ impl<T: num::Float> Iterator for DNNIterator<'_, T> {
         if self.finished {
             return None;
         }
-        if let Some(ref step) = self.idx.remaining_steps {
+        if let Some(ref mut step) = self.idx.remaining_steps {
             *step -= 1;
             Some(StarNodeOp::StepRelu(*step))
         } else {
@@ -272,7 +280,7 @@ impl<T: num::Float> Iterator for DNNIterator<'_, T> {
                     self.finished = true;
                     Some(StarNodeOp::Leaf)
                 }
-                Some(Layer::Dense(aff)) => Some(StarNodeOp::Affine(*aff)),
+                Some(Layer::Dense(aff)) => Some(StarNodeOp::Affine(aff.clone())),
                 Some(Layer::ReLU(ndim)) => {
                     self.idx.remaining_steps = Some(*ndim);
                     Some(StarNodeOp::StepRelu(*ndim))
