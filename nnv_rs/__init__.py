@@ -7,16 +7,31 @@ from scipy.stats import norm
 class DNN:
     def __init__(self, network):
         self.dnn = PyDNN()
-        type_str = str(type(network))
-        if 'tensorflow' in type_str:
+        type_ = type(network)
+        if 'tensorflow' in str(type_):  # TF2
             import tensorflow as tf
             assert isinstance(network, tf.Module)
             self.build_from_tensorflow_module(network)
+        elif type_ == list:  # TF1
+            # Assume that inputs are tuples (weights, bias) and that each laye
+            assert (type(network[0]) == tuple)
+            assert (type(network[0][0]) == np.ndarray)
+            self.build_from_tensorflow_params(network)
         else:
-            raise NotImplementedError()
+            raise NotImplementedError(type_str)
+
+    def input_shape(self):
+        return self.dnn.input_shape()
 
     def deeppoly_bounds(self, lower, upper):
         return self.dnn.deeppoly_output_bounds(lower, upper)
+
+    def build_from_tensorflow_params(self, affine_list):
+        for aff in affine_list:
+            # Add dense
+            self.dnn.add_dense(aff[0].T, aff[1])
+            # Add relu
+            self.dnn.add_relu(aff[1].shape[0])
 
     def build_from_tensorflow_module(self, network):
         import tensorflow as tf
@@ -55,9 +70,11 @@ class DNN:
 
 
 class Constellation:
-    def __init__(self, network, input_bounds=None, safe_value=np.inf):
-        print(type(network.dnn))
-        self.constellation = PyConstellation(network.dnn, input_bounds)
+    def __init__(self, dnn, input_bounds=None, safe_value=np.inf):
+        if input_bounds is None:
+            (np.full(dnn.input_shape(),
+                     np.NINF), np.full(dnn.input_shape(), np.inf))
+        self.constellation = PyConstellation(dnn.dnn, input_bounds)
         self.safe_value = safe_value
 
     def _weights(self, network_weights):

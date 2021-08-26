@@ -60,6 +60,10 @@ impl PyDNN {
 		}
 	}
 
+	pub fn input_shape(&self) -> Vec<Option<usize>> {
+		self.dnn.input_shape().into()
+	}
+
 	fn add_dense(&mut self, filters: PyReadonlyArray2<f32>, bias: PyReadonlyArray1<f32>) {
 		self.dnn.add_layer(Layer::new_dense(Affine2::new(
 			filters.as_array().to_owned().mapv(f64::from),

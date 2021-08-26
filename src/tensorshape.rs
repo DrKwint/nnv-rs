@@ -45,6 +45,12 @@ impl TensorShape {
 	}
 }
 
+impl From<TensorShape> for Vec<Option<usize>> {
+	fn from(ts: TensorShape) -> Vec<Option<usize>> {
+		ts.dims
+	}
+}
+
 impl Index<isize> for TensorShape {
 	type Output = Option<usize>;
 
