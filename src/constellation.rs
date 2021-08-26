@@ -1,7 +1,9 @@
 use crate::dnn::DNNIndex;
 use crate::dnn::DNNIterator;
 use crate::star::Star;
-use crate::util::*;
+use crate::star_node::ArenaLike;
+use crate::star_node::StarNodeOp;
+use crate::star_node::StarNodeType;
 use crate::Bounds;
 use crate::StarNode;
 use crate::DNN;
@@ -33,15 +35,7 @@ where
 {
     /// Instantiate a Constellation with given input set and network
     pub fn new(input_star: Star<T, D>, dnn: DNN<T>, input_bounds: Option<Bounds<T, D>>) -> Self {
-        let star_node = StarNode {
-            star: input_star,
-            children: None,
-            dnn_index: DNNIndex::default(),
-            star_cdf: None,
-            output_bounds: None,
-            is_feasible: true,
-        };
-        // let mut arena = Arena::new();
+        let star_node = StarNode::default(input_star);
 
         let mut arena = Vec::new();
         arena.push(star_node);
@@ -61,24 +55,88 @@ where
         + std::ops::MulAssign
         + std::fmt::Display
         + std::fmt::Debug
+        + std::ops::AddAssign,
+    f64: std::convert::From<T>,
+{
+    /// Expand a node's children, inserting them into the arena.
+    ///
+    /// # Arguments
+    ///
+    /// * `self` - The node to expand
+    /// * `node_arena` - The data structure storing star nodes
+    /// * `dnn_iter` - The iterator of operations in the dnn
+    ///
+    /// # Returns
+    /// * `child_ids` - A vector containing the ids of the child nodes
+    fn expand(&mut self, node_id: usize) -> Vec<usize> {
+        let node = &self.arena[node_id];
+        if let Some(children) = node.get_child_ids() {
+            return children;
+        }
+
+        let dnn_iter = &mut DNNIterator::new(
+            &self.dnn,
+            self.arena[node_id].get_index());
+    
+        // Get this node's operation from the dnn_iter
+        let op = dnn_iter.next();
+        // Do this node's operation to produce its children
+        let node_arena = &mut self.arena;
+        match op {
+            Some(StarNodeOp::Leaf) => {
+                node_arena[node_id].set_children(StarNodeType::Leaf);
+                vec![]
+            }
+            Some(StarNodeOp::Affine(aff)) => {
+                let idx = node_arena.len();
+                let child_idx = node_arena.new_node(
+                    StarNode::default(node_arena[node_id].get_star().clone().affine_map2(&aff))
+                        .with_dnn_index(dnn_iter.get_idx())
+                );
+                node_arena[node_id].set_children(StarNodeType::Affine {
+                    child_idx: child_idx,
+                });
+                vec![idx]
+            }
+            Some(StarNodeOp::StepRelu(dim)) => {
+                let child_stars = node_arena[node_id].get_star().clone().step_relu2(dim);
+                let ids: Vec<usize> = child_stars
+                    .into_iter()
+                    .map(|star| {
+                        let idx = node_arena.len();
+                        node_arena.push(StarNode::default(star).with_dnn_index(dnn_iter.get_idx()));
+                        idx
+                    })
+                    .collect();
+                node_arena[node_id].set_children(StarNodeType::StepRelu {
+                    dim,
+                    fst_child_idx: ids[0],
+                    snd_child_idx: match ids.get(1) {
+                        Some(x) => Some(*x),
+                        None => None,
+                    },
+                });
+                ids
+            }
+            None => panic!(),
+            _ => todo!(),
+        }
+    }
+}
+
+impl<T: Float> Constellation<T, Ix2>
+where
+    T: std::convert::From<f64>
+        + std::convert::Into<f64>
+        + ndarray::ScalarOperand
+        + std::ops::MulAssign
+        + std::fmt::Display
+        + std::fmt::Debug
         + std::ops::AddAssign
         + Default
         + Sum,
     f64: std::convert::From<T>,
 {
-    fn expand_node(&mut self, id: usize) -> Vec<usize> {
-        let mut node = &mut self.arena[id];
-        let children = node.expand(
-            &mut self.arena,
-            &mut DNNIterator {
-                dnn: &self.dnn,
-                idx: node.get_index(),
-                finished: false,
-            },
-        );
-        children
-    }
-
     /// Sample from a Gaussian distribution with an upper bound on the output value
     ///
     /// This function uses a two step sampling process. The first walks the Constellation's binary
@@ -209,14 +267,7 @@ where
             }
             // expand node
             {
-                let children: Vec<usize> = self.arena[current_node].expand(
-                    &mut self.arena,
-                    &mut DNNIterator {
-                        dnn: &self.dnn,
-                        idx: self.arena[current_node].get_index(),
-                        finished: false,
-                    },
-                );
+                let children: Vec<usize> = self.expand(current_node);
 
                 current_node = match children.len() {
                     // leaf node, which must be partially safe and partially unsafe

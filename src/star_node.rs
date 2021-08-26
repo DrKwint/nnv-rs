@@ -60,6 +60,11 @@ impl<T: num::Float, D: Dimension> StarNode<T, D> {
             is_feasible: true,
         }
     }
+
+    pub fn with_dnn_index(mut self, dnn_index: DNNIndex) -> Self {
+        self.dnn_index = dnn_index;
+        self
+    }
 }
 
 impl<T: num::Float, D: Dimension> StarNode<T, D>
@@ -73,6 +78,10 @@ where
         + std::ops::AddAssign,
     f64: std::convert::From<T>,
 {
+    pub fn get_star(&self) -> &Star<T, D> {
+        &self.star
+    }
+
     pub fn get_index(&self) -> DNNIndex {
         self.dnn_index
     }
@@ -129,7 +138,7 @@ where
                 fst_child_idx,
                 snd_child_idx,
             }) => {
-                let child_ids: Vec<usize> = Vec::new();
+                let mut child_ids: Vec<usize> = Vec::new();
                 child_ids.push(fst_child_idx);
                 if let Some(idx) = snd_child_idx {
                     child_ids.push(idx);
@@ -142,7 +151,7 @@ where
                 snd_child_idx,
                 trd_child_idx,
             }) => {
-                let child_ids: Vec<usize> = Vec::new();
+                let mut child_ids: Vec<usize> = Vec::new();
                 child_ids.push(fst_child_idx);
                 if let Some(idx) = snd_child_idx {
                     child_ids.push(idx);
@@ -156,18 +165,12 @@ where
             _ => todo!(),
         }
     }
+
+    pub fn set_children(&mut self, children: StarNodeType) {
+        self.children = Some(children);
+    }
 }
 
-/// Expand a node's children, inserting them into the arena.
-///
-/// # Arguments
-///
-/// * `self` - The node to expand
-/// * `node_arena` - The data structure storing star nodes
-/// * `dnn_iter` - The iterator of operations in the dnn
-///
-/// # Returns
-/// * `child_ids` - A vector containing the ids of the child nodes
 impl<T: Float> StarNode<T, Ix2>
 where
     T: std::convert::From<f64>
@@ -181,109 +184,6 @@ where
         + std::iter::Sum,
     f64: std::convert::From<T>,
 {
-    pub fn expand(
-        &mut self,
-        node_arena: &mut Vec<Self>,
-        dnn_iter: &mut DNNIterator<T>,
-    ) -> Vec<usize> {
-        if self.children.is_some() {
-            self.get_child_ids().unwrap()
-        } else {
-            // Get this node's operation from the dnn_iter
-            let op = dnn_iter.next();
-            // Do this node's operation to produce its children
-            match op {
-                Some(StarNodeOp::Leaf) => {
-                    self.children = Some(StarNodeType::Leaf);
-                    vec![]
-                }
-                Some(StarNodeOp::Affine(aff)) => {
-                    let idx = node_arena.len();
-                    node_arena.push(Self {
-                        star: self.star.clone().affine_map2(&aff),
-                        children: None,
-                        dnn_index: dnn_iter.get_idx(),
-                        star_cdf: None,
-                        output_bounds: None,
-                        is_feasible: false,
-                    });
-                    vec![idx]
-                }
-                Some(StarNodeOp::StepRelu(dim)) => {
-                    let child_stars = self.star.clone().step_relu2(dim);
-                    let ids: Vec<usize> = child_stars
-                        .into_iter()
-                        .map(|star| {
-                            let idx = node_arena.len();
-                            node_arena.push(Self {
-                                star,
-                                children: None,
-                                dnn_index: dnn_iter.get_idx(),
-                                star_cdf: None,
-                                output_bounds: None,
-                                is_feasible: false,
-                            });
-                            idx
-                        })
-                        .collect();
-                    self.children = Some(StarNodeType::StepRelu {
-                        dim,
-                        fst_child_idx: ids[0],
-                        snd_child_idx: match ids.get(1) {
-                            Some(x) => Some(*x),
-                            None => None,
-                        },
-                    });
-                    ids
-                }
-                None => panic!(),
-                _ => todo!(),
-            }
-        }
-    }
-
-    /*
-        /// # Panics
-        pub fn expand_old(&self, dnn: &DNN<T>) -> Vec<Self> {
-            // check if there is a step relu to do
-            if let Some(relu_step) = self.remaining_steps {
-                let new_child_stars = self.star.clone().step_relu2(relu_step);
-                let new_remaining_steps = if relu_step == 0 {
-                    None
-                } else {
-                    Some(relu_step - 1)
-                };
-                new_child_stars
-                    .into_iter()
-                    .map(|star| Self {
-                        star,
-                        dnn_layer: self.dnn_layer,
-                        remaining_steps: new_remaining_steps,
-                        star_cdf: None,
-                        output_bounds: None,
-                        is_expanded: false,
-                        is_feasible: true,
-                    })
-                    .collect()
-            } else if let Some(layer) = dnn.get_layer(self.dnn_layer) {
-                vec![Self {
-                    star: layer.apply_star2(self.star.clone()),
-                    dnn_layer: self.dnn_layer + 1,
-                    remaining_steps: Some(
-                        dnn.get_layer(self.dnn_layer).unwrap().output_shape()[-1].unwrap() - 1,
-                    ),
-                    star_cdf: None,
-                    output_bounds: None,
-                    is_expanded: false,
-                    is_feasible: true,
-                }]
-            } else {
-                // leaf node
-                vec![]
-            }
-        }
-    */
-
     pub fn gaussian_sample<R: Rng>(
         &self,
         rng: &mut R,
@@ -331,7 +231,7 @@ where
     }
 }
 
-trait ArenaLike<T> {
+pub trait ArenaLike<T> {
     fn new_node(&mut self, data: T) -> usize;
 }
 
