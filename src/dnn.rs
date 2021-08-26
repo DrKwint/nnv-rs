@@ -3,7 +3,8 @@ use crate::affine::Affine4;
 use crate::bounds::Bounds1;
 use crate::deeppoly::deep_poly_relu;
 use crate::star::Star;
-use crate::starnode::StarNodeType;
+use crate::star_node::StarNodeOp;
+use crate::star_node::StarNodeType;
 use crate::tensorshape::TensorShape;
 use crate::Affine;
 use ndarray::Array;
@@ -255,7 +256,7 @@ impl<T: Float> DNNIterator<'_, T> {
 }
 
 impl<T: num::Float> Iterator for DNNIterator<'_, T> {
-    type Item = StarNodeType;
+    type Item = StarNodeOp<T>;
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.finished {
@@ -263,26 +264,18 @@ impl<T: num::Float> Iterator for DNNIterator<'_, T> {
         }
         if let Some(ref step) = self.idx.remaining_steps {
             *step -= 1;
-            Some(StarNodeType::StepRelu {
-                dim: *step,
-                fst_child_idx: 0,
-                snd_child_idx: None,
-            })
+            Some(StarNodeOp::StepRelu(*step))
         } else {
             let layer = self.dnn.get_layer(self.idx.layer);
             match layer {
                 None => {
                     self.finished = true;
-                    Some(StarNodeType::Leaf)
+                    Some(StarNodeOp::Leaf)
                 }
-                Some(Layer::Dense(aff)) => Some(StarNodeType::Affine { child_idx: 0 }),
+                Some(Layer::Dense(aff)) => Some(StarNodeOp::Affine(*aff)),
                 Some(Layer::ReLU(ndim)) => {
                     self.idx.remaining_steps = Some(*ndim);
-                    Some(StarNodeType::StepRelu {
-                        dim: *ndim,
-                        fst_child_idx: 0,
-                        snd_child_idx: None,
-                    })
+                    Some(StarNodeOp::StepRelu(*ndim))
                 }
                 _ => todo!(),
             }

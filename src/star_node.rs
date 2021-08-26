@@ -1,3 +1,4 @@
+use crate::affine::Affine2;
 use crate::bounds::Bounds1;
 use crate::deeppoly::deep_poly;
 use crate::dnn::DNNIndex;
@@ -9,6 +10,15 @@ use ndarray::Ix2;
 use ndarray::{Array1, Array2};
 use num::Float;
 use rand::Rng;
+
+#[derive(Debug, Clone)]
+pub enum StarNodeOp<T: num::Float> {
+    Leaf,
+    Affine(Affine2<T>),
+    StepRelu(usize),
+}
+
+impl<T: num::Float> StarNodeOp<T> {}
 
 #[derive(Debug, Clone)]
 pub enum StarNodeType {
@@ -29,7 +39,7 @@ pub enum StarNodeType {
     },
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct StarNode<T: num::Float, D: Dimension> {
     star: Star<T, D>,
     children: Option<StarNodeType>,
@@ -63,6 +73,10 @@ where
         + std::ops::AddAssign,
     f64: std::convert::From<T>,
 {
+    pub fn get_index(&self) -> DNNIndex {
+        self.dnn_index
+    }
+
     pub fn get_feasible(&self) -> bool {
         self.is_feasible
     }
@@ -108,8 +122,8 @@ where
 
     pub fn get_child_ids(&self) -> Option<Vec<usize>> {
         match self.children {
-            Some(StarNodeType::Leaf) => vec![],
-            Some(StarNodeType::Affine { child_idx }) => vec![child_idx],
+            Some(StarNodeType::Leaf) => Some(vec![]),
+            Some(StarNodeType::Affine { child_idx }) => Some(vec![child_idx]),
             Some(StarNodeType::StepRelu {
                 dim,
                 fst_child_idx,
@@ -120,7 +134,7 @@ where
                 if let Some(idx) = snd_child_idx {
                     child_ids.push(idx);
                 }
-                child_ids
+                Some(child_ids)
             }
             Some(StarNodeType::StepReluDropOut {
                 dim: usize,
@@ -136,7 +150,7 @@ where
                 if let Some(idx) = trd_child_idx {
                     child_ids.push(idx);
                 }
-                child_ids
+                Some(child_ids)
             }
             None => None,
             _ => todo!(),
@@ -173,20 +187,31 @@ where
         dnn_iter: &mut DNNIterator<T>,
     ) -> Vec<usize> {
         if self.children.is_some() {
-            self.get_child_ids()
+            self.get_child_ids().unwrap()
         } else {
             // Get this node's operation from the dnn_iter
-            self.children = dnn_iter.next();
+            let op = dnn_iter.next();
             // Do this node's operation to produce its children
-            match self.children {
-                Some(StarNodeType::Leaf) => vec![],
-                Some(StarNodeType::StepRelu {
-                    dim,
-                    fst_child_idx,
-                    snd_child_idx,
-                }) => {
+            match op {
+                Some(StarNodeOp::Leaf) => {
+                    self.children = Some(StarNodeType::Leaf);
+                    vec![]
+                }
+                Some(StarNodeOp::Affine(aff)) => {
+                    let idx = node_arena.len();
+                    node_arena.push(Self {
+                        star: self.star.clone().affine_map2(&aff),
+                        children: None,
+                        dnn_index: dnn_iter.get_idx(),
+                        star_cdf: None,
+                        output_bounds: None,
+                        is_feasible: false,
+                    });
+                    vec![idx]
+                }
+                Some(StarNodeOp::StepRelu(dim)) => {
                     let child_stars = self.star.clone().step_relu2(dim);
-                    child_stars
+                    let ids: Vec<usize> = child_stars
                         .into_iter()
                         .map(|star| {
                             let idx = node_arena.len();
@@ -200,7 +225,16 @@ where
                             });
                             idx
                         })
-                        .collect()
+                        .collect();
+                    self.children = Some(StarNodeType::StepRelu {
+                        dim,
+                        fst_child_idx: ids[0],
+                        snd_child_idx: match ids.get(1) {
+                            Some(x) => Some(*x),
+                            None => None,
+                        },
+                    });
+                    ids
                 }
                 None => panic!(),
                 _ => todo!(),
