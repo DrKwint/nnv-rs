@@ -22,7 +22,7 @@ mod dnn;
 mod inequality;
 pub mod polytope;
 pub mod star;
-pub mod star_node;
+mod star_node;
 mod tensorshape;
 #[cfg(test)]
 mod test_util;
@@ -34,9 +34,6 @@ use crate::bounds::Bounds;
 use crate::bounds::Bounds1;
 use crate::dnn::Layer;
 use crate::dnn::DNN;
-use crate::star::Star4;
-use crate::star_node::StarNode;
-use crate::star_node::StarNodeType;
 use affine::Affine;
 use constellation::Constellation;
 use ndarray::Ix2;
