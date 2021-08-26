@@ -22,6 +22,7 @@ mod dnn;
 mod inequality;
 pub mod polytope;
 pub mod star;
+pub mod star_node;
 mod tensorshape;
 #[cfg(test)]
 mod test_util;
@@ -34,6 +35,8 @@ use crate::bounds::Bounds1;
 use crate::dnn::Layer;
 use crate::dnn::DNN;
 use crate::star::Star4;
+use crate::star_node::StarNode;
+use crate::star_node::StarNodeType;
 use affine::Affine;
 use constellation::Constellation;
 use ndarray::Ix2;
@@ -48,141 +51,141 @@ use star::Star2;
 #[pyclass]
 #[derive(Clone, Debug)]
 struct PyDNN {
-	dnn: DNN<f64>,
+    dnn: DNN<f64>,
 }
 
 #[pymethods]
 impl PyDNN {
-	#[new]
-	fn new() -> Self {
-		Self {
-			dnn: DNN::default(),
-		}
-	}
+    #[new]
+    fn new() -> Self {
+        Self {
+            dnn: DNN::default(),
+        }
+    }
 
-	fn add_dense(&mut self, filters: PyReadonlyArray2<f32>, bias: PyReadonlyArray1<f32>) {
-		self.dnn.add_layer(Layer::new_dense(Affine2::new(
-			filters.as_array().to_owned().mapv(f64::from),
-			bias.as_array().to_owned().mapv(f64::from),
-		)))
-	}
+    fn add_dense(&mut self, filters: PyReadonlyArray2<f32>, bias: PyReadonlyArray1<f32>) {
+        self.dnn.add_layer(Layer::new_dense(Affine2::new(
+            filters.as_array().to_owned().mapv(f64::from),
+            bias.as_array().to_owned().mapv(f64::from),
+        )))
+    }
 
-	fn add_conv(&mut self, filters: PyReadonlyArray4<f32>, bias: PyReadonlyArray1<f32>) {
-		self.dnn.add_layer(Layer::new_conv(Affine4::new(
-			filters.as_array().to_owned().mapv(f64::from),
-			bias.as_array().to_owned().mapv(f64::from),
-		)))
-	}
+    fn add_conv(&mut self, filters: PyReadonlyArray4<f32>, bias: PyReadonlyArray1<f32>) {
+        self.dnn.add_layer(Layer::new_conv(Affine4::new(
+            filters.as_array().to_owned().mapv(f64::from),
+            bias.as_array().to_owned().mapv(f64::from),
+        )))
+    }
 
-	fn add_maxpool(&mut self, pool_size: usize) {
-		self.dnn.add_layer(Layer::new_maxpool(pool_size))
-	}
+    fn add_maxpool(&mut self, pool_size: usize) {
+        self.dnn.add_layer(Layer::new_maxpool(pool_size))
+    }
 
-	fn add_flatten(&mut self) {
-		self.dnn.add_layer(Layer::Flatten)
-	}
+    fn add_flatten(&mut self) {
+        self.dnn.add_layer(Layer::Flatten)
+    }
 
-	fn add_relu(&mut self, ndim: usize) {
-		self.dnn.add_layer(Layer::new_relu(ndim))
-	}
+    fn add_relu(&mut self, ndim: usize) {
+        self.dnn.add_layer(Layer::new_relu(ndim))
+    }
 
-	fn deeppoly_output_bounds(
-		&self,
-		lower_input_bounds: PyReadonlyArray1<f64>,
-		upper_input_bounds: PyReadonlyArray1<f64>,
-	) -> Py<PyTuple> {
-		let input_bounds = Bounds1::new(
-			lower_input_bounds.as_array().to_owned(),
-			upper_input_bounds.as_array().to_owned(),
-		);
-		let output_bounds = deeppoly::deep_poly(input_bounds, &self.dnn);
-		let gil = Python::acquire_gil();
-		let py = gil.python();
-		let out_lbs = PyArray1::from_array(py, &output_bounds.lower());
-		let out_ubs = PyArray1::from_array(py, &output_bounds.upper());
-		PyTuple::new(py, &[out_lbs, out_ubs]).into()
-	}
+    fn deeppoly_output_bounds(
+        &self,
+        lower_input_bounds: PyReadonlyArray1<f64>,
+        upper_input_bounds: PyReadonlyArray1<f64>,
+    ) -> Py<PyTuple> {
+        let input_bounds = Bounds1::new(
+            lower_input_bounds.as_array().to_owned(),
+            upper_input_bounds.as_array().to_owned(),
+        );
+        let output_bounds = deeppoly::deep_poly(input_bounds, &self.dnn);
+        let gil = Python::acquire_gil();
+        let py = gil.python();
+        let out_lbs = PyArray1::from_array(py, &output_bounds.lower());
+        let out_ubs = PyArray1::from_array(py, &output_bounds.upper());
+        PyTuple::new(py, &[out_lbs, out_ubs]).into()
+    }
 }
 
 #[pyproto]
 impl PyObjectProtocol for PyDNN {
-	fn __str__(&self) -> String {
-		format!("DNN: {}", self.dnn)
-	}
+    fn __str__(&self) -> String {
+        format!("DNN: {}", self.dnn)
+    }
 }
 
 #[pyclass]
 struct PyConstellation {
-	constellation: Constellation<f64, Ix2>,
+    constellation: Constellation<f64, Ix2>,
 }
 
 #[pymethods]
 impl PyConstellation {
-	#[new]
-	pub fn new(
-		py_dnn: PyDNN,
-		input_bounds: Option<(PyReadonlyArray1<f64>, PyReadonlyArray1<f64>)>,
-	) -> Self {
-		let dnn = py_dnn.dnn;
-		let input_shape = dnn.input_shape();
+    #[new]
+    pub fn new(
+        py_dnn: PyDNN,
+        input_bounds: Option<(PyReadonlyArray1<f64>, PyReadonlyArray1<f64>)>,
+    ) -> Self {
+        let dnn = py_dnn.dnn;
+        let input_shape = dnn.input_shape();
 
-		let bounds = input_bounds
-			.map(|(lbs, ubs)| Bounds::new(lbs.as_array().to_owned(), ubs.as_array().to_owned()));
+        let bounds = input_bounds
+            .map(|(lbs, ubs)| Bounds::new(lbs.as_array().to_owned(), ubs.as_array().to_owned()));
 
-		let star = match input_shape.rank() {
-			1 => {
-				println!("{:?}", input_shape);
-				let mut star = Star2::default(&input_shape);
-				if let Some(ref b) = bounds {
-					star = star.with_input_bounds((*b).clone());
-				}
-				star
-			}
-			_ => {
-				panic!()
-			}
-		};
-		Self {
-			constellation: Constellation::new(star, dnn, bounds),
-		}
-	}
+        let star = match input_shape.rank() {
+            1 => {
+                println!("{:?}", input_shape);
+                let mut star = Star2::default(&input_shape);
+                if let Some(ref b) = bounds {
+                    star = star.with_input_bounds((*b).clone());
+                }
+                star
+            }
+            _ => {
+                panic!()
+            }
+        };
+        Self {
+            constellation: Constellation::new(star, dnn, bounds),
+        }
+    }
 
-	#[allow(clippy::too_many_arguments)]
-	pub fn bounded_sample_multivariate_gaussian(
-		&mut self,
-		loc: PyReadonlyArray1<f64>,
-		scale: PyReadonlyArray2<f64>,
-		safe_value: f64,
-		cdf_samples: usize,
-		num_samples: usize,
-		max_iters: usize,
-	) -> (Py<PyArray1<f64>>, f64, f64) {
-		let mut rng = thread_rng();
-		let loc = loc.as_array().to_owned();
-		let scale = scale.as_array().to_owned();
-		let (samples, branch_logp) = self.constellation.bounded_sample_multivariate_gaussian(
-			&mut rng,
-			&loc,
-			&scale,
-			safe_value,
-			cdf_samples,
-			num_samples,
-			max_iters,
-		);
-		let gil = Python::acquire_gil();
-		let py = gil.python();
-		(
-			PyArray1::from_array(py, &samples[0].0).to_owned(),
-			samples[0].1,
-			branch_logp,
-		)
-	}
+    #[allow(clippy::too_many_arguments)]
+    pub fn bounded_sample_multivariate_gaussian(
+        &mut self,
+        loc: PyReadonlyArray1<f64>,
+        scale: PyReadonlyArray2<f64>,
+        safe_value: f64,
+        cdf_samples: usize,
+        num_samples: usize,
+        max_iters: usize,
+    ) -> (Py<PyArray1<f64>>, f64, f64) {
+        let mut rng = thread_rng();
+        let loc = loc.as_array().to_owned();
+        let scale = scale.as_array().to_owned();
+        let (samples, branch_logp) = self.constellation.bounded_sample_multivariate_gaussian(
+            &mut rng,
+            &loc,
+            &scale,
+            safe_value,
+            cdf_samples,
+            num_samples,
+            max_iters,
+        );
+        let gil = Python::acquire_gil();
+        let py = gil.python();
+        (
+            PyArray1::from_array(py, &samples[0].0).to_owned(),
+            samples[0].1,
+            branch_logp,
+        )
+    }
 }
 
 /// # Errors
 #[pymodule]
 pub fn nnv_rs(_py: Python, m: &PyModule) -> PyResult<()> {
-	m.add_class::<PyConstellation>()?;
-	m.add_class::<PyDNN>()?;
-	Ok(())
+    m.add_class::<PyConstellation>()?;
+    m.add_class::<PyDNN>()?;
+    Ok(())
 }
