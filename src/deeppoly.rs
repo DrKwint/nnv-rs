@@ -1,6 +1,7 @@
 use crate::affine::Affine2;
 use crate::bounds::Bounds1;
 use crate::DNN;
+use log::{debug, trace};
 use ndarray::Array1;
 use ndarray::Array2;
 use ndarray::ArrayView1;
@@ -74,6 +75,7 @@ where
     T: ScalarOperand + Display + Debug + Default + MulAssign + std::convert::From<f64> + Sum,
     f64: std::convert::From<T>,
 {
+    trace!("Starting Deeppoly on {}", dnn);
     let ndim = input_bounds.ndim();
     // Affine expressing bounds on each variable in current layer as a
     // linear function of input bounds
@@ -92,7 +94,7 @@ where
             ),
         ),
         |(laff, uaff), layer| {
-            //println!("Layer {}: {}", i, layer);
+            trace!("Deeppoly Layer {}: {}", i, layer);
             i += 1;
             // Substitute input concrete bounds into current abstract bounds
             // to get current concrete bounds
@@ -102,11 +104,7 @@ where
                 laff.apply(&Array1::ones(ndim).view()),
                 uaff.apply(&Array1::ones(ndim).view()),
             );
-            //println!("concrete bounds: {}", bounds_concrete);
-            // Calculate new abstract bounds from concrete bounds and layer
             let out = layer.apply_bounds(&laff, &uaff, &bounds_concrete);
-            //println!("abstract bounds: {}", out.0);
-            //println!("affine: {:?}", out.1);
             out.1
         },
     );
@@ -146,11 +144,6 @@ mod tests {
         let dnn = DNN::new(vec![dense1, relu1, dense2, relu2]);
         let bounds: Bounds1<f64> =
             Bounds1::new(Array1::from_vec(vec![0.0, 0.0, 0.]), Array1::zeros(3));
-        println!("deep_poly: {}", deep_poly(bounds, &dnn));
-        println!(
-            "actual out: {}",
-            dnn.forward(Array1::from_vec(vec![0., 0., 0.]).into_dyn())
-        );
     }
 
     proptest! {

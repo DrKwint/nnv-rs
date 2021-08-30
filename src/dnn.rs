@@ -169,21 +169,6 @@ where
         }
     }
 
-    /*
-    pub fn apply_star(&self, star: Star<T, IxDyn>) -> Star<T, IxDyn> {
-        match self {
-            Layer::Dense(aff) => {
-                assert_eq!(star.ndim(), 2);
-                star.into_dimensionality::<Ix2>()
-                    .unwrap()
-                    .affine_map2(aff)
-                    .into_dyn()
-            }
-            _ => panic!(),
-        }
-    }
-    */
-
     pub fn apply_star2(&self, star: Star<T, Ix2>) -> Star<T, Ix2> {
         match self {
             Layer::Dense(aff) => star.affine_map2(aff),
@@ -211,13 +196,28 @@ where
     ) -> (Bounds1<T>, (Affine2<T>, Affine2<T>)) {
         match self {
             Layer::Dense(aff) => {
-                println!("lower_aff {}", lower_aff);
-                println!("aff {}", aff);
                 let new_lower = aff.signed_compose(lower_aff, upper_aff);
                 let new_upper = aff.signed_compose(upper_aff, lower_aff);
                 (bounds.clone(), (new_lower, new_upper))
             }
-            Layer::ReLU(_ndims) => deep_poly_relu(bounds, lower_aff, upper_aff),
+            Layer::ReLU(_ndims) => {
+                if (_ndims + 1) == bounds.ndim() {
+                    deep_poly_relu(bounds, lower_aff, upper_aff)
+                } else {
+                    let (bounds_head, bounds_tail) = bounds.split_at(*_ndims);
+                    let (lower_aff_head, lower_aff_tail) = lower_aff.split_at(*_ndims);
+                    let (upper_aff_head, upper_aff_tail) = lower_aff.split_at(*_ndims);
+                    let (bounds_part, (lower_part, upper_part)) =
+                        deep_poly_relu(&bounds_head, &lower_aff_head, &upper_aff_head);
+                    (
+                        bounds_part.append(bounds_tail),
+                        (
+                            lower_part.append(lower_aff_tail),
+                            upper_part.append(upper_aff_tail),
+                        ),
+                    )
+                }
+            }
             _ => panic!(),
         }
     }

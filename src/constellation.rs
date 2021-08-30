@@ -2,10 +2,10 @@ use crate::dnn::DNNIndex;
 use crate::dnn::DNNIterator;
 use crate::star::Star;
 use crate::star_node::ArenaLike;
+use crate::star_node::StarNode;
 use crate::star_node::StarNodeOp;
 use crate::star_node::StarNodeType;
 use crate::Bounds;
-use crate::StarNode;
 use crate::DNN;
 use ndarray::Dimension;
 use ndarray::Ix2;
@@ -74,10 +74,8 @@ where
             return children;
         }
 
-        let dnn_iter = &mut DNNIterator::new(
-            &self.dnn,
-            self.arena[node_id].get_index());
-    
+        let dnn_iter = &mut DNNIterator::new(&self.dnn, self.arena[node_id].get_index());
+
         // Get this node's operation from the dnn_iter
         let op = dnn_iter.next();
         // Do this node's operation to produce its children
@@ -91,7 +89,7 @@ where
                 let idx = node_arena.len();
                 let child_idx = node_arena.new_node(
                     StarNode::default(node_arena[node_id].get_star().clone().affine_map2(&aff))
-                        .with_dnn_index(dnn_iter.get_idx())
+                        .with_dnn_index(dnn_iter.get_idx()),
                 );
                 node_arena[node_id].set_children(StarNodeType::Affine {
                     child_idx: child_idx,

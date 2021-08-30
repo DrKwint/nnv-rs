@@ -134,6 +134,25 @@ impl<T: 'static + Float> Affine2<T> {
     pub fn apply(&self, x: &ArrayView1<T>) -> Array1<T> {
         self.basis.dot(x) + &self.shift
     }
+
+    pub fn split_at(&self, index: usize) -> (Self, Self) {
+        let (basis_head, basis_tail) = self.basis.view().split_at(Axis(1), index);
+        (
+            Self {
+                basis: basis_head.to_owned(),
+                shift: self.shift.clone(),
+            },
+            Self {
+                basis: basis_tail.to_owned(),
+                shift: self.shift.clone(),
+            },
+        )
+    }
+
+    pub fn append(mut self, other: Self) -> Self {
+        self.basis.append(Axis(1), other.basis.view()).unwrap();
+        self
+    }
 }
 
 impl<T: 'static + Float + Sum + Debug> Affine2<T> {

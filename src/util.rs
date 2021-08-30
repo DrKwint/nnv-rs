@@ -127,22 +127,15 @@ pub fn signed_matmul<T: Float + Sum + Debug>(
     B: &Array2<T>,
     C: &Array2<T>,
 ) -> Array2<T> {
-    //println!("A: {:?}", A);
-    //println!("B: {:?}", B);
-    //println!("C: {:?}", C);
     assert_eq!(A.ncols(), B.nrows());
     assert_eq!(A.ncols(), C.nrows());
     let mut out = Array2::zeros([A.nrows(), B.ncols()]);
-    //println!("bcols: {:?}", B.ncols());
     iproduct!(0..A.nrows(), 0..B.ncols()).for_each(|(i, j)| {
-        //println!("ij: {:?}", (i, j));
         out[[i, j]] = (0..A.ncols())
             .map(|k| {
                 if A[[i, k]] >= T::zero() {
-                    //println!("pos {} {} {} {:?} * {:?}", i, k, j, A[[i, k]], B[[k, j]]);
                     A[[i, k]] * B[[k, j]]
                 } else {
-                    //println!("neg {:?} * {:?}", A[[i, k]], C[[k, j]]);
                     A[[i, k]] * C[[k, j]]
                 }
             })

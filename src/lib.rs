@@ -1,6 +1,8 @@
 #![allow(clippy::must_use_candidate)]
 #![feature(fn_traits)]
 #![feature(unboxed_closures)]
+#[cfg(debug_assertions)]
+extern crate env_logger;
 extern crate good_lp;
 extern crate highs;
 extern crate itertools;
@@ -135,7 +137,6 @@ impl PyConstellation {
 
         let star = match input_shape.rank() {
             1 => {
-                println!("{:?}", input_shape);
                 let mut star = Star2::default(&input_shape);
                 if let Some(ref b) = bounds {
                     star = star.with_input_bounds((*b).clone());
@@ -186,6 +187,8 @@ impl PyConstellation {
 /// # Errors
 #[pymodule]
 pub fn nnv_rs(_py: Python, m: &PyModule) -> PyResult<()> {
+    #[cfg(debug_assertions)]
+    env_logger::init();
     m.add_class::<PyConstellation>()?;
     m.add_class::<PyDNN>()?;
     Ok(())

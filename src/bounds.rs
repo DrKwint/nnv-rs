@@ -93,6 +93,23 @@ impl<T: 'static + Float + Default> Bounds1<T> {
         let upper = aff.apply(&self.upper());
         Self::new(lower, upper)
     }
+
+    pub fn split_at(&self, index: usize) -> (Self, Self) {
+        let (head, tail) = self.data.view().split_at(Axis(1), index);
+        (
+            Bounds1 {
+                data: head.to_owned(),
+            },
+            Bounds1 {
+                data: tail.to_owned(),
+            },
+        )
+    }
+
+    pub fn append(mut self, other: Self) -> Self {
+        self.data.append(Axis(1), other.data.view()).unwrap();
+        self
+    }
 }
 
 impl<T: Float + Display, D: Dimension + RemoveAxis> Display for Bounds<T, D> {
