@@ -1,4 +1,3 @@
-use crate::dnn::DNNIndex;
 use crate::dnn::DNNIterator;
 use crate::star::Star;
 use crate::star_node::ArenaLike;
@@ -7,6 +6,7 @@ use crate::star_node::StarNodeOp;
 use crate::star_node::StarNodeType;
 use crate::Bounds;
 use crate::DNN;
+use log::{debug, trace};
 use ndarray::Dimension;
 use ndarray::Ix2;
 use ndarray::{Array1, Array2};
@@ -17,9 +17,9 @@ use std::iter::Sum;
 
 /// Data structure representing the paths through a deep neural network (DNN)
 pub struct Constellation<T: Float, D: Dimension> {
-    arena: Vec<StarNode<T, D>>,
-    dnn: DNN<T>,
-    input_bounds: Option<Bounds<T, D>>,
+	arena: Vec<StarNode<T, D>>,
+	dnn: DNN<T>,
+	input_bounds: Option<Bounds<T, D>>,
 }
 
 impl<T: Float, D: Dimension> Constellation<T, D>
@@ -34,18 +34,18 @@ where
         + std::ops::AddAssign,
     f64: std::convert::From<T>,
 {
-    /// Instantiate a Constellation with given input set and network
-    pub fn new(input_star: Star<T, D>, dnn: DNN<T>, input_bounds: Option<Bounds<T, D>>) -> Self {
-        let star_node = StarNode::default(input_star);
+	/// Instantiate a Constellation with given input set and network
+	pub fn new(input_star: Star<T, D>, dnn: DNN<T>, input_bounds: Option<Bounds<T, D>>) -> Self {
+		let star_node = StarNode::default(input_star);
 
-        let mut arena = Vec::new();
-        arena.push(star_node);
-        Self {
-            arena,
-            dnn,
-            input_bounds,
-        }
-    }
+		let mut arena = Vec::new();
+		arena.push(star_node);
+		Self {
+			arena,
+			dnn,
+			input_bounds,
+		}
+	}
 }
 
 impl<T: Float> Constellation<T, Ix2>
@@ -61,55 +61,55 @@ where
         + Sum,
     f64: std::convert::From<T>,
 {
-    /// Sample from a Gaussian distribution with an upper bound on the output value
-    ///
-    /// This function uses a two step sampling process. The first walks the Constellation's binary
-    /// tree, which is defined by the parameters of the underlying neural network. This walk
-    /// continues until a safe star has been reached, and then it's sampled in the second step to
-    /// produce the final set of samples.
-    ///
-    /// # Arguments
-    ///
-    /// * `loc` - Gaussian location parameter
-    /// * `scale` - Gaussian covariance matrix or, if diagonal, vector
-    /// * `safe_value` - Maximum value an output can have to be considered safe
-    /// * `cdf_samples` - Number of samples to use in estimating a polytope's CDF under the Gaussian
-    /// * `num_samples` - Number of samples to return from the final star that's sampled
-    ///
-    /// # Panics
-    ///
-    /// # Returns
-    ///
-    /// (Vec of samples, Array of sample probabilities, branch probability)
-    #[allow(clippy::too_many_arguments)]
-    pub fn bounded_sample_multivariate_gaussian<R: Rng>(
-        &mut self,
-        rng: &mut R,
-        loc: &Array1<T>,
-        scale: &Array2<T>,
-        safe_value: T,
-        cdf_samples: usize,
-        num_samples: usize,
-        max_iters: usize,
-    ) -> (Vec<(Array1<T>, T)>, T) {
-        if let Some((safe_star, path_logp)) =
-            self.sample_safe_star(loc, scale, safe_value, cdf_samples, max_iters)
-        {
-            (
-                safe_star.gaussian_sample(
-                    rng,
-                    loc,
-                    scale,
-                    num_samples,
-                    max_iters,
-                    &self.input_bounds,
-                ),
-                path_logp,
-            )
-        } else {
-            panic!()
-        }
-    }
+	/// Sample from a Gaussian distribution with an upper bound on the output value
+	///
+	/// This function uses a two step sampling process. The first walks the Constellation's binary
+	/// tree, which is defined by the parameters of the underlying neural network. This walk
+	/// continues until a safe star has been reached, and then it's sampled in the second step to
+	/// produce the final set of samples.
+	///
+	/// # Arguments
+	///
+	/// * `loc` - Gaussian location parameter
+	/// * `scale` - Gaussian covariance matrix or, if diagonal, vector
+	/// * `safe_value` - Maximum value an output can have to be considered safe
+	/// * `cdf_samples` - Number of samples to use in estimating a polytope's CDF under the Gaussian
+	/// * `num_samples` - Number of samples to return from the final star that's sampled
+	///
+	/// # Panics
+	///
+	/// # Returns
+	///
+	/// (Vec of samples, Array of sample probabilities, branch probability)
+	#[allow(clippy::too_many_arguments)]
+	pub fn bounded_sample_multivariate_gaussian<R: Rng>(
+		&mut self,
+		rng: &mut R,
+		loc: &Array1<T>,
+		scale: &Array2<T>,
+		safe_value: T,
+		cdf_samples: usize,
+		num_samples: usize,
+		max_iters: usize,
+	) -> (Vec<(Array1<T>, T)>, T) {
+		if let Some((safe_star, path_logp)) =
+			self.sample_safe_star(loc, scale, safe_value, cdf_samples, max_iters)
+		{
+			(
+				safe_star.gaussian_sample(
+					rng,
+					loc,
+					scale,
+					num_samples,
+					max_iters,
+					&self.input_bounds,
+				),
+				path_logp,
+			)
+		} else {
+			panic!()
+		}
+	}
 }
 
 impl<T: Float> Constellation<T, Ix2>
@@ -175,7 +175,7 @@ where
                 // makes the assumption that bounds are on 0th dimension of output
                 let output_bounds =
                     self.arena[current_node]
-                        .get_output_bounds(&self.dnn, 0, &|x| (x.lower()[[0]], x.upper()[[0]]));
+                        .get_output_bounds(&self.dnn, &|x| (x.lower()[[0]], x.upper()[[0]]));
                 if output_bounds.1 < safe_value {
                     // handle case where star is safe
                     let safe_star = self.arena[current_node].clone();

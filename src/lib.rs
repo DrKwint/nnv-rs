@@ -2,7 +2,6 @@
 #![feature(fn_traits)]
 #![feature(destructuring_assignment)]
 #![feature(unboxed_closures)]
-#[cfg(debug_assertions)]
 extern crate env_logger;
 extern crate good_lp;
 extern crate highs;
@@ -35,6 +34,8 @@ use crate::affine::Affine2;
 use crate::affine::Affine4;
 use crate::bounds::Bounds;
 use crate::bounds::Bounds1;
+use crate::dnn::DNNIndex;
+use crate::dnn::DNNIterator;
 use crate::dnn::Layer;
 use crate::dnn::DNN;
 use affine::Affine;
@@ -102,7 +103,10 @@ impl PyDNN {
             lower_input_bounds.as_array().to_owned(),
             upper_input_bounds.as_array().to_owned(),
         );
-        let output_bounds = deeppoly::deep_poly(input_bounds, &self.dnn);
+        let output_bounds = deeppoly::deep_poly(
+            input_bounds,
+            DNNIterator::new(&self.dnn, DNNIndex::default()),
+        );
         let gil = Python::acquire_gil();
         let py = gil.python();
         let out_lbs = PyArray1::from_array(py, &output_bounds.lower());
@@ -188,8 +192,8 @@ impl PyConstellation {
 /// # Errors
 #[pymodule]
 pub fn nnv_rs(_py: Python, m: &PyModule) -> PyResult<()> {
+    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("trace")).init();
     #[cfg(debug_assertions)]
-    env_logger::init();
     m.add_class::<PyConstellation>()?;
     m.add_class::<PyDNN>()?;
     Ok(())

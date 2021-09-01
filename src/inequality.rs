@@ -47,9 +47,9 @@ impl<T: 'static + Float> Inequality<T> {
             .into_iter()
             .zip(&idxs)
             .filter(|x| *x.1)
-            .map(|x| x.0.insert_axis(Axis(0)))
+            .map(|x| x.0.insert_axis(Axis(1)))
             .collect();
-        let new_eqns = concatenate(Axis(0), new_coeffs.as_slice()).unwrap();
+        let new_eqns = concatenate(Axis(1), new_coeffs.as_slice()).unwrap();
         Self::new(new_eqns, new_rhs)
     }
 }
