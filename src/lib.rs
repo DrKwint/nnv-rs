@@ -1,5 +1,6 @@
 #![allow(clippy::must_use_candidate)]
 #![feature(fn_traits)]
+#![feature(destructuring_assignment)]
 #![feature(unboxed_closures)]
 #[cfg(debug_assertions)]
 extern crate env_logger;

@@ -16,12 +16,13 @@ pub enum StarNodeOp<T: num::Float> {
     Leaf,
     Affine(Affine2<T>),
     StepRelu(usize),
+    StepReluDropout((T, usize)),
 }
 
 impl<T: num::Float> StarNodeOp<T> {}
 
 #[derive(Debug, Clone)]
-pub enum StarNodeType {
+pub enum StarNodeType<T: num::Float> {
     Leaf,
     Affine {
         child_idx: usize,
@@ -33,6 +34,7 @@ pub enum StarNodeType {
     },
     StepReluDropOut {
         dim: usize,
+        dropout_prob: T,
         fst_child_idx: usize,
         snd_child_idx: Option<usize>,
         trd_child_idx: Option<usize>,
@@ -42,7 +44,7 @@ pub enum StarNodeType {
 #[derive(Debug, Clone)]
 pub struct StarNode<T: num::Float, D: Dimension> {
     star: Star<T, D>,
-    children: Option<StarNodeType>,
+    children: Option<StarNodeType<T>>,
     dnn_index: DNNIndex,
     star_cdf: Option<T>,
     output_bounds: Option<(T, T)>,
@@ -147,6 +149,7 @@ where
             }
             Some(StarNodeType::StepReluDropOut {
                 dim: usize,
+                dropout_prob: T,
                 fst_child_idx,
                 snd_child_idx,
                 trd_child_idx,
@@ -164,10 +167,6 @@ where
             None => None,
             _ => todo!(),
         }
-    }
-
-    pub fn set_children(&mut self, children: StarNodeType) {
-        self.children = Some(children);
     }
 }
 
@@ -228,6 +227,82 @@ where
             },
             |bounds| bounds,
         )
+    }
+
+    /// Expand a node's children, possibly inserting them into the arena.
+    ///
+    /// # Arguments
+    ///
+    /// * `self` - The node to expand
+    /// * `node_arena` - The data structure storing star nodes
+    /// * `dnn_iter` - The iterator of operations in the dnn
+    ///
+    /// # Returns
+    /// * `child_ids` - A vector containing the ids of the child nodes
+    pub fn get_children(
+        &mut self,
+        arena: &mut Vec<StarNode<T, Ix2>>,
+        dnn: &DNN<T>,
+    ) -> StarNodeType<T> {
+        if let Some(children) = self.children {
+            return children;
+        }
+
+        let dnn_iter = &mut DNNIterator::new(dnn, self.dnn_index);
+
+        // Get this node's operation from the dnn_iter
+        let op = dnn_iter.next();
+        // Do this node's operation to produce its children
+        match op {
+            Some(StarNodeOp::Leaf) => {
+                self.children = Some(StarNodeType::Leaf);
+            }
+            Some(StarNodeOp::Affine(aff)) => {
+                let idx = arena.len();
+                let child_idx = arena.new_node(
+                    StarNode::default(self.star.clone().affine_map2(&aff))
+                        .with_dnn_index(dnn_iter.get_idx()),
+                );
+                self.children = Some(StarNodeType::Affine { child_idx });
+            }
+            Some(StarNodeOp::StepRelu(dim)) => {
+                let child_stars = self.star.clone().step_relu2(dim);
+                let ids: Vec<usize> = child_stars
+                    .into_iter()
+                    .map(|star| {
+                        let idx = arena.len();
+                        arena.push(StarNode::default(star).with_dnn_index(dnn_iter.get_idx()));
+                        idx
+                    })
+                    .collect();
+                self.children = Some(StarNodeType::StepRelu {
+                    dim,
+                    fst_child_idx: ids[0],
+                    snd_child_idx: ids.get(1).cloned(),
+                });
+            }
+            Some(StarNodeOp::StepReluDropout((dropout_prob, dim))) => {
+                let child_stars = self.star.clone().step_relu2_dropout(dim);
+                let ids: Vec<usize> = child_stars
+                    .into_iter()
+                    .map(|star| {
+                        let idx = arena.len();
+                        arena.push(StarNode::default(star).with_dnn_index(dnn_iter.get_idx()));
+                        idx
+                    })
+                    .collect();
+                self.children = Some(StarNodeType::StepReluDropOut {
+                    dim,
+                    dropout_prob,
+                    fst_child_idx: ids[0],
+                    snd_child_idx: ids.get(1).cloned(),
+                    trd_child_idx: ids.get(2).cloned(),
+                });
+            }
+            None => panic!(),
+            _ => todo!(),
+        };
+        self.children.unwrap()
     }
 }
 

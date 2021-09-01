@@ -281,6 +281,15 @@ where
             .collect()
     }
 
+    pub fn step_relu2_dropout(&self, index: usize) -> Vec<Self> {
+        let mut dropout_star = self.clone();
+        dropout_star.representation.zero_eqn(index);
+
+        let mut stars = self.step_relu2(index);
+        stars.insert(0, dropout_star);
+        stars.into_iter().filter(|x| !x.is_empty()).collect()
+    }
+
     /// # Panics
     pub fn get_min(&self, idx: usize) -> T {
         let eqn = self.representation.get_eqn(idx).get_raw_augmented();
