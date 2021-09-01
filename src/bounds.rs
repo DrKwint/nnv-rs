@@ -7,6 +7,7 @@ use ndarray::iter::LanesMut;
 use ndarray::Array2;
 use ndarray::ArrayView;
 use ndarray::ArrayViewMut;
+use ndarray::ArrayViewMut1;
 use ndarray::Axis;
 use ndarray::Ix2;
 use ndarray::RemoveAxis;
@@ -16,6 +17,7 @@ use num::Float;
 use rand::distributions::Uniform;
 use rand::rngs::StdRng;
 use std::fmt::Display;
+use std::ops::Index;
 
 pub type Bounds1<T> = Bounds<T, Ix2>;
 
@@ -31,6 +33,10 @@ impl<T: Float, D: Dimension + ndarray::RemoveAxis> Bounds<T, D> {
     ) -> Bounds<T, D> {
         let data: Array<T, D> = stack(Axis(0), &[lower.view(), upper.view()]).unwrap();
         Self { data }
+    }
+
+    pub fn is_all_finite(&self) -> bool {
+        self.data.iter().all(|&x| T::is_finite(x))
     }
 
     pub fn lower(&self) -> ArrayView<T, D::Smaller> {
@@ -109,6 +115,10 @@ impl<T: 'static + Float + Default> Bounds1<T> {
     pub fn append(mut self, other: Self) -> Self {
         self.data.append(Axis(1), other.data.view()).unwrap();
         self
+    }
+
+    pub fn index_mut(&mut self, index: usize) -> ArrayViewMut1<T> {
+        self.data.index_axis_mut(Axis(1), index)
     }
 }
 

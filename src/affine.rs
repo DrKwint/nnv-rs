@@ -3,6 +3,7 @@
 use crate::tensorshape::TensorShape;
 use ndarray::concatenate;
 use ndarray::iter::Lanes;
+use ndarray::ArrayViewMut0;
 use ndarray::ArrayViewMut1;
 use ndarray::Axis;
 use ndarray::Dimension;
@@ -125,6 +126,13 @@ impl<T: 'static + Float> Affine2<T> {
             .to_owned()
             .insert_axis(Axis(0));
         Self { basis, shift }
+    }
+
+    pub fn get_eqn_mut(&mut self, index: usize) -> (ArrayViewMut1<T>, ArrayViewMut0<T>) {
+        (
+            self.basis.index_axis_mut(Axis(0), index),
+            self.shift.index_axis_mut(Axis(0), index),
+        )
     }
 
     pub fn vars(&self) -> Lanes<T, Ix1> {

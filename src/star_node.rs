@@ -5,11 +5,14 @@ use crate::dnn::DNNIndex;
 use crate::dnn::DNNIterator;
 use crate::dnn::DNN;
 use crate::star::Star;
+use log::debug;
 use ndarray::Dimension;
 use ndarray::Ix2;
 use ndarray::{Array1, Array2};
 use num::Float;
 use rand::Rng;
+use std::fmt::Debug;
+use std::iter::Sum;
 
 #[derive(Debug, Clone)]
 pub enum StarNodeOp<T: num::Float> {
@@ -18,7 +21,28 @@ pub enum StarNodeOp<T: num::Float> {
     StepRelu(usize),
 }
 
-impl<T: num::Float> StarNodeOp<T> {}
+impl<T: num::Float + Default + Sum + Debug + 'static> StarNodeOp<T> {
+    pub fn apply_bounds(
+        &self,
+        bounds: Bounds1<T>,
+        lower_aff: Affine2<T>,
+        upper_aff: Affine2<T>,
+    ) -> (Bounds1<T>, (Affine2<T>, Affine2<T>)) {
+        match self {
+            Self::Leaf => (bounds, (lower_aff, upper_aff)),
+            Self::Affine(aff) => (
+                bounds,
+                (
+                    aff.signed_compose(&lower_aff, &upper_aff),
+                    aff.signed_compose(&upper_aff, &lower_aff),
+                ),
+            ),
+            Self::StepRelu(dim) => {
+                crate::deeppoly::deep_poly_steprelu(*dim, bounds, lower_aff, upper_aff)
+            }
+        }
+    }
+}
 
 #[derive(Debug, Clone)]
 pub enum StarNodeType {
@@ -204,11 +228,11 @@ where
     pub fn get_output_bounds(
         &mut self,
         dnn: &DNN<T>,
-        idx: usize,
         output_fn: &dyn Fn(Bounds1<T>) -> (T, T),
     ) -> (T, T) {
         self.output_bounds.map_or_else(
             || {
+                debug!("get_output_bounds on star {:?}", self.star);
                 let bounding_box = self.star.calculate_axis_aligned_bounding_box();
                 // TODO: update this to use DeepPoly to get proper bounds rather than this estimate
                 /*
@@ -224,7 +248,10 @@ where
                 };
                 self.output_bounds = Some(bounds);
                 */
-                output_fn(deep_poly(bounding_box, dnn))
+                output_fn(deep_poly(
+                    bounding_box,
+                    DNNIterator::new(dnn, self.dnn_index.clone()),
+                ))
             },
             |bounds| bounds,
         )

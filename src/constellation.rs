@@ -6,7 +6,9 @@ use crate::star_node::StarNode;
 use crate::star_node::StarNodeOp;
 use crate::star_node::StarNodeType;
 use crate::Bounds;
+use crate::Bounds1;
 use crate::DNN;
+use log::{debug, trace};
 use ndarray::Dimension;
 use ndarray::Ix2;
 use ndarray::{Array1, Array2};
@@ -218,6 +220,7 @@ where
                                 path: &mut Vec<usize>,
                                 path_logp: &mut T|
          -> usize {
+            std::process::exit(69);
             arena[x].set_feasible(false);
             let mut infeas_cdf = arena[x].gaussian_cdf(loc, scale, cdf_samples, max_iters);
             path.drain(..).rev().for_each(|x| {
@@ -239,6 +242,7 @@ where
             0
         };
         loop {
+            debug!("sample_safe_star current node {}", current_node);
             // base case for feasability
             if current_node == 0 && !self.arena[current_node].get_feasible() {
                 return None;
@@ -246,9 +250,9 @@ where
             // check feasibility of current node
             {
                 // makes the assumption that bounds are on 0th dimension of output
-                let output_bounds =
-                    self.arena[current_node]
-                        .get_output_bounds(&self.dnn, 0, &|x| (x.lower()[[0]], x.upper()[[0]]));
+                let output_bounds = self.arena[current_node]
+                    .get_output_bounds(&self.dnn, &|x| (x.lower()[[0]], x.upper()[[0]]));
+                debug!("StarNode output bounds {:?}", output_bounds);
                 if output_bounds.1 < safe_value {
                     // handle case where star is safe
                     let safe_star = self.arena[current_node].clone();
@@ -266,6 +270,7 @@ where
             // expand node
             {
                 let children: Vec<usize> = self.expand(current_node);
+                trace!("children: {:?}", children);
 
                 current_node = match children.len() {
                     // leaf node, which must be partially safe and partially unsafe

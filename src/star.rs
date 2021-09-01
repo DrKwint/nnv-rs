@@ -396,23 +396,6 @@ where
     }
 }
 
-impl<T: Float> Star2<T>
-where
-    T: std::convert::From<f64>
-        + std::convert::Into<f64>
-        + ndarray::ScalarOperand
-        + std::fmt::Display
-        + std::fmt::Debug
-        + std::ops::MulAssign
-        + Default
-        + Sum,
-    f64: std::convert::From<T>,
-{
-    pub fn deeppoly_output_bounds(&self, dnn: &DNN<T>) -> Bounds1<T> {
-        deep_poly(self.calculate_axis_aligned_bounding_box(), dnn)
-    }
-}
-
 impl<T: 'static + Float> Star4<T> {
     /// Create a new Star with given dimension.
     ///
