@@ -38,6 +38,11 @@ ndarray-rand = "^0.14.0"
 proptest = "1.0.0"
 proptest-derive = "0.2.0"
 
+[dev-dependencies.cargo-husky]
+version = "1"
+default-features = false
+features = ["run-for-all", "precommit-hook", "run-cargo-check", "run-cargo-fmt"]
+
 [profile.release]
 lto = true
 codegen-units = 1

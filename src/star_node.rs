@@ -23,27 +23,27 @@ pub enum StarNodeOp<T: num::Float> {
 }
 
 impl<T: num::Float + Default + Sum + Debug + 'static> StarNodeOp<T> {
-	pub fn apply_bounds(
-		&self,
-		bounds: Bounds1<T>,
-		lower_aff: Affine2<T>,
-		upper_aff: Affine2<T>,
-	) -> (Bounds1<T>, (Affine2<T>, Affine2<T>)) {
-		match self {
-			Self::Leaf => (bounds, (lower_aff, upper_aff)),
-			Self::Affine(aff) => (
-				bounds,
-				(
-					aff.signed_compose(&lower_aff, &upper_aff),
-					aff.signed_compose(&upper_aff, &lower_aff),
-				),
-			),
-			Self::StepRelu(dim) => {
-				crate::deeppoly::deep_poly_steprelu(*dim, bounds, lower_aff, upper_aff)
-			}
-            _ => todo!()
-		}
-	}
+    pub fn apply_bounds(
+        &self,
+        bounds: Bounds1<T>,
+        lower_aff: Affine2<T>,
+        upper_aff: Affine2<T>,
+    ) -> (Bounds1<T>, (Affine2<T>, Affine2<T>)) {
+        match self {
+            Self::Leaf => (bounds, (lower_aff, upper_aff)),
+            Self::Affine(aff) => (
+                bounds,
+                (
+                    aff.signed_compose(&lower_aff, &upper_aff),
+                    aff.signed_compose(&upper_aff, &lower_aff),
+                ),
+            ),
+            Self::StepRelu(dim) => {
+                crate::deeppoly::deep_poly_steprelu(*dim, bounds, lower_aff, upper_aff)
+            }
+            _ => todo!(),
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -77,33 +77,33 @@ pub struct StarNode<T: num::Float, D: Dimension> {
 }
 
 impl<T: num::Float, D: Dimension> StarNode<T, D> {
-	pub fn default(star: Star<T, D>) -> Self {
-		Self {
-			star,
-			//children: None,
-			dnn_index: DNNIndex::default(),
-			star_cdf: None,
-			output_bounds: None,
-			is_feasible: true,
-		}
-	}
+    pub fn default(star: Star<T, D>) -> Self {
+        Self {
+            star,
+            //children: None,
+            dnn_index: DNNIndex::default(),
+            star_cdf: None,
+            output_bounds: None,
+            is_feasible: true,
+        }
+    }
 
-	pub fn with_dnn_index(mut self, dnn_index: DNNIndex) -> Self {
-		self.dnn_index = dnn_index;
-		self
-	}
+    pub fn with_dnn_index(mut self, dnn_index: DNNIndex) -> Self {
+        self.dnn_index = dnn_index;
+        self
+    }
 }
 
 impl<T: num::Float, D: Dimension> StarNode<T, D>
 where
-	T: std::convert::From<f64>
-		+ std::convert::Into<f64>
-		+ ndarray::ScalarOperand
-		+ std::fmt::Display
-		+ std::fmt::Debug
-		+ std::ops::MulAssign
-		+ std::ops::AddAssign,
-	f64: std::convert::From<T>,
+    T: std::convert::From<f64>
+        + std::convert::Into<f64>
+        + ndarray::ScalarOperand
+        + std::fmt::Display
+        + std::fmt::Debug
+        + std::ops::MulAssign
+        + std::ops::AddAssign,
+    f64: std::convert::From<T>,
 {
     pub fn get_star(&self) -> &Star<T, D> {
         &self.star
@@ -159,16 +159,16 @@ where
 
 impl<T: Float> StarNode<T, Ix2>
 where
-	T: std::convert::From<f64>
-		+ std::convert::Into<f64>
-		+ ndarray::ScalarOperand
-		+ std::fmt::Display
-		+ std::fmt::Debug
-		+ std::ops::MulAssign
-		+ std::ops::AddAssign
-		+ std::default::Default
-		+ std::iter::Sum,
-	f64: std::convert::From<T>,
+    T: std::convert::From<f64>
+        + std::convert::Into<f64>
+        + ndarray::ScalarOperand
+        + std::fmt::Display
+        + std::fmt::Debug
+        + std::ops::MulAssign
+        + std::ops::AddAssign
+        + std::default::Default
+        + std::iter::Sum,
+    f64: std::convert::From<T>,
 {
     pub fn gaussian_sample<R: Rng>(
         &self,
@@ -188,48 +188,46 @@ where
     }
 
     pub fn get_output_bounds(
-		&mut self,
-		dnn: &DNN<T>,
-		output_fn: &dyn Fn(Bounds1<T>) -> (T, T),
-	) -> (T, T) {
-		self.output_bounds.map_or_else(
-			|| {
-				debug!("get_output_bounds on star {:?}", self.star);
-				let bounding_box = self.star.calculate_axis_aligned_bounding_box();
-				// TODO: update this to use DeepPoly to get proper bounds rather than this estimate
-				/*
-				let bounds = {
-					let out_star = dnn
-						.get_layers()
-						.iter()
-						.skip(self.dnn_layer)
-						.fold(self.star.clone(), |s: Star<T, Ix2>, l: &Layer<T>| {
-							l.apply_star2(s)
-						});
-					(out_star.clone().get_min(idx), out_star.get_max(idx))
-				};
-				self.output_bounds = Some(bounds);
-				*/
-				output_fn(deep_poly(
-					bounding_box,
-					DNNIterator::new(dnn, self.dnn_index.clone()),
-				))
-			},
-			|bounds| bounds,
-		)
-	}
-
-    
+        &mut self,
+        dnn: &DNN<T>,
+        output_fn: &dyn Fn(Bounds1<T>) -> (T, T),
+    ) -> (T, T) {
+        self.output_bounds.map_or_else(
+            || {
+                debug!("get_output_bounds on star {:?}", self.star);
+                let bounding_box = self.star.calculate_axis_aligned_bounding_box();
+                // TODO: update this to use DeepPoly to get proper bounds rather than this estimate
+                /*
+                let bounds = {
+                    let out_star = dnn
+                        .get_layers()
+                        .iter()
+                        .skip(self.dnn_layer)
+                        .fold(self.star.clone(), |s: Star<T, Ix2>, l: &Layer<T>| {
+                            l.apply_star2(s)
+                        });
+                    (out_star.clone().get_min(idx), out_star.get_max(idx))
+                };
+                self.output_bounds = Some(bounds);
+                */
+                output_fn(deep_poly(
+                    bounding_box,
+                    DNNIterator::new(dnn, self.dnn_index.clone()),
+                ))
+            },
+            |bounds| bounds,
+        )
+    }
 }
 
 pub trait ArenaLike<T> {
-	fn new_node(&mut self, data: T) -> usize;
+    fn new_node(&mut self, data: T) -> usize;
 }
 
 impl<T: num::Float, D: Dimension> ArenaLike<StarNode<T, D>> for Vec<StarNode<T, D>> {
-	fn new_node(&mut self, data: StarNode<T, D>) -> usize {
-		let new_id = self.len();
-		self.push(data);
-		new_id
-	}
+    fn new_node(&mut self, data: StarNode<T, D>) -> usize {
+        let new_id = self.len();
+        self.push(data);
+        new_id
+    }
 }

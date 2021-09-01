@@ -17,10 +17,10 @@ use std::iter::Sum;
 
 /// Data structure representing the paths through a deep neural network (DNN)
 pub struct Constellation<T: Float, D: Dimension> {
-	arena: Vec<StarNode<T, D>>,
+    arena: Vec<StarNode<T, D>>,
     children: Vec<Option<StarNodeType<T>>>,
-	dnn: DNN<T>,
-	input_bounds: Option<Bounds<T, D>>,
+    dnn: DNN<T>,
+    input_bounds: Option<Bounds<T, D>>,
 }
 
 impl<T: Float, D: Dimension> Constellation<T, D>
@@ -35,18 +35,18 @@ where
         + std::ops::AddAssign,
     f64: std::convert::From<T>,
 {
-	/// Instantiate a Constellation with given input set and network
-	pub fn new(input_star: Star<T, D>, dnn: DNN<T>, input_bounds: Option<Bounds<T, D>>) -> Self {
-		let star_node = StarNode::default(input_star);
-		let children = vec![None];
-		let arena = vec![star_node];
-		Self {
-			arena,
-			children,
-			dnn,
-			input_bounds,
-		}
-	}
+    /// Instantiate a Constellation with given input set and network
+    pub fn new(input_star: Star<T, D>, dnn: DNN<T>, input_bounds: Option<Bounds<T, D>>) -> Self {
+        let star_node = StarNode::default(input_star);
+        let children = vec![None];
+        let arena = vec![star_node];
+        Self {
+            arena,
+            children,
+            dnn,
+            input_bounds,
+        }
+    }
 
     pub fn get_child_ids(&self, node_id: usize) -> Option<Vec<usize>> {
         match self.children[node_id] {
@@ -100,55 +100,55 @@ where
         + Sum,
     f64: std::convert::From<T>,
 {
-	/// Sample from a Gaussian distribution with an upper bound on the output value
-	///
-	/// This function uses a two step sampling process. The first walks the Constellation's binary
-	/// tree, which is defined by the parameters of the underlying neural network. This walk
-	/// continues until a safe star has been reached, and then it's sampled in the second step to
-	/// produce the final set of samples.
-	///
-	/// # Arguments
-	///
-	/// * `loc` - Gaussian location parameter
-	/// * `scale` - Gaussian covariance matrix or, if diagonal, vector
-	/// * `safe_value` - Maximum value an output can have to be considered safe
-	/// * `cdf_samples` - Number of samples to use in estimating a polytope's CDF under the Gaussian
-	/// * `num_samples` - Number of samples to return from the final star that's sampled
-	///
-	/// # Panics
-	///
-	/// # Returns
-	///
-	/// (Vec of samples, Array of sample probabilities, branch probability)
-	#[allow(clippy::too_many_arguments)]
-	pub fn bounded_sample_multivariate_gaussian<R: Rng>(
-		&mut self,
-		rng: &mut R,
-		loc: &Array1<T>,
-		scale: &Array2<T>,
-		safe_value: T,
-		cdf_samples: usize,
-		num_samples: usize,
-		max_iters: usize,
-	) -> (Vec<(Array1<T>, T)>, T) {
-		if let Some((safe_star, path_logp)) =
-			self.sample_safe_star(loc, scale, safe_value, cdf_samples, max_iters)
-		{
-			(
-				safe_star.gaussian_sample(
-					rng,
-					loc,
-					scale,
-					num_samples,
-					max_iters,
-					&self.input_bounds,
-				),
-				path_logp,
-			)
-		} else {
-			panic!()
-		}
-	}
+    /// Sample from a Gaussian distribution with an upper bound on the output value
+    ///
+    /// This function uses a two step sampling process. The first walks the Constellation's binary
+    /// tree, which is defined by the parameters of the underlying neural network. This walk
+    /// continues until a safe star has been reached, and then it's sampled in the second step to
+    /// produce the final set of samples.
+    ///
+    /// # Arguments
+    ///
+    /// * `loc` - Gaussian location parameter
+    /// * `scale` - Gaussian covariance matrix or, if diagonal, vector
+    /// * `safe_value` - Maximum value an output can have to be considered safe
+    /// * `cdf_samples` - Number of samples to use in estimating a polytope's CDF under the Gaussian
+    /// * `num_samples` - Number of samples to return from the final star that's sampled
+    ///
+    /// # Panics
+    ///
+    /// # Returns
+    ///
+    /// (Vec of samples, Array of sample probabilities, branch probability)
+    #[allow(clippy::too_many_arguments)]
+    pub fn bounded_sample_multivariate_gaussian<R: Rng>(
+        &mut self,
+        rng: &mut R,
+        loc: &Array1<T>,
+        scale: &Array2<T>,
+        safe_value: T,
+        cdf_samples: usize,
+        num_samples: usize,
+        max_iters: usize,
+    ) -> (Vec<(Array1<T>, T)>, T) {
+        if let Some((safe_star, path_logp)) =
+            self.sample_safe_star(loc, scale, safe_value, cdf_samples, max_iters)
+        {
+            (
+                safe_star.gaussian_sample(
+                    rng,
+                    loc,
+                    scale,
+                    num_samples,
+                    max_iters,
+                    &self.input_bounds,
+                ),
+                path_logp,
+            )
+        } else {
+            panic!()
+        }
+    }
 }
 
 impl<T: Float> Constellation<T, Ix2>
@@ -179,30 +179,28 @@ where
         let mut current_node = 0;
         let mut path = vec![];
         let mut path_logp = T::zero();
-        let infeasible_reset = |me: &mut Self,
-                                x: usize,
-                                path: &mut Vec<usize>,
-                                path_logp: &mut T|
-         -> usize {
-            me.arena[x].set_feasible(false);
-            let mut infeas_cdf = me.arena[x].gaussian_cdf(loc, scale, cdf_samples, max_iters);
-            path.drain(..).rev().for_each(|x| {
-                // check if all chilren are infeasible
-                if me.get_child_ids(x)
-                    .unwrap()
-                    .iter()
-                    .any(|x| me.arena[*x].get_feasible())
-                {
-                    // if not infeasible, update CDF
-                    me.arena[x].add_cdf(T::neg(T::one()) * infeas_cdf);
-                } else {
-                	me.arena[x].set_feasible(false);
-                    infeas_cdf = me.arena[x].gaussian_cdf(loc, scale, cdf_samples, max_iters)
-                }
-            });
-            *path_logp = T::zero();
-            0
-        };
+        let infeasible_reset =
+            |me: &mut Self, x: usize, path: &mut Vec<usize>, path_logp: &mut T| -> usize {
+                me.arena[x].set_feasible(false);
+                let mut infeas_cdf = me.arena[x].gaussian_cdf(loc, scale, cdf_samples, max_iters);
+                path.drain(..).rev().for_each(|x| {
+                    // check if all chilren are infeasible
+                    if me
+                        .get_child_ids(x)
+                        .unwrap()
+                        .iter()
+                        .any(|x| me.arena[*x].get_feasible())
+                    {
+                        // if not infeasible, update CDF
+                        me.arena[x].add_cdf(T::neg(T::one()) * infeas_cdf);
+                    } else {
+                        me.arena[x].set_feasible(false);
+                        infeas_cdf = me.arena[x].gaussian_cdf(loc, scale, cdf_samples, max_iters)
+                    }
+                });
+                *path_logp = T::zero();
+                0
+            };
         loop {
             // base case for feasability
             if current_node == 0 && !self.arena[current_node].get_feasible() {
@@ -211,9 +209,8 @@ where
             // check feasibility of current node
             {
                 // makes the assumption that bounds are on 0th dimension of output
-                let output_bounds =
-                    self.arena[current_node]
-                        .get_output_bounds(&self.dnn, &|x| (x.lower()[[0]], x.upper()[[0]]));
+                let output_bounds = self.arena[current_node]
+                    .get_output_bounds(&self.dnn, &|x| (x.lower()[[0]], x.upper()[[0]]));
                 if output_bounds.1 < safe_value {
                     // handle case where star is safe
                     let safe_star = self.arena[current_node].clone();
@@ -251,12 +248,8 @@ where
                         path_logp = logp;
                     }
                     None => {
-                        current_node = infeasible_reset(
-                            self,
-                            current_node,
-                            &mut path,
-                            &mut path_logp,
-                        );
+                        current_node =
+                            infeasible_reset(self, current_node, &mut path, &mut path_logp);
                     }
                     _ => todo!(),
                 }
@@ -267,7 +260,7 @@ where
     /// Returns the children of a node
     ///
     /// Lazily loads children into the arena and returns a reference to them.
-    /// 
+    ///
     /// # Arguments
     ///
     /// * `self` - The node to expand
@@ -293,21 +286,16 @@ where
     ///
     /// # Returns
     /// * `children` - StarNodeType<T>
-    fn expand(
-        &mut self,
-        node_id: usize,
-    ) {
-		let dnn_index = self.arena[node_id].get_dnn_index();
+    fn expand(&mut self, node_id: usize) {
+        let dnn_index = self.arena[node_id].get_dnn_index();
         let dnn_iter = &mut DNNIterator::new(&self.dnn, dnn_index);
-		let arena = &mut self.arena;
+        let arena = &mut self.arena;
 
         // Get this node's operation from the dnn_iter
         let op = dnn_iter.next();
         // Do this node's operation to produce its children
         let children = match op {
-            Some(StarNodeOp::Leaf) => {
-                StarNodeType::Leaf
-            }
+            Some(StarNodeOp::Leaf) => StarNodeType::Leaf,
             Some(StarNodeOp::Affine(aff)) => {
                 let child_idx = self.arena.new_node(
                     StarNode::default(self.arena[node_id].get_star().affine_map2(&aff))
@@ -351,7 +339,7 @@ where
             }
             None => panic!(),
         };
-		self.children[node_id] = Some(children);
+        self.children[node_id] = Some(children);
     }
 
     fn select_child(
