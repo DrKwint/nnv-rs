@@ -41,6 +41,7 @@ impl<T: num::Float + Default + Sum + Debug + 'static> StarNodeOp<T> {
 			Self::StepRelu(dim) => {
 				crate::deeppoly::deep_poly_steprelu(*dim, bounds, lower_aff, upper_aff)
 			}
+            _ => todo!()
 		}
 	}
 }
@@ -68,7 +69,7 @@ pub enum StarNodeType<T: num::Float> {
 #[derive(Debug, Clone)]
 pub struct StarNode<T: num::Float, D: Dimension> {
     star: Star<T, D>,
-    children: Option<StarNodeType<T>>,
+    //children: Option<StarNodeType<T>>,
     dnn_index: DNNIndex,
     star_cdf: Option<T>,
     output_bounds: Option<(T, T)>,
@@ -79,7 +80,7 @@ impl<T: num::Float, D: Dimension> StarNode<T, D> {
 	pub fn default(star: Star<T, D>) -> Self {
 		Self {
 			star,
-			children: None,
+			//children: None,
 			dnn_index: DNNIndex::default(),
 			star_cdf: None,
 			output_bounds: None,
@@ -108,7 +109,7 @@ where
         &self.star
     }
 
-    pub fn get_index(&self) -> DNNIndex {
+    pub fn get_dnn_index(&self) -> DNNIndex {
         self.dnn_index
     }
 
@@ -152,44 +153,6 @@ where
             *cdf += add
         } else {
             todo!()
-        }
-    }
-
-    pub fn get_child_ids(&self) -> Option<Vec<usize>> {
-        match self.children {
-            Some(StarNodeType::Leaf) => Some(vec![]),
-            Some(StarNodeType::Affine { child_idx }) => Some(vec![child_idx]),
-            Some(StarNodeType::StepRelu {
-                dim,
-                fst_child_idx,
-                snd_child_idx,
-            }) => {
-                let mut child_ids: Vec<usize> = Vec::new();
-                child_ids.push(fst_child_idx);
-                if let Some(idx) = snd_child_idx {
-                    child_ids.push(idx);
-                }
-                Some(child_ids)
-            }
-            Some(StarNodeType::StepReluDropOut {
-                dim: usize,
-                dropout_prob: T,
-                fst_child_idx,
-                snd_child_idx,
-                trd_child_idx,
-            }) => {
-                let mut child_ids: Vec<usize> = Vec::new();
-                child_ids.push(fst_child_idx);
-                if let Some(idx) = snd_child_idx {
-                    child_ids.push(idx);
-                }
-                if let Some(idx) = trd_child_idx {
-                    child_ids.push(idx);
-                }
-                Some(child_ids)
-            }
-            None => None,
-            _ => todo!(),
         }
     }
 }
@@ -256,81 +219,7 @@ where
 		)
 	}
 
-    /// Expand a node's children, possibly inserting them into the arena.
-    ///
-    /// # Arguments
-    ///
-    /// * `self` - The node to expand
-    /// * `node_arena` - The data structure storing star nodes
-    /// * `dnn_iter` - The iterator of operations in the dnn
-    ///
-    /// # Returns
-    /// * `child_ids` - A vector containing the ids of the child nodes
-    pub fn get_children(
-        &mut self,
-        arena: &mut Vec<StarNode<T, Ix2>>,
-        dnn: &DNN<T>,
-    ) -> StarNodeType<T> {
-        if let Some(children) = self.children {
-            return children;
-        }
-
-        let dnn_iter = &mut DNNIterator::new(dnn, self.dnn_index);
-
-        // Get this node's operation from the dnn_iter
-        let op = dnn_iter.next();
-        // Do this node's operation to produce its children
-        match op {
-            Some(StarNodeOp::Leaf) => {
-                self.children = Some(StarNodeType::Leaf);
-            }
-            Some(StarNodeOp::Affine(aff)) => {
-                let idx = arena.len();
-                let child_idx = arena.new_node(
-                    StarNode::default(self.star.clone().affine_map2(&aff))
-                        .with_dnn_index(dnn_iter.get_idx()),
-                );
-                self.children = Some(StarNodeType::Affine { child_idx });
-            }
-            Some(StarNodeOp::StepRelu(dim)) => {
-                let child_stars = self.star.clone().step_relu2(dim);
-                let ids: Vec<usize> = child_stars
-                    .into_iter()
-                    .map(|star| {
-                        let idx = arena.len();
-                        arena.push(StarNode::default(star).with_dnn_index(dnn_iter.get_idx()));
-                        idx
-                    })
-                    .collect();
-                self.children = Some(StarNodeType::StepRelu {
-                    dim,
-                    fst_child_idx: ids[0],
-                    snd_child_idx: ids.get(1).cloned(),
-                });
-            }
-            Some(StarNodeOp::StepReluDropout((dropout_prob, dim))) => {
-                let child_stars = self.star.clone().step_relu2_dropout(dim);
-                let ids: Vec<usize> = child_stars
-                    .into_iter()
-                    .map(|star| {
-                        let idx = arena.len();
-                        arena.push(StarNode::default(star).with_dnn_index(dnn_iter.get_idx()));
-                        idx
-                    })
-                    .collect();
-                self.children = Some(StarNodeType::StepReluDropOut {
-                    dim,
-                    dropout_prob,
-                    fst_child_idx: ids[0],
-                    snd_child_idx: ids.get(1).cloned(),
-                    trd_child_idx: ids.get(2).cloned(),
-                });
-            }
-            None => panic!(),
-            _ => todo!(),
-        };
-        self.children.unwrap()
-    }
+    
 }
 
 pub trait ArenaLike<T> {

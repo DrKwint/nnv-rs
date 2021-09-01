@@ -18,6 +18,7 @@ use std::iter::Sum;
 /// Data structure representing the paths through a deep neural network (DNN)
 pub struct Constellation<T: Float, D: Dimension> {
 	arena: Vec<StarNode<T, D>>,
+    children: Vec<Option<StarNodeType<T>>>,
 	dnn: DNN<T>,
 	input_bounds: Option<Bounds<T, D>>,
 }
@@ -37,15 +38,53 @@ where
 	/// Instantiate a Constellation with given input set and network
 	pub fn new(input_star: Star<T, D>, dnn: DNN<T>, input_bounds: Option<Bounds<T, D>>) -> Self {
 		let star_node = StarNode::default(input_star);
-
-		let mut arena = Vec::new();
-		arena.push(star_node);
+		let children = vec![None];
+		let arena = vec![star_node];
 		Self {
 			arena,
+			children,
 			dnn,
 			input_bounds,
 		}
 	}
+
+    pub fn get_child_ids(&self, node_id: usize) -> Option<Vec<usize>> {
+        match self.children[node_id] {
+            Some(StarNodeType::Leaf) => Some(vec![]),
+            Some(StarNodeType::Affine { child_idx }) => Some(vec![child_idx]),
+            Some(StarNodeType::StepRelu {
+                dim,
+                fst_child_idx,
+                snd_child_idx,
+            }) => {
+                let mut child_ids: Vec<usize> = Vec::new();
+                child_ids.push(fst_child_idx);
+                if let Some(idx) = snd_child_idx {
+                    child_ids.push(idx);
+                }
+                Some(child_ids)
+            }
+            Some(StarNodeType::StepReluDropOut {
+                dim: usize,
+                dropout_prob: T,
+                fst_child_idx,
+                snd_child_idx,
+                trd_child_idx,
+            }) => {
+                let mut child_ids: Vec<usize> = Vec::new();
+                child_ids.push(fst_child_idx);
+                if let Some(idx) = snd_child_idx {
+                    child_ids.push(idx);
+                }
+                if let Some(idx) = trd_child_idx {
+                    child_ids.push(idx);
+                }
+                Some(child_ids)
+            }
+            None => None,
+            _ => todo!(),
+        }
+    }
 }
 
 impl<T: Float> Constellation<T, Ix2>
@@ -140,26 +179,25 @@ where
         let mut current_node = 0;
         let mut path = vec![];
         let mut path_logp = T::zero();
-        let infeasible_reset = |arena: &mut Vec<StarNode<T, Ix2>>,
+        let infeasible_reset = |me: &mut Self,
                                 x: usize,
                                 path: &mut Vec<usize>,
                                 path_logp: &mut T|
          -> usize {
-            arena[x].set_feasible(false);
-            let mut infeas_cdf = arena[x].gaussian_cdf(loc, scale, cdf_samples, max_iters);
+            me.arena[x].set_feasible(false);
+            let mut infeas_cdf = me.arena[x].gaussian_cdf(loc, scale, cdf_samples, max_iters);
             path.drain(..).rev().for_each(|x| {
                 // check if all chilren are infeasible
-                if arena[x]
-                    .get_child_ids()
+                if me.get_child_ids(x)
                     .unwrap()
                     .iter()
-                    .any(|x| arena[*x].get_feasible())
+                    .any(|x| me.arena[*x].get_feasible())
                 {
                     // if not infeasible, update CDF
-                    arena[x].add_cdf(T::neg(T::one()) * infeas_cdf);
+                    me.arena[x].add_cdf(T::neg(T::one()) * infeas_cdf);
                 } else {
-                    arena[x].set_feasible(false);
-                    infeas_cdf = arena[x].gaussian_cdf(loc, scale, cdf_samples, max_iters)
+                	me.arena[x].set_feasible(false);
+                    infeas_cdf = me.arena[x].gaussian_cdf(loc, scale, cdf_samples, max_iters)
                 }
             });
             *path_logp = T::zero();
@@ -183,7 +221,7 @@ where
                 } else if output_bounds.0 > safe_value {
                     // handle case where star is infeasible
                     self.arena[current_node].set_feasible(false);
-                    infeasible_reset(&mut self.arena, current_node, &mut path, &mut path_logp);
+                    infeasible_reset(self, current_node, &mut path, &mut path_logp);
                     continue;
                 } else {
                     // otherwise, push to path and continue expanding
@@ -214,7 +252,7 @@ where
                     }
                     None => {
                         current_node = infeasible_reset(
-                            &mut self.arena,
+                            self,
                             current_node,
                             &mut path,
                             &mut path_logp,
@@ -224,6 +262,96 @@ where
                 }
             }
         }
+    }
+
+    /// Returns the children of a node
+    ///
+    /// Lazily loads children into the arena and returns a reference to them.
+    /// 
+    /// # Arguments
+    ///
+    /// * `self` - The node to expand
+    /// * `node_arena` - The data structure storing star nodes
+    /// * `dnn_iter` - The iterator of operations in the dnn
+    ///
+    /// # Returns
+    /// * `children` - StarNodeType<T>
+    pub fn get_children(&mut self, node_id: usize) -> &StarNodeType<T> {
+        if let None = self.children[node_id] {
+            self.expand(node_id);
+        }
+        self.children[node_id].as_ref().unwrap()
+    }
+
+    /// Expand a node's children, inserting them into the arena.
+    ///
+    /// # Arguments
+    ///
+    /// * `self` - The node to expand
+    /// * `node_arena` - The data structure storing star nodes
+    /// * `dnn_iter` - The iterator of operations in the dnn
+    ///
+    /// # Returns
+    /// * `children` - StarNodeType<T>
+    fn expand(
+        &mut self,
+        node_id: usize,
+    ) {
+		let dnn_index = self.arena[node_id].get_dnn_index();
+        let dnn_iter = &mut DNNIterator::new(&self.dnn, dnn_index);
+		let arena = &mut self.arena;
+
+        // Get this node's operation from the dnn_iter
+        let op = dnn_iter.next();
+        // Do this node's operation to produce its children
+        let children = match op {
+            Some(StarNodeOp::Leaf) => {
+                StarNodeType::Leaf
+            }
+            Some(StarNodeOp::Affine(aff)) => {
+                let child_idx = self.arena.new_node(
+                    StarNode::default(self.arena[node_id].get_star().affine_map2(&aff))
+                        .with_dnn_index(dnn_iter.get_idx()),
+                );
+                StarNodeType::Affine { child_idx }
+            }
+            Some(StarNodeOp::StepRelu(dim)) => {
+                let child_stars = arena[node_id].get_star().step_relu2(dim);
+                let ids: Vec<usize> = child_stars
+                    .into_iter()
+                    .map(|star| {
+                        let idx = arena.len();
+                        arena.push(StarNode::default(star).with_dnn_index(dnn_iter.get_idx()));
+                        idx
+                    })
+                    .collect();
+                StarNodeType::StepRelu {
+                    dim,
+                    fst_child_idx: ids[0],
+                    snd_child_idx: ids.get(1).cloned(),
+                }
+            }
+            Some(StarNodeOp::StepReluDropout((dropout_prob, dim))) => {
+                let child_stars = arena[node_id].get_star().step_relu2_dropout(dim);
+                let ids: Vec<usize> = child_stars
+                    .into_iter()
+                    .map(|star| {
+                        let idx = arena.len();
+                        arena.push(StarNode::default(star).with_dnn_index(dnn_iter.get_idx()));
+                        idx
+                    })
+                    .collect();
+                StarNodeType::StepReluDropOut {
+                    dim,
+                    dropout_prob,
+                    fst_child_idx: ids[0],
+                    snd_child_idx: ids.get(1).cloned(),
+                    trd_child_idx: ids.get(2).cloned(),
+                }
+            }
+            None => panic!(),
+        };
+		self.children[node_id] = Some(children);
     }
 
     fn select_child(
@@ -236,13 +364,13 @@ where
         max_iters: usize,
         rng: &mut rand::rngs::ThreadRng,
     ) -> Option<(usize, T)> {
-        match self.arena[current_node].get_children(&mut self.arena, &self.dnn) {
+        match self.get_children(current_node) {
             // leaf node, which must be partially safe and partially unsafe
-            StarNodeType::Leaf => {
+            &StarNodeType::Leaf => {
                 panic!();
             }
-            StarNodeType::Affine { child_idx } => Some((child_idx, path_logp)),
-            StarNodeType::StepRelu {
+            &StarNodeType::Affine { child_idx } => Some((child_idx, path_logp)),
+            &StarNodeType::StepRelu {
                 dim,
                 fst_child_idx,
                 snd_child_idx,
@@ -318,7 +446,7 @@ where
                     }
                 }
             }
-            StarNodeType::StepReluDropOut {
+            &StarNodeType::StepReluDropOut {
                 dim,
                 dropout_prob,
                 fst_child_idx,
