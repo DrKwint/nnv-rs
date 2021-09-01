@@ -160,6 +160,7 @@ where
 #[cfg(test)]
 mod tests {
 	use super::*;
+	use crate::dnn::{DNN, DNNIndex};
 	use crate::test_util::affine2;
 	use crate::test_util::{bounds1, fc_dnn};
 	use crate::Layer;
@@ -191,7 +192,7 @@ mod tests {
 		#[test]
 		fn test_deeppoly_correctness(dnn in fc_dnn(8, 4, 5, 5), input_bounds in bounds1(8)) {
 			let concrete_input = input_bounds.sample_uniform(0u64);
-			let output_bounds = deep_poly(input_bounds, &dnn);
+			let output_bounds = deep_poly(input_bounds, DNNIterator::new(&dnn, DNNIndex::default()));
 			let concrete_output = dnn.forward(concrete_input.into_dyn()).into_dimensionality::<Ix1>().unwrap();
 			prop_assert!(output_bounds.is_member(&concrete_output.view()), "\n\nConcrete output: {}\nOutput bounds: {}\n\n", concrete_output, output_bounds)
 		}

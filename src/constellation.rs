@@ -221,7 +221,7 @@ where
                 } else if output_bounds.0 > safe_value {
                     // handle case where star is infeasible
                     self.arena[current_node].set_feasible(false);
-                    infeasible_reset(self, current_node, &mut path, &mut path_logp);
+                    current_node = infeasible_reset(self, current_node, &mut path, &mut path_logp);
                     continue;
                 } else {
                     // otherwise, push to path and continue expanding
