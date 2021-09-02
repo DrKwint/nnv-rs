@@ -3,27 +3,22 @@
 //! for representing affine transformed sets
 use crate::affine::{Affine, Affine2, Affine4};
 use crate::bounds::Bounds1;
-use crate::deeppoly::deep_poly;
 use crate::inequality::Inequality;
 use crate::polytope::Polytope;
 use crate::tensorshape::TensorShape;
 use crate::util::solve;
-use crate::Bounds;
-use crate::DNN;
 use good_lp::ResolutionError;
 use ndarray::concatenate;
 use ndarray::Array4;
 use ndarray::Dimension;
 use ndarray::Ix4;
 use ndarray::ScalarOperand;
-use ndarray::ShapeError;
 use ndarray::{Array1, Array2};
 use ndarray::{ArrayView1, ArrayView2};
 use ndarray::{Axis, Ix2, Zip};
 use num::Float;
 use rand::Rng;
 use std::fmt::Debug;
-use std::iter::Sum;
 
 pub type Star2<A> = Star<A, Ix2>;
 pub type Star4<A> = Star<A, Ix4>;
@@ -281,6 +276,15 @@ where
             .collect()
     }
 
+    pub fn step_relu2_dropout(&self, index: usize) -> Vec<Self> {
+        let mut dropout_star = self.clone();
+        dropout_star.representation.zero_eqn(index);
+
+        let mut stars = self.step_relu2(index);
+        stars.insert(0, dropout_star);
+        stars.into_iter().filter(|x| !x.is_empty()).collect()
+    }
+
     /// # Panics
     pub fn get_min(&self, idx: usize) -> T {
         let eqn = self.representation.get_eqn(idx).get_raw_augmented();
@@ -393,23 +397,6 @@ where
             // Unbounded sample from Gaussian
             todo!()
         }
-    }
-}
-
-impl<T: Float> Star2<T>
-where
-    T: std::convert::From<f64>
-        + std::convert::Into<f64>
-        + ndarray::ScalarOperand
-        + std::fmt::Display
-        + std::fmt::Debug
-        + std::ops::MulAssign
-        + Default
-        + Sum,
-    f64: std::convert::From<T>,
-{
-    pub fn deeppoly_output_bounds(&self, dnn: &DNN<T>) -> Bounds1<T> {
-        deep_poly(self.calculate_axis_aligned_bounding_box(), dnn)
     }
 }
 

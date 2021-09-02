@@ -3,20 +3,16 @@
 use crate::tensorshape::TensorShape;
 use ndarray::concatenate;
 use ndarray::iter::Lanes;
-use ndarray::ArrayViewMut1;
-use ndarray::Axis;
-use ndarray::Dimension;
-use ndarray::Ix1;
-use ndarray::IxDyn;
 use ndarray::ScalarOperand;
 use ndarray::ShapeError;
 use ndarray::Zip;
 use ndarray::{Array, Array1, Array2, Array4};
 use ndarray::{ArrayView1, ArrayView2};
-use ndarray::{Ix2, Ix4};
+use ndarray::{ArrayViewMut0, ArrayViewMut1};
+use ndarray::{Axis, Dimension};
+use ndarray::{Ix1, Ix2, Ix4, IxDyn};
 use num::Float;
-use std::fmt::Debug;
-use std::fmt::Display;
+use std::fmt::{Debug, Display};
 use std::iter::Sum;
 use std::ops::{Add, AddAssign, Mul, MulAssign};
 
@@ -125,6 +121,13 @@ impl<T: 'static + Float> Affine2<T> {
             .to_owned()
             .insert_axis(Axis(0));
         Self { basis, shift }
+    }
+
+    pub fn get_eqn_mut(&mut self, index: usize) -> (ArrayViewMut1<T>, ArrayViewMut0<T>) {
+        (
+            self.basis.index_axis_mut(Axis(0), index),
+            self.shift.index_axis_mut(Axis(0), index),
+        )
     }
 
     pub fn vars(&self) -> Lanes<T, Ix1> {

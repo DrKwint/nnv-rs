@@ -4,7 +4,6 @@ use good_lp::solvers::highs::{highs, HighsSolution};
 use good_lp::{variable, ResolutionError, Solution, SolverModel};
 use good_lp::{Expression, IntoAffineExpression, ProblemVariables, Variable};
 use itertools::iproduct;
-use ndarray::Dimension;
 use ndarray::{s, Axis, Slice};
 use ndarray::{Array2, ArrayView1};
 use ndarray_linalg::SVD;

@@ -52,7 +52,7 @@ class DNN:
                 weights = layer.get_weights()
                 self.dnn.add_dense(weights[0].T, weights[1])
                 if layer.activation == tf.nn.relu:
-                    self.dnn.add_relu(len(weights[1]) - 1)
+                    self.dnn.add_relu(len(weights[1]))
             elif isinstance(layer, Conv2D):
                 weights = layer.get_weights()
                 self.dnn.add_conv(weights[0], weights[1])
@@ -83,8 +83,7 @@ class Constellation:
     def importance_sample(self, loc, scale):
         pass
 
-    def bounded_sample(self, loc, scale, input_lower_bounds,
-                       input_upper_bounds):
+    def bounded_sample(self, loc, scale):
         if self.safe_value == np.inf:
             sample = np.random.normal(loc, scale)
             prob = 1.

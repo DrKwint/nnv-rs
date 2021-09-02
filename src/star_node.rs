@@ -5,23 +5,49 @@ use crate::dnn::DNNIndex;
 use crate::dnn::DNNIterator;
 use crate::dnn::DNN;
 use crate::star::Star;
+use log::debug;
 use ndarray::Dimension;
 use ndarray::Ix2;
 use ndarray::{Array1, Array2};
 use num::Float;
 use rand::Rng;
+use std::fmt::Debug;
+use std::iter::Sum;
 
 #[derive(Debug, Clone)]
 pub enum StarNodeOp<T: num::Float> {
     Leaf,
     Affine(Affine2<T>),
     StepRelu(usize),
+    StepReluDropout((T, usize)),
 }
 
-impl<T: num::Float> StarNodeOp<T> {}
+impl<T: num::Float + Default + Sum + Debug + 'static> StarNodeOp<T> {
+    pub fn apply_bounds(
+        &self,
+        bounds: Bounds1<T>,
+        lower_aff: Affine2<T>,
+        upper_aff: Affine2<T>,
+    ) -> (Bounds1<T>, (Affine2<T>, Affine2<T>)) {
+        match self {
+            Self::Leaf => (bounds, (lower_aff, upper_aff)),
+            Self::Affine(aff) => (
+                bounds,
+                (
+                    aff.signed_compose(&lower_aff, &upper_aff),
+                    aff.signed_compose(&upper_aff, &lower_aff),
+                ),
+            ),
+            Self::StepRelu(dim) => {
+                crate::deeppoly::deep_poly_steprelu(*dim, bounds, lower_aff, upper_aff)
+            }
+            _ => todo!(),
+        }
+    }
+}
 
 #[derive(Debug, Clone)]
-pub enum StarNodeType {
+pub enum StarNodeType<T: num::Float> {
     Leaf,
     Affine {
         child_idx: usize,
@@ -33,6 +59,7 @@ pub enum StarNodeType {
     },
     StepReluDropOut {
         dim: usize,
+        dropout_prob: T,
         fst_child_idx: usize,
         snd_child_idx: Option<usize>,
         trd_child_idx: Option<usize>,
@@ -42,7 +69,7 @@ pub enum StarNodeType {
 #[derive(Debug, Clone)]
 pub struct StarNode<T: num::Float, D: Dimension> {
     star: Star<T, D>,
-    children: Option<StarNodeType>,
+    //children: Option<StarNodeType<T>>,
     dnn_index: DNNIndex,
     star_cdf: Option<T>,
     output_bounds: Option<(T, T)>,
@@ -53,7 +80,7 @@ impl<T: num::Float, D: Dimension> StarNode<T, D> {
     pub fn default(star: Star<T, D>) -> Self {
         Self {
             star,
-            children: None,
+            //children: None,
             dnn_index: DNNIndex::default(),
             star_cdf: None,
             output_bounds: None,
@@ -82,7 +109,7 @@ where
         &self.star
     }
 
-    pub fn get_index(&self) -> DNNIndex {
+    pub fn get_dnn_index(&self) -> DNNIndex {
         self.dnn_index
     }
 
@@ -128,47 +155,6 @@ where
             todo!()
         }
     }
-
-    pub fn get_child_ids(&self) -> Option<Vec<usize>> {
-        match self.children {
-            Some(StarNodeType::Leaf) => Some(vec![]),
-            Some(StarNodeType::Affine { child_idx }) => Some(vec![child_idx]),
-            Some(StarNodeType::StepRelu {
-                dim,
-                fst_child_idx,
-                snd_child_idx,
-            }) => {
-                let mut child_ids: Vec<usize> = Vec::new();
-                child_ids.push(fst_child_idx);
-                if let Some(idx) = snd_child_idx {
-                    child_ids.push(idx);
-                }
-                Some(child_ids)
-            }
-            Some(StarNodeType::StepReluDropOut {
-                dim: usize,
-                fst_child_idx,
-                snd_child_idx,
-                trd_child_idx,
-            }) => {
-                let mut child_ids: Vec<usize> = Vec::new();
-                child_ids.push(fst_child_idx);
-                if let Some(idx) = snd_child_idx {
-                    child_ids.push(idx);
-                }
-                if let Some(idx) = trd_child_idx {
-                    child_ids.push(idx);
-                }
-                Some(child_ids)
-            }
-            None => None,
-            _ => todo!(),
-        }
-    }
-
-    pub fn set_children(&mut self, children: StarNodeType) {
-        self.children = Some(children);
-    }
 }
 
 impl<T: Float> StarNode<T, Ix2>
@@ -204,11 +190,11 @@ where
     pub fn get_output_bounds(
         &mut self,
         dnn: &DNN<T>,
-        idx: usize,
         output_fn: &dyn Fn(Bounds1<T>) -> (T, T),
     ) -> (T, T) {
         self.output_bounds.map_or_else(
             || {
+                debug!("get_output_bounds on star {:?}", self.star);
                 let bounding_box = self.star.calculate_axis_aligned_bounding_box();
                 // TODO: update this to use DeepPoly to get proper bounds rather than this estimate
                 /*
@@ -224,7 +210,10 @@ where
                 };
                 self.output_bounds = Some(bounds);
                 */
-                output_fn(deep_poly(bounding_box, dnn))
+                output_fn(deep_poly(
+                    bounding_box,
+                    DNNIterator::new(dnn, self.dnn_index.clone()),
+                ))
             },
             |bounds| bounds,
         )

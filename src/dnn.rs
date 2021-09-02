@@ -4,16 +4,14 @@ use crate::bounds::Bounds1;
 use crate::deeppoly::deep_poly_relu;
 use crate::star::Star;
 use crate::star_node::StarNodeOp;
-use crate::star_node::StarNodeType;
 use crate::tensorshape::TensorShape;
 use crate::Affine;
+use log::trace;
 use ndarray::Array;
 use ndarray::ArrayD;
 use ndarray::Ix1;
 use ndarray::Ix2;
 use ndarray::Ix4;
-use ndarray::IxDyn;
-use ndarray::Zip;
 use num::Float;
 use std::fmt;
 use std::iter::Sum;
@@ -100,6 +98,7 @@ pub enum Layer<T: num::Float> {
     MaxPooling2D(usize),
     Flatten,
     ReLU(usize),
+    Dropout(T),
 }
 
 impl<T: Float> Layer<T> {
@@ -263,7 +262,7 @@ impl<'a, T: Float> DNNIterator<'a, T> {
     }
 }
 
-impl<T: num::Float> Iterator for DNNIterator<'_, T> {
+impl<T: 'static + num::Float + std::fmt::Debug> Iterator for DNNIterator<'_, T> {
     type Item = StarNodeOp<T>;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -272,18 +271,36 @@ impl<T: num::Float> Iterator for DNNIterator<'_, T> {
         }
         if let Some(ref mut step) = self.idx.remaining_steps {
             *step -= 1;
-            Some(StarNodeOp::StepRelu(*step))
+            if *step == 0 {
+                self.idx.layer += 1;
+            }
+            let next_layer = self.dnn.get_layer(self.idx.layer + 1);
+            if let Some(Layer::Dropout(prob)) = next_layer {
+                Some(StarNodeOp::StepReluDropout((*prob, *step)))
+            } else {
+                Some(StarNodeOp::StepRelu(*step))
+            }
         } else {
             let layer = self.dnn.get_layer(self.idx.layer);
             match layer {
                 None => {
+                    self.idx.layer += 1;
                     self.finished = true;
                     Some(StarNodeOp::Leaf)
                 }
-                Some(Layer::Dense(aff)) => Some(StarNodeOp::Affine(aff.clone())),
+                Some(Layer::Dense(aff)) => {
+                    self.idx.layer += 1;
+                    Some(StarNodeOp::Affine(aff.clone()))
+                }
                 Some(Layer::ReLU(ndim)) => {
                     self.idx.remaining_steps = Some(*ndim);
-                    Some(StarNodeOp::StepRelu(*ndim))
+
+                    let next_layer = self.dnn.get_layer(self.idx.layer + 1);
+                    if let Some(Layer::Dropout(prob)) = next_layer {
+                        Some(StarNodeOp::StepReluDropout((*prob, *ndim)))
+                    } else {
+                        Some(StarNodeOp::StepRelu(*ndim))
+                    }
                 }
                 _ => todo!(),
             }

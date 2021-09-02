@@ -1,7 +1,7 @@
 use crate::affine::Affine2;
 use crate::bounds::Bounds1;
-use crate::DNN;
-use log::{debug, trace};
+use crate::dnn::DNNIterator;
+use log::{debug, error, log_enabled, trace, warn, Level};
 use ndarray::Array1;
 use ndarray::Array2;
 use ndarray::ArrayView1;
@@ -13,6 +13,44 @@ use std::fmt::Debug;
 use std::fmt::Display;
 use std::iter::Sum;
 use std::ops::MulAssign;
+
+pub fn deep_poly_steprelu<T: 'static + Float + Default>(
+    dim: usize,
+    mut bounds: Bounds1<T>,
+    mut lower_aff: Affine2<T>,
+    mut upper_aff: Affine2<T>,
+) -> (Bounds1<T>, (Affine2<T>, Affine2<T>)) {
+    let mut bounds_slice = bounds.index_mut(dim);
+    let (mut lbasis, mut lshift) = lower_aff.get_eqn_mut(dim);
+    let (mut ubasis, mut ushift) = upper_aff.get_eqn_mut(dim);
+    let l = bounds_slice[[0]];
+    let u = bounds_slice[[1]];
+    if u <= T::zero() {
+        bounds_slice.fill(T::zero());
+        lbasis.fill(T::zero());
+        ubasis.fill(T::zero());
+        lshift.fill(T::zero());
+        ushift.fill(T::zero());
+    // gt branch
+    } else if l >= T::zero() {
+        // here, leave mul and shift at defaults
+        // then, spanning branch
+    } else {
+        ubasis.mapv_inplace(|x| x * (u / (u - l)));
+        ushift.mapv_inplace(|x| x - ((u * l) / (u - l)));
+        // use approximation with least area
+        if u < T::neg(l) {
+            // Eqn. 3 from the paper
+            *bounds_slice.get_mut(0).unwrap() = T::zero();
+            lbasis.fill(T::zero());
+            lshift.fill(T::zero());
+        } else {
+            // Eqn. 4 from the paper, leave l_mul at default
+        }
+    }
+    debug_assert!(bounds.is_all_finite());
+    (bounds, (lower_aff, upper_aff))
+}
 
 pub fn deep_poly_relu<
     T: Float + Default + std::ops::MulAssign + ScalarOperand + std::ops::Mul + std::fmt::Debug,
@@ -70,17 +108,23 @@ pub fn deep_poly_relu<
     (out, (lower_aff, upper_aff))
 }
 
-pub fn deep_poly<T: 'static + Float>(input_bounds: Bounds1<T>, dnn: &DNN<T>) -> Bounds1<T>
+pub fn deep_poly<T: 'static + Float>(
+    input_bounds: Bounds1<T>,
+    dnn_iter: DNNIterator<T>,
+) -> Bounds1<T>
 where
     T: ScalarOperand + Display + Debug + Default + MulAssign + std::convert::From<f64> + Sum,
     f64: std::convert::From<T>,
 {
-    trace!("Starting Deeppoly on {}", dnn);
+    debug!(
+        "Starting Deeppoly at {:?} with input bounds {:?}",
+        dnn_iter.get_idx(),
+        input_bounds
+    );
     let ndim = input_bounds.ndim();
     // Affine expressing bounds on each variable in current layer as a
     // linear function of input bounds
-    let mut i = 0;
-    let aff_bounds = dnn.get_layers().iter().fold(
+    let aff_bounds = dnn_iter.fold(
         // Initialize with identity
         //(Affine2::identity(ndim), Affine2::identity(ndim)),
         (
@@ -94,17 +138,14 @@ where
             ),
         ),
         |(laff, uaff), layer| {
-            trace!("Deeppoly Layer {}: {}", i, layer);
-            i += 1;
             // Substitute input concrete bounds into current abstract bounds
             // to get current concrete bounds
             let bounds_concrete = Bounds1::new(
-                //laff.apply(&input_bounds.lower()),
-                //uaff.apply(&input_bounds.upper()),
                 laff.apply(&Array1::ones(ndim).view()),
                 uaff.apply(&Array1::ones(ndim).view()),
             );
-            let out = layer.apply_bounds(&laff, &uaff, &bounds_concrete);
+            let out = layer.apply_bounds(bounds_concrete, laff, uaff);
+            trace!("Deeppoly bounds {:?}", out.0);
             out.1
         },
     );
@@ -119,6 +160,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::dnn::{DNNIndex, DNN};
     use crate::test_util::affine2;
     use crate::test_util::{bounds1, fc_dnn};
     use crate::Layer;
@@ -150,7 +192,7 @@ mod tests {
         #[test]
         fn test_deeppoly_correctness(dnn in fc_dnn(8, 4, 5, 5), input_bounds in bounds1(8)) {
             let concrete_input = input_bounds.sample_uniform(0u64);
-            let output_bounds = deep_poly(input_bounds, &dnn);
+            let output_bounds = deep_poly(input_bounds, DNNIterator::new(&dnn, DNNIndex::default()));
             let concrete_output = dnn.forward(concrete_input.into_dyn()).into_dimensionality::<Ix1>().unwrap();
             prop_assert!(output_bounds.is_member(&concrete_output.view()), "\n\nConcrete output: {}\nOutput bounds: {}\n\n", concrete_output, output_bounds)
         }

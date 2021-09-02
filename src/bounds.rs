@@ -2,16 +2,14 @@
 use crate::affine::Affine2;
 use crate::rand::distributions::Distribution;
 use crate::rand::SeedableRng;
-use ndarray::iter::Lanes;
-use ndarray::iter::LanesMut;
+use ndarray::iter::{Lanes, LanesMut};
 use ndarray::Array2;
-use ndarray::ArrayView;
-use ndarray::ArrayViewMut;
 use ndarray::Axis;
 use ndarray::Ix2;
 use ndarray::RemoveAxis;
 use ndarray::Zip;
 use ndarray::{stack, Array, Dimension};
+use ndarray::{ArrayView, ArrayViewMut, ArrayViewMut1};
 use num::Float;
 use rand::distributions::Uniform;
 use rand::rngs::StdRng;
@@ -31,6 +29,10 @@ impl<T: Float, D: Dimension + ndarray::RemoveAxis> Bounds<T, D> {
     ) -> Bounds<T, D> {
         let data: Array<T, D> = stack(Axis(0), &[lower.view(), upper.view()]).unwrap();
         Self { data }
+    }
+
+    pub fn is_all_finite(&self) -> bool {
+        self.data.iter().all(|&x| T::is_finite(x))
     }
 
     pub fn lower(&self) -> ArrayView<T, D::Smaller> {
@@ -109,6 +111,10 @@ impl<T: 'static + Float + Default> Bounds1<T> {
     pub fn append(mut self, other: Self) -> Self {
         self.data.append(Axis(1), other.data.view()).unwrap();
         self
+    }
+
+    pub fn index_mut(&mut self, index: usize) -> ArrayViewMut1<T> {
+        self.data.index_axis_mut(Axis(1), index)
     }
 }
 
