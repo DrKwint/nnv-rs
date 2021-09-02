@@ -69,7 +69,6 @@ pub enum StarNodeType<T: num::Float> {
 #[derive(Debug, Clone)]
 pub struct StarNode<T: num::Float, D: Dimension> {
     star: Star<T, D>,
-    //children: Option<StarNodeType<T>>,
     dnn_index: DNNIndex,
     star_cdf: Option<T>,
     output_bounds: Option<(T, T)>,
@@ -80,7 +79,6 @@ impl<T: num::Float, D: Dimension> StarNode<T, D> {
     pub fn default(star: Star<T, D>) -> Self {
         Self {
             star,
-            //children: None,
             dnn_index: DNNIndex::default(),
             star_cdf: None,
             output_bounds: None,

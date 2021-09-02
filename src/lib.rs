@@ -130,7 +130,7 @@ struct PyConstellation {
 #[pymethods]
 impl PyConstellation {
     #[new]
-    pub fn new(
+    pub fn py_new(
         py_dnn: PyDNN,
         input_bounds: Option<(PyReadonlyArray1<f64>, PyReadonlyArray1<f64>)>,
     ) -> Self {
@@ -155,6 +155,28 @@ impl PyConstellation {
         Self {
             constellation: Constellation::new(star, dnn, bounds),
         }
+    }
+
+    pub fn set_output_bounds(
+        &mut self,
+        fixed_part: Option<PyReadonlyArray1<f64>>,
+        unfixed_part: Option<(PyReadonlyArray1<f64>, PyReadonlyArray1<f64>)>,
+    ) {
+        let fixed_bounds =
+            fixed_part.map(|x| Bounds1::new(x.as_array().to_owned(), x.as_array().to_owned()));
+        let unfixed_bounds = unfixed_part
+            .map(|(l, u)| Bounds1::new(l.as_array().to_owned(), u.as_array().to_owned()));
+        let bounds = match (fixed_bounds, unfixed_bounds) {
+            (Some(f), Some(u)) => Some(f.append(u)),
+            (Some(f), None) => Some(f),
+            (None, Some(u)) => Some(u),
+            (None, None) => None,
+        };
+        let mut star = Star2::default(&self.constellation.get_dnn().input_shape());
+        if let Some(ref b) = bounds {
+            star = star.with_input_bounds((*b).clone());
+        }
+        self.constellation.reset_with_star(star, bounds);
     }
 
     #[allow(clippy::too_many_arguments)]

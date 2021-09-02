@@ -48,6 +48,17 @@ where
         }
     }
 
+    pub fn get_dnn(&self) -> &DNN<T> {
+        &self.dnn
+    }
+
+    pub fn reset_with_star(&mut self, input_star: Star<T, D>, input_bounds: Option<Bounds<T, D>>) {
+        let star_node = StarNode::default(input_star);
+        self.arena = vec![star_node];
+        self.children = vec![None];
+        self.input_bounds = input_bounds;
+    }
+
     pub fn get_child_ids(&self, node_id: usize) -> Option<Vec<usize>> {
         match self.children[node_id] {
             Some(StarNodeType::Leaf) => Some(vec![]),
