@@ -87,14 +87,14 @@ class Constellation:
 
     def bounded_sample(self, loc, scale):
         if self.safe_value == np.inf:
-            sample = np.random.normal(loc, scale)
+            sample = np.random.normal(loc[-len(scale):], scale)
             prob = 1.
             for (samp, l, s) in zip(sample, loc, scale):
                 prob *= norm.pdf(samp, l, s)
             return sample, np.log(prob + 1e-12)
         sample, sample_logp, branch_logp = self.constellation.bounded_sample_multivariate_gaussian(
             loc,
-            np.diag(scale),
+            np.diag(scale).astype(np.float64),
             self.safe_value,
             cdf_samples=100,
             num_samples=20,
