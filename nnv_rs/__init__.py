@@ -89,7 +89,7 @@ class Constellation:
             return sample, np.log(prob + 1e-12)
         sample, sample_logp, branch_logp = self.constellation.bounded_sample_multivariate_gaussian(
             loc,
-            scale,
+            np.diag(scale),
             self.safe_value,
             cdf_samples=100,
             num_samples=20,

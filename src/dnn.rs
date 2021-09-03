@@ -293,13 +293,13 @@ impl<T: 'static + num::Float + std::fmt::Debug> Iterator for DNNIterator<'_, T> 
                     Some(StarNodeOp::Affine(aff.clone()))
                 }
                 Some(Layer::ReLU(ndim)) => {
-                    self.idx.remaining_steps = Some(*ndim);
+                    self.idx.remaining_steps = Some(*ndim - 1);
 
                     let next_layer = self.dnn.get_layer(self.idx.layer + 1);
                     if let Some(Layer::Dropout(prob)) = next_layer {
-                        Some(StarNodeOp::StepReluDropout((*prob, *ndim)))
+                        Some(StarNodeOp::StepReluDropout((*prob, *ndim - 1)))
                     } else {
-                        Some(StarNodeOp::StepRelu(*ndim))
+                        Some(StarNodeOp::StepRelu(*ndim - 1))
                     }
                 }
                 _ => todo!(),
