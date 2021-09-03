@@ -71,14 +71,11 @@ class DNN:
 
 class Constellation:
     def __init__(self, dnn, input_bounds=None, safe_value=np.inf):
-        if input_bounds is None:
-            (np.full(dnn.input_shape(),
-                     np.NINF), np.full(dnn.input_shape(), np.inf))
         self.constellation = PyConstellation(dnn.dnn, input_bounds)
         self.safe_value = safe_value
 
-    def _weights(self, network_weights):
-        self.network_weights = network_weights
+    def set_output_bounds(self, fixed_part, unfixed_part):
+        self.constellation.set_output_bounds(fixed_part, unfixed_part)
 
     def importance_sample(self, loc, scale):
         pass
