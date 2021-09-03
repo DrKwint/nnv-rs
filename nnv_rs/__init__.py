@@ -71,8 +71,15 @@ class DNN:
 
 class Constellation:
     def __init__(self, dnn, input_bounds=None, safe_value=np.inf):
-        self.constellation = PyConstellation(dnn.dnn, input_bounds)
+        if dnn is None:
+            self.constellation = None
+        else:
+            self.constellation = PyConstellation(dnn.dnn, input_bounds)
         self.safe_value = safe_value
+
+    def set_dnn(self, dnn):
+        bounds = self.constellation.get_input_bounds()
+        self.constellation = PyConstellation(dnn.dnn, input_bounds)
 
     def set_input_bounds(self, fixed_part, unfixed_part):
         self.constellation.set_input_bounds(fixed_part, unfixed_part)
@@ -86,6 +93,7 @@ class Constellation:
         return self.bounded_sample(loc, scale)
 
     def bounded_sample(self, loc, scale):
+        print("Safe value:", self.safe_value)
         if self.safe_value == np.inf:
             sample = np.random.normal(loc[-len(scale):], scale)
             prob = 1.

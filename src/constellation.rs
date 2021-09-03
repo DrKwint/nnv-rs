@@ -52,6 +52,10 @@ where
         &self.dnn
     }
 
+    pub fn get_input_bounds(&self) -> &Option<Bounds<T, D>> {
+        &self.input_bounds
+    }
+
     pub fn reset_with_star(&mut self, input_star: Star<T, D>, input_bounds: Option<Bounds<T, D>>) {
         let star_node = StarNode::default(input_star);
         self.arena = vec![star_node];
