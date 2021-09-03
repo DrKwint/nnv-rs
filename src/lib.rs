@@ -157,7 +157,7 @@ impl PyConstellation {
         }
     }
 
-    pub fn set_output_bounds(
+    pub fn set_input_bounds(
         &mut self,
         fixed_part: Option<PyReadonlyArray1<f64>>,
         unfixed_part: Option<(PyReadonlyArray1<f64>, PyReadonlyArray1<f64>)>,

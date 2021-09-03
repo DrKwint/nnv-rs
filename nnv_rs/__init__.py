@@ -74,11 +74,16 @@ class Constellation:
         self.constellation = PyConstellation(dnn.dnn, input_bounds)
         self.safe_value = safe_value
 
-    def set_output_bounds(self, fixed_part, unfixed_part):
-        self.constellation.set_output_bounds(fixed_part, unfixed_part)
+    def set_input_bounds(self, fixed_part, unfixed_part):
+        self.constellation.set_input_bounds(fixed_part, unfixed_part)
 
     def importance_sample(self, loc, scale):
         pass
+
+    def bounded_sample_with_input_bounds(self, fixed_part, unfixed_part, loc,
+                                         scale):
+        self.set_input_bounds(fixed_part, unfixed_part)
+        return self.bounded_sample(loc, scale)
 
     def bounded_sample(self, loc, scale):
         if self.safe_value == np.inf:
