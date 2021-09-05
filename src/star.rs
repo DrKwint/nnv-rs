@@ -19,6 +19,7 @@ use ndarray::{Axis, Ix2, Zip};
 use num::Float;
 use rand::Rng;
 use std::fmt::Debug;
+use log::{trace, error};
 
 pub type Star2<A> = Star<A, Ix2>;
 pub type Star4<A> = Star<A, Ix4>;
@@ -287,7 +288,9 @@ where
 
     /// # Panics
     pub fn get_min(&self, idx: usize) -> T {
+        trace!("Star get_min dim {}", idx);
         let eqn = self.representation.get_eqn(idx).get_raw_augmented();
+        trace!("eqn: {:?}", eqn);
         let c = &eqn.index_axis(Axis(0), 0);
 
         if let Some(ref poly) = self.constraints {
@@ -295,7 +298,7 @@ where
             let val = match solved.0 {
                 Ok(_) => std::convert::From::from(solved.1.unwrap()),
                 Err(ResolutionError::Unbounded) => T::neg_infinity(),
-                _ => panic!(),
+                fallthrough => {error!("solution: {:?}", fallthrough); panic!()},
             };
             self.center()[idx] + val
         } else {

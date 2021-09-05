@@ -78,31 +78,41 @@ class Constellation:
         self.safe_value = safe_value
 
     def set_dnn(self, dnn):
-        bounds = self.constellation.get_input_bounds()
-        self.constellation = PyConstellation(dnn.dnn, input_bounds)
+        if self.constellation is None:
+            bounds = None
+        else:
+            bounds = self.constellation.get_input_bounds()
+        self.constellation = PyConstellation(dnn.dnn, bounds)
 
-    def set_input_bounds(self, fixed_part, unfixed_part):
+    def set_input_bounds(self, fixed_part, loc, scale):
+        loc = np.squeeze(loc)
+        scale = np.squeeze(scale)
+        unfixed_part = (loc - 3.5 * scale, loc + 3.5 * scale)
         self.constellation.set_input_bounds(fixed_part, unfixed_part)
 
     def importance_sample(self, loc, scale):
         pass
 
-    def bounded_sample_with_input_bounds(self, fixed_part, unfixed_part, loc,
-                                         scale):
-        self.set_input_bounds(fixed_part, unfixed_part)
+    def bounded_sample_with_input_bounds(self, loc, scale, fixed_part):
+        self.set_input_bounds(
+            np.squeeze(fixed_part).astype(np.float64), loc,
+            scale.astype(np.float64))
         return self.bounded_sample(loc, scale)
 
     def bounded_sample(self, loc, scale):
+        loc = np.squeeze(loc).astype(np.float64)
+        scale = np.squeeze(scale).astype(np.float64)
         print("Safe value:", self.safe_value)
         if self.safe_value == np.inf:
             sample = np.random.normal(loc[-len(scale):], scale)
+            print(sample.shape)
             prob = 1.
             for (samp, l, s) in zip(sample, loc, scale):
                 prob *= norm.pdf(samp, l, s)
             return sample, np.log(prob + 1e-12)
         sample, sample_logp, branch_logp = self.constellation.bounded_sample_multivariate_gaussian(
             loc,
-            np.diag(scale).astype(np.float64),
+            np.diag(scale),
             self.safe_value,
             cdf_samples=100,
             num_samples=20,
