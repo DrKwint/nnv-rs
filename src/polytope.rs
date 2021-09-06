@@ -81,10 +81,7 @@ where
     }
 
     pub fn is_member(&self, point: &ArrayView1<T>) -> bool {
-        let vals = self.coeffs().dot(point);
-        Zip::from(self.ubs())
-            .and(&vals)
-            .fold(true, |acc, ub, v| acc && (v <= ub))
+        self.halfspaces.is_member(point)
     }
 
     pub fn gaussian_cdf(
@@ -300,4 +297,25 @@ impl<T: Float + ScalarOperand> From<Bounds1<T>> for Polytope<T> {
         let halfspaces = Inequality::new(coeffs, rhs);
         Self { halfspaces }
     }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test_util::*;
+    use proptest::prelude::{prop_assert, proptest};
+
+    proptest! {
+        #[test]
+        fn test_polytope_non_empty(ineq in inequality_including_zero(2, 3)) {
+            let poly = Polytope::from_halfspaces(ineq);
+        }
+    }
+
+    // proptest! {
+    //     #[test]
+    //     fn test_polytope_is_empty() {
+
+    //     }
+    // }
 }

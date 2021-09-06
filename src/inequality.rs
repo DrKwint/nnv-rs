@@ -1,6 +1,7 @@
 use crate::affine::Affine2;
 use ndarray::concatenate;
 use ndarray::Axis;
+use ndarray::Zip;
 use ndarray::{Array1, Array2};
 use ndarray::{ArrayView1, ArrayView2};
 use num::Float;
@@ -33,6 +34,28 @@ impl<T: 'static + Float> Inequality<T> {
     pub fn add_eqns(&mut self, eqns: &Self) {
         self.coeffs.append(Axis(0), eqns.coeffs.view()).unwrap();
         self.rhs.append(Axis(0), eqns.rhs.view()).unwrap();
+    }
+
+    pub fn get_eqn(&self, idx: usize) -> Self {
+        Self {
+            coeffs: self
+                .coeffs
+                .index_axis(Axis(0), idx)
+                .to_owned()
+                .insert_axis(Axis(0)),
+            rhs: self
+                .rhs
+                .index_axis(Axis(0), idx)
+                .to_owned()
+                .insert_axis(Axis(0)),
+        }
+    }
+
+    pub fn is_member(&self, point: &ArrayView1<T>) -> bool {
+        let vals = self.coeffs.dot(point);
+        Zip::from(&self.rhs)
+            .and(&vals)
+            .fold(true, |acc, ub, v| acc && (v <= ub))
     }
 
     /// Assumes that the zero valued

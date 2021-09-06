@@ -43,9 +43,12 @@ pub type Star4<A> = Star<A, Ix4>;
 /// Cham, 2019.
 #[derive(Clone, Debug)]
 pub struct Star<T: Float, D: Dimension> {
-    /// `representation` is the concatenation of [basis center] (where center is a column vector) and captures information about the transformed set
+    /// `representation` is the concatenation of [basis center] (where
+    /// center is a column vector) and captures information about the
+    /// transformed set
     representation: Affine<T, D>,
-    /// `constraints` is the concatenation of [coeffs upper_bounds] and is a representation of the input polyhedron
+    /// `constraints` is the concatenation of [coeffs upper_bounds]
+    /// and is a representation of the input polyhedron
     constraints: Option<Polytope<T>>,
 }
 
@@ -207,6 +210,14 @@ impl<T: 'static + Float> Star2<T> {
         }
     }
 
+    pub fn with_constraints(mut self, constraints: Polytope<T>) -> Self {
+        if self.constraints.is_some() {
+            panic!();
+        }
+        self.constraints = Some(constraints);
+        self
+    }
+
     /// Get the dimension of the input space
     pub fn input_space_dim(&self) -> usize {
         self.representation.input_dim()
@@ -285,6 +296,9 @@ where
         stars.into_iter().filter(|x| !x.is_empty()).collect()
     }
 
+    /// Calculates the minimum value of the equation at index `idx`
+    /// given the constraints
+    ///
     /// # Panics
     pub fn get_min(&self, idx: usize) -> T {
         let eqn = self.representation.get_eqn(idx).get_raw_augmented();
@@ -419,6 +433,22 @@ impl<T: 'static + Float> Star4<T> {
         Self {
             representation: Affine4::new(Array4::ones(slice_exact), Array1::zeros(shape_slice[3])),
             constraints: None,
+        }
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use crate::test_util::affine2;
+    use crate::test_util::non_empty_star;
+    use proptest::prelude::*;
+    use proptest::proptest;
+
+    proptest! {
+        #[test]
+        fn test_get_min_feasible(star in non_empty_star(2,3)) {
+            star.get_min(0);
         }
     }
 }

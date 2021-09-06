@@ -72,6 +72,7 @@ impl IntoAffineExpression for LinearExpression {
     }
 }
 
+/// Minimizes the expression `c` given the constraint `Ax < b`.
 /// # Panics
 pub fn solve<'a, I, T: 'a>(
     A: I,
