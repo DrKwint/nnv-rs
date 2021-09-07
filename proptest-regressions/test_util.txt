@@ -1,0 +1,7 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc f6907045b70c78e49db3215c191ee2eb2cfc87232981c63742d27820f489815a # shrinks to poly = Polytope { halfspaces: Inequality { coeffs: [[-0.0, -1.0],  [0.0, 1.0]], shape=[2, 2], strides=[2, 1], layout=Cc (0x5), const ndim=2, rhs: [-7.416904672992942, -7.416904672992942], shape=[2], strides=[1], layout=CFcf (0xf), const ndim=1 } }

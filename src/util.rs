@@ -12,6 +12,7 @@ use std::cmp::max;
 use std::collections::HashMap;
 use std::fmt::Debug;
 use std::iter::Sum;
+use std::panic;
 
 pub fn l2_norm(x: ArrayView1<f64>) -> f64 {
     x.dot(&x).sqrt()
@@ -84,8 +85,8 @@ where
     I: IntoIterator<Item = ArrayView1<'a, T>>,
     f64: std::convert::From<T>,
 {
-    let _shh_out = shh::stdout().unwrap();
-    let _shh_err = shh::stderr().unwrap();
+    // let _shh_out = shh::stdout().unwrap();
+    // let _shh_err = shh::stderr().unwrap();
     let mut problem = ProblemVariables::new();
     let vars = problem.add_vector(variable(), c.len());
     let c_expression = LinearExpression {
@@ -112,8 +113,11 @@ where
                 good_lp::constraint::leq(Expression::from_other_affine(expr), f64::from(*ub));
             unsolved.add_constraint(constr);
         });
+
     let soln = unsolved.solve();
     let fun = soln.as_ref().ok().map(|x| x.eval(c_expression));
+    // drop(_shh_out);
+    // drop(_shh_err);
     (soln, fun)
 }
 

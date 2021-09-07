@@ -300,6 +300,12 @@ where
     /// given the constraints
     ///
     /// # Panics
+    /// TODO: Change output type to Option<T>
+    ///
+    /// TODO: ResolutionError::Unbounded can result whether or not the
+    /// constraints are infeasible if there are zeros in the
+    /// objective. This needs to be checked either here or in the
+    /// solve function.
     pub fn get_min(&self, idx: usize) -> T {
         let eqn = self.representation.get_eqn(idx).get_raw_augmented();
         let c = &eqn.index_axis(Axis(0), 0);
@@ -317,7 +323,11 @@ where
         }
     }
 
+    /// Calculates the maximum value of the equation at index `idx`
+    /// given the constraints
+    ///
     /// # Panics
+    /// TODO: Change output type to Option<T>
     pub fn get_max(&self, idx: usize) -> T {
         let neg_one: T = std::convert::From::from(-1.);
         let eqn = self.representation.get_eqn(idx).get_raw_augmented();
@@ -440,15 +450,29 @@ impl<T: 'static + Float> Star4<T> {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::test_util::affine2;
-    use crate::test_util::non_empty_star;
+    use crate::test_util::*;
     use proptest::prelude::*;
     use proptest::proptest;
+    use std::panic;
 
     proptest! {
         #[test]
         fn test_get_min_feasible(star in non_empty_star(2,3)) {
-            star.get_min(0);
+            prop_assert!(!star.is_empty(), "Non empty star is empty");
+            let result = panic::catch_unwind(|| {
+                star.get_min(0)
+            });
+            prop_assert!(!result.is_err(), "Calculating min resulted in panic for feasible star");
+        }
+
+        #[test]
+        fn test_get_min_infeasible(star in empty_star(2,1)) {
+            prop_assert!(star.input_space_polytope().unwrap().is_empty(), "Polytope is empty");
+            prop_assert!(star.is_empty(), "Empty star is not empty");
+            let result = panic::catch_unwind(|| {
+                star.get_min(0)
+            });
+            prop_assert!(result.is_err(), "Infeasible star did not panic for get_min {:#?}", result);
         }
     }
 }

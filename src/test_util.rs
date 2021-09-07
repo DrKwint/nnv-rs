@@ -22,20 +22,23 @@ use std::mem;
 use std::ops::Range;
 
 prop_compose! {
-    pub fn array1(len: usize)(v in Vec::lift1_with(-10. .. 10., SizeRange::new(len..=len))) -> Array1<f64> {
+    pub fn array1(len: usize)
+        (v in Vec::lift1_with(-10. .. 10., SizeRange::new(len..=len))) -> Array1<f64> {
         Array1::from_vec(v)
     }
 }
 
 prop_compose! {
-    pub fn array2(rows: usize, cols: usize)(v in Vec::lift1_with(array1(cols), SizeRange::new(rows..=rows))) -> Array2<f64> {
+    pub fn array2(rows: usize, cols: usize)
+        (v in Vec::lift1_with(array1(cols), SizeRange::new(rows..=rows))) -> Array2<f64> {
         assert!(rows > 0);
         ndarray::stack(Axis(0), &v.iter().map(|x| x.view()).collect::<Vec<ArrayView1<f64>>>()).unwrap()
     }
 }
 
 prop_compose! {
-    pub fn affine2(in_dim: usize, out_dim: usize)(basis in array2(out_dim, in_dim), shift in array1(out_dim)) -> Affine2<f64> {
+    pub fn affine2(in_dim: usize, out_dim: usize)
+        (basis in array2(out_dim, in_dim), shift in array1(out_dim)) -> Affine2<f64> {
         Affine2::new(basis, shift)
     }
 }
@@ -80,31 +83,25 @@ prop_compose! {
 }
 
 prop_compose! {
-    pub fn polytope(num_dims: usize, num_constraints: usize)(constraint_coeffs in array2(num_dims, num_constraints), upper_bounds in array1(num_constraints))->Polytope<f64> {
-        Polytope::new(constraint_coeffs, upper_bounds)
-    }
-}
-
-prop_compose! {
-    pub fn non_empty_star(num_dims: usize, num_constraints: usize)
-        (
-            basis in array2(num_dims, num_dims),
-            center in array1(num_dims),
-            constraints in polytope(num_dims, num_constraints)
-                .prop_filter("Polytope must be feasible", |p| p.is_empty())
-        ) -> Star2<f64> {
-        Star2::new(basis, center).with_constraints(constraints)
-    }
-}
-
-prop_compose! {
     pub fn inequality(num_dims: usize, num_constraints: usize)
         (
-            coeffs in array2(num_dims, num_constraints),
+            mut coeffs in array2(num_constraints, num_dims),
             rhs in array1(num_constraints)
-        )-> Inequality<f64> {
-        Inequality::new(coeffs, rhs)
-    }
+        ) -> Inequality<f64> {
+            coeffs.rows_mut().into_iter().for_each(|mut row| {
+                let mut all_zeros = false;
+                if row.iter().all(|x| *x == 0.0_f64) {
+                    all_zeros = true;
+                }
+                if all_zeros {
+                    let mut rng = rand::thread_rng();
+                    let one_idx = rng.gen_range(0..row.len());
+                    row[one_idx] = 1.0;
+                }
+            });
+
+            Inequality::new(coeffs, rhs)
+        }
 }
 
 prop_compose! {
@@ -112,7 +109,7 @@ prop_compose! {
         (ineq in inequality(num_dims, num_constraints)) -> Inequality<f64> {
             let zero = Array1::zeros(num_dims);
             let mut inequality = Inequality::new(
-                Array2::zeros((num_dims, 0)),
+                Array2::zeros((0, num_dims)),
                 Array1::zeros(0)
             );
             (0..ineq.num_constraints())
@@ -123,10 +120,107 @@ prop_compose! {
                         inequality.add_eqns(&eqn);
                     } else {
                         let new_coeffs = -1. * eqn.coeffs().to_owned();
-                        let eqn = Inequality::new(new_coeffs, eqn.rhs().to_owned());
+                        let new_rhs = -1. * eqn.rhs().to_owned();
+                        let eqn = Inequality::new(new_coeffs, new_rhs);
                         inequality.add_eqns(&eqn);
                     }
                 });
             inequality
+    }
+}
+
+prop_compose! {
+    pub fn polytope(num_dims: usize, num_constraints: usize)
+        (ineq in inequality(num_dims, num_constraints)) -> Polytope<f64> {
+        Polytope::from_halfspaces(ineq)
+    }
+}
+
+prop_compose! {
+    pub fn non_empty_polytope(num_dims: usize, num_constraints: usize)
+        (ineq in inequality_including_zero(num_dims, num_constraints)) -> Polytope<f64> {
+        Polytope::from_halfspaces(ineq)
+    }
+}
+
+prop_compose! {
+    /// Creates an empty polytope
+    ///
+    /// Constructs an empty polytope by starting with a non-empty
+    /// halfspace that includes the origin. It then flips the sign of
+    /// the inequality such that the origin is no longer
+    /// included. Next, a second inequality is constructed that is
+    /// this inequality flipped with respect to the origin (by
+    /// multiplying the coefficients by -1. Finally, the inequalities
+    /// are appended to each other and used to create a polytope.
+    pub fn empty_polytope(num_dims: usize, num_constraints: usize)
+        (
+            mut ineq in inequality_including_zero(num_dims, num_constraints)
+                .prop_filter("Cannot pass through origin",
+                             |eq| !eq.rhs().iter().any(|x| *x == 0.0_f64)
+                )
+        ) -> Polytope<f64> {
+            // Invert the sign of the inequality
+            ineq *= -1.0;
+
+            // Construct the inequality that is the above flipped
+            // across the origin.
+            let inverse_ineq = Inequality::new(
+                ineq.coeffs().to_owned() * -1.,
+                ineq.rhs().to_owned()
+            );
+            ineq.add_eqns(&inverse_ineq);
+
+            // Construct the empty polytope.
+            Polytope::from_halfspaces(ineq)
+        }
+}
+
+prop_compose! {
+    pub fn non_empty_star(num_dims: usize, num_constraints: usize)
+        (
+            basis in array2(num_dims, num_dims)
+                .prop_filter("Need valid basis",
+                             |b| !b.rows().into_iter()
+                             .any(|r| r.iter().all(|x| *x == 0.0_f64)) &&
+                             !b.columns().into_iter()
+                             .any(|r| r.iter().all(|x| *x == 0.0_f64)) &&
+                             !b.iter().any(|x| *x == 0.0_f64)),
+            center in array1(num_dims),
+            constraints in non_empty_polytope(num_dims, num_constraints)
+        ) -> Star2<f64> {
+        Star2::new(basis, center).with_constraints(constraints)
+    }
+}
+
+prop_compose! {
+    pub fn empty_star(num_dims: usize, num_constraints: usize)
+        (
+            basis in array2(num_dims, num_dims)
+                .prop_filter("Need valid basis",
+                             |b| !b.rows().into_iter()
+                             .any(|r| r.iter().all(|x| *x == 0.0_f64)) &&
+                             !b.columns().into_iter()
+                             .any(|r| r.iter().all(|x| *x == 0.0_f64)) &&
+                             !b.iter().any(|x| *x == 0.0_f64)),
+            center in array1(num_dims),
+            constraints in empty_polytope(num_dims, num_constraints)
+        ) -> Star2<f64> {
+        Star2::new(basis, center).with_constraints(constraints)
+    }
+}
+
+proptest! {
+    #[test]
+    fn test_inequality_including_zero(ineq in inequality_including_zero(2, 1)) {
+        let zero = Array1::zeros(2);
+        prop_assert!(ineq.is_member(&zero.view()));
+    }
+
+    #[test]
+    fn test_empty_polytope(poly in empty_polytope(2, 1)) {
+        let zero = Array1::zeros(2);
+        prop_assert!(!poly.is_member(&zero.view()));
+        prop_assert!(poly.is_empty());
     }
 }
