@@ -10,13 +10,13 @@ use crate::util::l2_norm;
 use crate::util::solve;
 use crate::util::LinearExpression;
 use good_lp::solvers::highs::highs;
+use log::debug;
 use ndarray::Slice;
 use ndarray::{concatenate, s, Array};
 use ndarray_linalg::solve::Inverse;
 use truncnorm::distributions::MultivariateTruncatedNormal;
 use truncnorm::truncnorm::mv_truncnormal_cdf;
 use truncnorm::truncnorm::mv_truncnormal_rand;
-use log::debug;
 
 use good_lp::Expression;
 

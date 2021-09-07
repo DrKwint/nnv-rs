@@ -197,7 +197,10 @@ where
         cdf_samples: usize,
         max_iters: usize,
     ) -> Option<(StarNode<T, Ix2>, T)> {
-        debug!("Running sample_safe_star with loc: {} scale {} safe_value {}", loc, scale, safe_value);
+        debug!(
+            "Running sample_safe_star with loc: {} scale {} safe_value {}",
+            loc, scale, safe_value
+        );
         let mut rng = rand::thread_rng();
         let mut current_node = 0;
         let mut path = vec![];
@@ -410,12 +413,18 @@ where
                     .collect();
                 match children.len() {
                     0 => None,
-                    1 => { debug!("One child with cdf: {}", self.arena[children[0]].gaussian_cdf(
-                        loc,
-                        scale,
-                        cdf_samples,
-                        max_iters,
-                    )); Some((children[0], path_logp))},
+                    1 => {
+                        debug!(
+                            "One child with cdf: {}",
+                            self.arena[children[0]].gaussian_cdf(
+                                loc,
+                                scale,
+                                cdf_samples,
+                                max_iters,
+                            )
+                        );
+                        Some((children[0], path_logp))
+                    }
                     2 => {
                         let fst_cdf = self.arena[children[0]].gaussian_cdf(
                             loc,
@@ -429,7 +438,10 @@ where
                             cdf_samples,
                             max_iters,
                         );
-                        debug!("Selecting between 2 children with CDFs: {} and {}", fst_cdf, snd_cdf);
+                        debug!(
+                            "Selecting between 2 children with CDFs: {} and {}",
+                            fst_cdf, snd_cdf
+                        );
 
                         // Handle the case where a CDF gives a non-normal value
                         let fst_prob = match (fst_cdf.is_normal(), snd_cdf.is_normal()) {
