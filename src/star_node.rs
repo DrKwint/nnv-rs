@@ -6,6 +6,7 @@ use crate::dnn::DNNIterator;
 use crate::dnn::DNN;
 use crate::star::Star;
 use log::debug;
+use log::trace;
 use ndarray::Dimension;
 use ndarray::Ix2;
 use ndarray::{Array1, Array2};
@@ -150,7 +151,7 @@ where
         if let Some(ref mut cdf) = self.star_cdf {
             *cdf += add
         } else {
-            todo!()
+            // TODO
         }
     }
 }
@@ -192,7 +193,7 @@ where
     ) -> (T, T) {
         self.output_bounds.map_or_else(
             || {
-                debug!("get_output_bounds on star {:?}", self.star);
+                trace!("get_output_bounds on star {:?}", self.star);
                 let bounding_box = self.star.calculate_axis_aligned_bounding_box();
                 // TODO: update this to use DeepPoly to get proper bounds rather than this estimate
                 /*
@@ -215,17 +216,5 @@ where
             },
             |bounds| bounds,
         )
-    }
-}
-
-pub trait ArenaLike<T> {
-    fn new_node(&mut self, data: T) -> usize;
-}
-
-impl<T: num::Float, D: Dimension> ArenaLike<StarNode<T, D>> for Vec<StarNode<T, D>> {
-    fn new_node(&mut self, data: StarNode<T, D>) -> usize {
-        let new_id = self.len();
-        self.push(data);
-        new_id
     }
 }

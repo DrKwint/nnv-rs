@@ -4,6 +4,7 @@ use good_lp::solvers::highs::{highs, HighsSolution};
 use good_lp::{variable, ResolutionError, Solution, SolverModel};
 use good_lp::{Expression, IntoAffineExpression, ProblemVariables, Variable};
 use itertools::iproduct;
+use log::trace;
 use ndarray::{s, Axis, Slice};
 use ndarray::{Array2, ArrayView1};
 use ndarray_linalg::SVD;
@@ -79,7 +80,7 @@ pub fn solve<'a, I, T: 'a>(
     c: ArrayView1<T>,
 ) -> (Result<HighsSolution, ResolutionError>, Option<f64>)
 where
-    T: std::convert::Into<f64> + std::clone::Clone + std::marker::Copy,
+    T: std::convert::Into<f64> + std::clone::Clone + std::marker::Copy + Debug,
     I: IntoIterator<Item = ArrayView1<'a, T>>,
     f64: std::convert::From<T>,
 {
@@ -141,4 +142,16 @@ pub fn signed_matmul<T: Float + Sum + Debug>(
             .sum();
     });
     out
+}
+
+pub trait ArenaLike<T> {
+    fn new_node(&mut self, data: T) -> usize;
+}
+
+impl<T> ArenaLike<T> for Vec<T> {
+    fn new_node(&mut self, data: T) -> usize {
+        let new_id = self.len();
+        self.push(data);
+        new_id
+    }
 }

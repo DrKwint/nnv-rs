@@ -27,11 +27,13 @@ class DNN:
         return self.dnn.deeppoly_output_bounds(lower, upper)
 
     def build_from_tensorflow_params(self, affine_list):
-        for aff in affine_list:
+        nlayers = len(affine_list)
+        for i, aff in enumerate(affine_list):
             # Add dense
             self.dnn.add_dense(aff[0].T, aff[1])
             # Add relu
-            self.dnn.add_relu(aff[1].shape[0])
+            if i != nlayers - 1:
+                self.dnn.add_relu(aff[1].shape[0])
 
     def build_from_tensorflow_module(self, network):
         import tensorflow as tf
@@ -88,6 +90,7 @@ class Constellation:
         loc = np.squeeze(loc)
         scale = np.squeeze(scale)
         unfixed_part = (loc - 3.5 * scale, loc + 3.5 * scale)
+        print("Bounds:", unfixed_part)
         self.constellation.set_input_bounds(fixed_part, unfixed_part)
 
     def importance_sample(self, loc, scale):
@@ -102,10 +105,8 @@ class Constellation:
     def bounded_sample(self, loc, scale):
         loc = np.squeeze(loc).astype(np.float64)
         scale = np.squeeze(scale).astype(np.float64)
-        print("Safe value:", self.safe_value)
         if self.safe_value == np.inf:
             sample = np.random.normal(loc[-len(scale):], scale)
-            print(sample.shape)
             prob = 1.
             for (samp, l, s) in zip(sample, loc, scale):
                 prob *= norm.pdf(samp, l, s)
