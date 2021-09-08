@@ -1,3 +1,4 @@
+#![allow(non_snake_case)]
 use crate::dnn::DNNIterator;
 use crate::star::Star;
 use crate::star_node::StarNode;
@@ -79,22 +80,20 @@ where
                 fst_child_idx,
                 snd_child_idx,
             }) => {
-                let mut child_ids: Vec<usize> = Vec::new();
-                child_ids.push(fst_child_idx);
+                let mut child_ids: Vec<usize> = vec![fst_child_idx];
                 if let Some(idx) = snd_child_idx {
                     child_ids.push(idx);
                 }
                 Some(child_ids)
             }
             Some(StarNodeType::StepReluDropOut {
-                dim: usize,
-                dropout_prob: T,
+                dim,
+                dropout_prob,
                 fst_child_idx,
                 snd_child_idx,
                 trd_child_idx,
             }) => {
-                let mut child_ids: Vec<usize> = Vec::new();
-                child_ids.push(fst_child_idx);
+                let mut child_ids: Vec<usize> = vec![fst_child_idx];
                 if let Some(idx) = snd_child_idx {
                     child_ids.push(idx);
                 }
@@ -104,7 +103,6 @@ where
                 Some(child_ids)
             }
             None => None,
-            _ => todo!(),
         }
     }
 }
@@ -280,7 +278,6 @@ where
                         current_node =
                             infeasible_reset(self, current_node, &mut path, &mut path_logp);
                     }
-                    _ => todo!(),
                 }
             }
         }
@@ -391,13 +388,13 @@ where
         max_iters: usize,
         rng: &mut rand::rngs::ThreadRng,
     ) -> Option<(usize, T)> {
-        match self.get_children(current_node) {
+        match *self.get_children(current_node) {
             // leaf node, which must be partially safe and partially unsafe
-            &StarNodeType::Leaf => {
+            StarNodeType::Leaf => {
                 panic!();
             }
-            &StarNodeType::Affine { child_idx } => Some((child_idx, path_logp)),
-            &StarNodeType::StepRelu {
+            StarNodeType::Affine { child_idx } => Some((child_idx, path_logp)),
+            StarNodeType::StepRelu {
                 dim,
                 fst_child_idx,
                 snd_child_idx,
@@ -488,7 +485,7 @@ where
                     }
                 }
             }
-            &StarNodeType::StepReluDropOut {
+            StarNodeType::StepReluDropOut {
                 dim,
                 dropout_prob,
                 fst_child_idx,
@@ -574,7 +571,6 @@ where
                     }
                 }
             }
-            _ => todo!(),
         }
     }
 }

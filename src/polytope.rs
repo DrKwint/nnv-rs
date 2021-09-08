@@ -21,7 +21,6 @@ use truncnorm::truncnorm::mv_truncnormal_rand;
 use good_lp::Expression;
 
 use good_lp::ProblemVariables;
-use good_lp::ResolutionError;
 
 use good_lp::Variable;
 use good_lp::{variable, Solution, SolverModel};
@@ -96,7 +95,7 @@ where
         n: usize,
         max_iters: usize,
     ) -> (f64, f64, f64) {
-        let (sq_constr_lb, sq_constr_ub, sq_constr_sigma, sq_coeffs) = self.blah(mu, sigma);
+        let (sq_constr_lb, sq_constr_ub, sq_constr_sigma, _sq_coeffs) = self.blah(mu, sigma);
         debug!("Gaussian CDF with mu {:?} sigma {:?}", mu, sq_constr_sigma);
         mv_truncnormal_cdf(sq_constr_lb, sq_constr_ub, sq_constr_sigma, n, max_iters)
     }
@@ -134,7 +133,7 @@ where
         sq_ub.slice_mut(s![..ub.len()]).assign(&ub);
 
         let extended_reduced_mu = if sq_coeffs.nrows() == mu.len() {
-            mu.clone()
+            mu
         } else {
             let mut e_r_mu = Array1::zeros(sq_coeffs.nrows());
             e_r_mu.slice_mut(s![..mu.len()]).assign(&mu);

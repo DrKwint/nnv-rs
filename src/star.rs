@@ -14,7 +14,6 @@ use ndarray::Array4;
 use ndarray::Dimension;
 use ndarray::Ix4;
 use ndarray::ScalarOperand;
-use ndarray::{arr1, arr2};
 use ndarray::{Array1, Array2};
 use ndarray::{ArrayView1, ArrayView2};
 use ndarray::{Axis, Ix2, Zip};
