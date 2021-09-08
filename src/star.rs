@@ -101,23 +101,23 @@ where
 /*
 impl<T: Float> Star<T, IxDyn>
 where
-T: std::convert::From<f64>
-+ std::convert::Into<f64>
-+ ndarray::ScalarOperand
-+ std::fmt::Display
-+ std::fmt::Debug
-+ std::ops::MulAssign,
-f64: std::convert::From<T>,
+    T: std::convert::From<f64>
+        + std::convert::Into<f64>
+        + ndarray::ScalarOperand
+        + std::fmt::Display
+        + std::fmt::Debug
+        + std::ops::MulAssign,
+    f64: std::convert::From<T>,
 {
-/// # Panics
-pub fn gaussian_sample<R: Rng>(
-self,
-rng: &mut R,
-mu: &Array1<T>,
-sigma: &Array2<T>,
-n: usize,
-max_iters: usize,
-input_bounds: &Option<Bounds1<T>>,
+    /// # Panics
+    pub fn gaussian_sample<R: Rng>(
+        self,
+        rng: &mut R,
+        mu: &Array1<T>,
+        sigma: &Array2<T>,
+        n: usize,
+        max_iters: usize,
+        input_bounds: &Option<Bounds1<T>>,
     ) -> Vec<(Array1<T>, T)> {
         match self.ndim() {
             2 => {
