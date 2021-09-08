@@ -87,24 +87,20 @@ class Constellation:
         self.constellation = PyConstellation(dnn.dnn, bounds)
 
     def set_input_bounds(self, fixed_part, loc, scale):
-        loc = np.squeeze(loc)
-        scale = np.squeeze(scale)
         unfixed_part = (loc - 3.5 * scale, loc + 3.5 * scale)
-        print("Bounds:", unfixed_part)
         self.constellation.set_input_bounds(fixed_part, unfixed_part)
 
     def importance_sample(self, loc, scale):
         pass
 
     def bounded_sample_with_input_bounds(self, loc, scale, fixed_part):
-        self.set_input_bounds(
-            np.squeeze(fixed_part).astype(np.float64), loc,
-            scale.astype(np.float64))
+        loc = np.squeeze(loc).astype(np.float64)
+        scale = np.squeeze(scale).astype(np.float64)
+        fixed_part = np.squeeze(fixed_part).astype(np.float64)
+        self.set_input_bounds(fixed_part, loc, scale)
         return self.bounded_sample(loc, scale)
 
     def bounded_sample(self, loc, scale):
-        loc = np.squeeze(loc).astype(np.float64)
-        scale = np.squeeze(scale).astype(np.float64)
         if self.safe_value == np.inf:
             sample = np.random.normal(loc[-len(scale):], scale)
             prob = 1.

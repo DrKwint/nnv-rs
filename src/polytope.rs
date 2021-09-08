@@ -81,6 +81,14 @@ where
         self.halfspaces.num_constraints()
     }
 
+    pub fn any_nan(&self) -> bool {
+        self.halfspaces.any_nan()
+    }
+
+    pub fn filter_trivial(&mut self) {
+        self.halfspaces.filter_trivial()
+    }
+
     pub fn is_member(&self, point: &ArrayView1<T>) -> bool {
         let vals = self.coeffs().dot(point);
         Zip::from(self.ubs())

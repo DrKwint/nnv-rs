@@ -1,4 +1,5 @@
 use crate::affine::Affine2;
+use log::debug;
 use ndarray::concatenate;
 use ndarray::Axis;
 use ndarray::{Array1, Array2};
@@ -33,6 +34,22 @@ impl<T: 'static + Float> Inequality<T> {
     pub fn add_eqns(&mut self, eqns: &Self) {
         self.coeffs.append(Axis(0), eqns.coeffs.view()).unwrap();
         self.rhs.append(Axis(0), eqns.rhs.view()).unwrap();
+    }
+
+    pub fn any_nan(&self) -> bool {
+        self.coeffs().iter().any(|x| x.is_nan()) || self.rhs.iter().any(|x| x.is_nan())
+    }
+
+    pub fn filter_trivial(&mut self) {
+        let (coeffs, rhs): (Vec<ArrayView1<T>>, Vec<_>) = self
+            .coeffs
+            .rows()
+            .into_iter()
+            .zip(self.rhs().iter())
+            .filter(|(coeffs, rhs)| !coeffs.iter().all(|x| *x == T::zero()))
+            .unzip();
+        self.coeffs = ndarray::stack(Axis(0), &coeffs).unwrap();
+        self.rhs = Array1::from_vec(rhs);
     }
 
     /// Assumes that the zero valued

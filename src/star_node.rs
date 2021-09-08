@@ -124,24 +124,6 @@ where
         todo!()
     }
 
-    pub fn gaussian_cdf(
-        &mut self,
-        mu: &Array1<T>,
-        sigma: &Array2<T>,
-        n: usize,
-        max_iters: usize,
-    ) -> T {
-        self.star_cdf.map_or_else(
-            || {
-                let out = self.star.trunc_gaussian_cdf(mu, sigma, n, max_iters);
-                let cdf = out.0.into();
-                self.star_cdf = Some(cdf);
-                cdf
-            },
-            |cdf| cdf,
-        )
-    }
-
     pub fn set_cdf(&mut self, val: T) {
         self.star_cdf = Some(val);
     }
@@ -169,6 +151,27 @@ where
         + std::iter::Sum,
     f64: std::convert::From<T>,
 {
+    pub fn gaussian_cdf(
+        &mut self,
+        mu: &Array1<T>,
+        sigma: &Array2<T>,
+        n: usize,
+        max_iters: usize,
+        input_bounds: &Option<Bounds1<T>>,
+    ) -> T {
+        self.star_cdf.map_or_else(
+            || {
+                let out = self
+                    .star
+                    .trunc_gaussian_cdf(mu, sigma, n, max_iters, input_bounds);
+                let cdf = out.0.into();
+                self.star_cdf = Some(cdf);
+                cdf
+            },
+            |cdf| cdf,
+        )
+    }
+
     pub fn gaussian_sample<R: Rng>(
         &self,
         rng: &mut R,

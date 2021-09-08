@@ -153,18 +153,12 @@ where
         num_samples: usize,
         max_iters: usize,
     ) -> (Vec<(Array1<T>, T)>, T) {
+        let input_bounds = self.input_bounds.clone();
         if let Some((safe_star, path_logp)) =
             self.sample_safe_star(loc, scale, safe_value, cdf_samples, max_iters)
         {
             (
-                safe_star.gaussian_sample(
-                    rng,
-                    loc,
-                    scale,
-                    num_samples,
-                    max_iters,
-                    &self.input_bounds,
-                ),
+                safe_star.gaussian_sample(rng, loc, scale, num_samples, max_iters, &input_bounds),
                 path_logp,
             )
         } else {
@@ -205,29 +199,35 @@ where
         let mut current_node = 0;
         let mut path = vec![];
         let mut path_logp = T::zero();
-        let infeasible_reset =
-            |me: &mut Self, x: usize, path: &mut Vec<usize>, path_logp: &mut T| -> usize {
-                debug!("Infeasible reset!");
-                me.arena[x].set_feasible(false);
-                let mut infeas_cdf = me.arena[x].gaussian_cdf(loc, scale, cdf_samples, max_iters);
-                path.drain(..).rev().for_each(|x| {
-                    // check if all chilren are infeasible
-                    if me
-                        .get_child_ids(x)
-                        .unwrap()
-                        .iter()
-                        .any(|x| me.arena[*x].get_feasible())
-                    {
-                        // if not infeasible, update CDF
-                        me.arena[x].add_cdf(T::neg(T::one()) * infeas_cdf);
-                    } else {
-                        me.arena[x].set_feasible(false);
-                        infeas_cdf = me.arena[x].gaussian_cdf(loc, scale, cdf_samples, max_iters)
-                    }
-                });
-                *path_logp = T::zero();
-                0
-            };
+        let input_bounds = self.input_bounds.clone();
+        let infeasible_reset = |me: &mut Self,
+                                x: usize,
+                                path: &mut Vec<usize>,
+                                path_logp: &mut T|
+         -> usize {
+            debug!("Infeasible reset!");
+            me.arena[x].set_feasible(false);
+            let mut infeas_cdf =
+                me.arena[x].gaussian_cdf(loc, scale, cdf_samples, max_iters, &input_bounds);
+            path.drain(..).rev().for_each(|x| {
+                // check if all chilren are infeasible
+                if me
+                    .get_child_ids(x)
+                    .unwrap()
+                    .iter()
+                    .any(|x| me.arena[*x].get_feasible())
+                {
+                    // if not infeasible, update CDF
+                    me.arena[x].add_cdf(T::neg(T::one()) * infeas_cdf);
+                } else {
+                    me.arena[x].set_feasible(false);
+                    infeas_cdf =
+                        me.arena[x].gaussian_cdf(loc, scale, cdf_samples, max_iters, &input_bounds)
+                }
+            });
+            *path_logp = T::zero();
+            0
+        };
         loop {
             debug!("Current node: {:?}", current_node);
             // base case for feasability
@@ -240,7 +240,7 @@ where
                 let output_bounds = self.arena[current_node]
                     .get_output_bounds(&self.dnn, &|x| (x.lower()[[0]], x.upper()[[0]]));
                 debug!("Output bounds: {:?}", output_bounds);
-                if output_bounds.1 < safe_value {
+                if output_bounds.1 <= safe_value {
                     // handle case where star is safe
                     let safe_star = self.arena[current_node].clone();
                     return Some((safe_star, path_logp));
@@ -249,6 +249,10 @@ where
                     self.arena[current_node].set_feasible(false);
                     current_node = infeasible_reset(self, current_node, &mut path, &mut path_logp);
                     continue;
+                } else if let StarNodeType::Leaf = self.get_children(current_node) {
+                    // do procedure to select safe part
+                    println!("You did it!");
+                    panic!();
                 } else {
                     // otherwise, push to path and continue expanding
                     path.push(current_node);
@@ -391,6 +395,7 @@ where
         max_iters: usize,
         rng: &mut rand::rngs::ThreadRng,
     ) -> Option<(usize, T)> {
+        let input_bounds = self.input_bounds.clone();
         match self.get_children(current_node) {
             // leaf node, which must be partially safe and partially unsafe
             &StarNodeType::Leaf => {
@@ -421,6 +426,7 @@ where
                                 scale,
                                 cdf_samples,
                                 max_iters,
+                                &input_bounds
                             )
                         );
                         Some((children[0], path_logp))
@@ -431,12 +437,14 @@ where
                             scale,
                             cdf_samples,
                             max_iters,
+                            &input_bounds,
                         );
                         let snd_cdf = self.arena[children[1]].gaussian_cdf(
                             loc,
                             scale,
                             cdf_samples,
                             max_iters,
+                            &input_bounds,
                         );
                         debug!(
                             "Selecting between 2 children with CDFs: {} and {}",
@@ -452,6 +460,7 @@ where
                                     scale,
                                     cdf_samples,
                                     max_iters,
+                                    &input_bounds,
                                 );
                                 let derived_fst_cdf = parent_cdf - snd_cdf;
                                 self.arena[children[0]].set_cdf(derived_fst_cdf);
@@ -463,6 +472,7 @@ where
                                     scale,
                                     cdf_samples,
                                     max_iters,
+                                    &input_bounds,
                                 );
                                 let derived_snd_cdf = parent_cdf - fst_cdf;
                                 self.arena[children[1]].set_cdf(derived_snd_cdf);
@@ -523,12 +533,14 @@ where
                                 scale,
                                 cdf_samples,
                                 max_iters,
+                                &input_bounds,
                             );
                             let snd_cdf = self.arena[children[1]].gaussian_cdf(
                                 loc,
                                 scale,
                                 cdf_samples,
                                 max_iters,
+                                &input_bounds,
                             );
 
                             // Handle the case where a CDF gives a non-normal value
@@ -540,6 +552,7 @@ where
                                         scale,
                                         cdf_samples,
                                         max_iters,
+                                        &input_bounds,
                                     );
                                     let derived_fst_cdf = parent_cdf - snd_cdf;
                                     self.arena[children[0]].set_cdf(derived_fst_cdf);
@@ -551,6 +564,7 @@ where
                                         scale,
                                         cdf_samples,
                                         max_iters,
+                                        &input_bounds,
                                     );
                                     let derived_snd_cdf = parent_cdf - fst_cdf;
                                     self.arena[children[1]].set_cdf(derived_snd_cdf);

@@ -8,6 +8,7 @@ use crate::polytope::Polytope;
 use crate::tensorshape::TensorShape;
 use crate::util::solve;
 use good_lp::ResolutionError;
+use log::debug;
 use log::{error, trace};
 use ndarray::concatenate;
 use ndarray::Array4;
@@ -74,23 +75,6 @@ where
             Some(polytope) => polytope.num_constraints(),
             None => 0,
         }
-    }
-
-    /// TODO: doc this
-    ///
-    /// # Panics
-    pub fn trunc_gaussian_cdf(
-        &self,
-        mu: &Array1<T>,
-        sigma: &Array2<T>,
-        n: usize,
-        max_iters: usize,
-    ) -> (f64, f64, f64) {
-        self.constraints
-            .as_ref()
-            .map_or((1., 0., 1.), |input_region| {
-                input_region.gaussian_cdf(mu, sigma, n, max_iters)
-            })
     }
 }
 
@@ -351,23 +335,28 @@ where
             .map_or(false, crate::polytope::Polytope::is_empty)
     }
 
+    /// TODO: doc this
+    ///
     /// # Panics
-    // Allow if_let_else because rng is used in both branches, so closures don't work
-    #[allow(clippy::too_many_lines, clippy::option_if_let_else)]
-    pub fn gaussian_sample<R: Rng>(
+    pub fn trunc_gaussian_cdf(
         &self,
-        rng: &mut R,
         mu: &Array1<T>,
         sigma: &Array2<T>,
         n: usize,
         max_iters: usize,
         input_bounds: &Option<Bounds1<T>>,
-    ) -> Vec<(Array1<f64>, f64)> {
+    ) -> (f64, f64, f64) {
         // remove fixed dimensions from mu and sigma
+        debug!(
+            "mu shape: {:?} sigma shape: {:?}",
+            mu.shape(),
+            sigma.shape()
+        );
         if let Some(poly) = &self.constraints {
             if let Some(bounds) = input_bounds {
                 let lbs = bounds.lower();
                 let ubs = bounds.upper();
+                /*
                 let unfixed_idxs = Zip::from(lbs).and(ubs).map_collect(|&lb, &ub| lb != ub);
                 let sigma_rows: Vec<ArrayView2<T>> = sigma
                     .rows()
@@ -391,9 +380,67 @@ where
                     .filter(|(_val, &fix)| fix)
                     .map(|(&val, _fix)| val)
                     .collect();
+                */
+                debug_assert!(!poly.any_nan());
+                let (mut reduced_poly, (_reduced_lbs, _reduced_ubs)) =
+                    poly.reduce_fixed_inputs(&lbs, &ubs);
+                reduced_poly.filter_trivial();
+                debug_assert!(!reduced_poly.any_nan());
+                reduced_poly.gaussian_cdf(&mu, &sigma, n, max_iters)
+            } else {
+                poly.gaussian_cdf(mu, sigma, n, max_iters)
+            }
+        } else {
+            // Unbounded sums to 1
+            (1., 0., 1.)
+        }
+    }
+
+    /// # Panics
+    // Allow if_let_else because rng is used in both branches, so closures don't work
+    #[allow(clippy::too_many_lines, clippy::option_if_let_else)]
+    pub fn gaussian_sample<R: Rng>(
+        &self,
+        rng: &mut R,
+        mu: &Array1<T>,
+        sigma: &Array2<T>,
+        n: usize,
+        max_iters: usize,
+        input_bounds: &Option<Bounds1<T>>,
+    ) -> Vec<(Array1<f64>, f64)> {
+        // remove fixed dimensions from mu and sigma
+        if let Some(poly) = &self.constraints {
+            if let Some(bounds) = input_bounds {
+                let lbs = bounds.lower();
+                let ubs = bounds.upper();
+                /*
+                let unfixed_idxs = Zip::from(lbs).and(ubs).map_collect(|&lb, &ub| lb != ub);
+                let sigma_rows: Vec<ArrayView2<T>> = sigma
+                    .rows()
+                    .into_iter()
+                    .zip(&unfixed_idxs)
+                    .filter(|(_row, &fix)| fix)
+                    .map(|(row, _fix)| row.insert_axis(Axis(0)))
+                    .collect();
+                let mut reduced_sigma = concatenate(Axis(0), sigma_rows.as_slice()).unwrap();
+                let sigma_cols: Vec<ArrayView2<T>> = reduced_sigma
+                    .columns()
+                    .into_iter()
+                    .zip(&unfixed_idxs)
+                    .filter(|(_row, &fix)| fix)
+                    .map(|(row, _fix)| row.insert_axis(Axis(1)))
+                    .collect();
+                reduced_sigma = concatenate(Axis(1), sigma_cols.as_slice()).unwrap();
+                let reduced_mu: Array1<T> = mu
+                    .into_iter()
+                    .zip(&unfixed_idxs)
+                    .filter(|(_val, &fix)| fix)
+                    .map(|(&val, _fix)| val)
+                    .collect();
+                */
                 let (reduced_poly, (_reduced_lbs, _reduced_ubs)) =
                     poly.reduce_fixed_inputs(&lbs, &ubs);
-                reduced_poly.gaussian_sample(rng, &reduced_mu, &reduced_sigma, n, max_iters)
+                reduced_poly.gaussian_sample(rng, &mu, &sigma, n, max_iters)
             } else {
                 poly.gaussian_sample(rng, mu, sigma, n, max_iters)
             }
