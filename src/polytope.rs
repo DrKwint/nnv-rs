@@ -10,6 +10,7 @@ use crate::util::l2_norm;
 use crate::util::solve;
 use crate::util::LinearExpression;
 use good_lp::solvers::highs::highs;
+use log::debug;
 use ndarray::Slice;
 use ndarray::{concatenate, s, Array};
 use ndarray_linalg::solve::Inverse;
@@ -44,7 +45,7 @@ pub struct Polytope<T: Float> {
 
 impl<T: 'static> Polytope<T>
 where
-    T: Float + ScalarOperand + From<f64>,
+    T: Float + ScalarOperand + From<f64> + Debug,
     f64: From<T>,
 {
     pub fn new(constraint_coeffs: Array2<T>, upper_bounds: Array1<T>) -> Self {
@@ -95,29 +96,16 @@ where
         n: usize,
         max_iters: usize,
     ) -> (f64, f64, f64) {
-        let mu = mu.mapv(std::convert::Into::into);
-        let sigma = sigma.mapv(std::convert::Into::into);
-
-        let constraint_coeffs = self.coeffs().mapv(std::convert::Into::into);
-        let upper_bounds = self.ubs().mapv(std::convert::Into::into);
-        let mut sigma_star = constraint_coeffs.dot(&sigma.dot(&constraint_coeffs.t()));
-        let pos_def_guarator = Array2::from_diag(&Array1::from_elem(sigma_star.nrows(), 1e-12));
-        sigma_star = &sigma_star + pos_def_guarator;
-        let ub = &upper_bounds - &constraint_coeffs.dot(&mu);
-        let lb = Array1::from_elem(ub.len(), f64::NEG_INFINITY);
-        mv_truncnormal_cdf(lb, ub, sigma_star, n, max_iters)
+        let (sq_constr_lb, sq_constr_ub, sq_constr_sigma, sq_coeffs) = self.blah(mu, sigma);
+        debug!("Gaussian CDF with mu {:?} sigma {:?}", mu, sq_constr_sigma);
+        mv_truncnormal_cdf(sq_constr_lb, sq_constr_ub, sq_constr_sigma, n, max_iters)
     }
 
-    /// # Panics
-    #[allow(clippy::too_many_lines)]
-    pub fn gaussian_sample<R: Rng>(
+    fn blah(
         &self,
-        rng: &mut R,
         mu: &Array1<T>,
         sigma: &Array2<T>,
-        n: usize,
-        max_iters: usize,
-    ) -> Vec<(Array1<f64>, f64)> {
+    ) -> (Array1<f64>, Array1<f64>, Array2<f64>, Array2<f64>) {
         // convert T to f64 in inputs
         let mu = mu.mapv(std::convert::Into::into);
         let sigma = sigma.mapv(std::convert::Into::into);
@@ -155,6 +143,21 @@ where
 
         let sq_constr_ub = &sq_ub - &sq_coeffs.dot(&extended_reduced_mu);
         let sq_constr_lb = Array1::from_elem(sq_constr_ub.len(), f64::NEG_INFINITY);
+        (sq_constr_lb, sq_constr_ub, sq_constr_sigma, sq_coeffs)
+    }
+
+    /// # Panics
+    #[allow(clippy::too_many_lines)]
+    pub fn gaussian_sample<R: Rng>(
+        &self,
+        rng: &mut R,
+        mu: &Array1<T>,
+        sigma: &Array2<T>,
+        n: usize,
+        max_iters: usize,
+    ) -> Vec<(Array1<f64>, f64)> {
+        let (sq_constr_lb, sq_constr_ub, sq_constr_sigma, sq_coeffs) = self.blah(mu, sigma);
+        let mu = mu.mapv(std::convert::Into::into);
         let (centered_samples, logp) = if sq_constr_sigma.len() == 1 {
             let sample = MultivariateTruncatedNormal::<Ix1>::new(
                 array![0.],
@@ -179,7 +182,7 @@ where
             .rows()
             .into_iter()
             .zip(logp)
-            .map(|(x, logp)| (x.to_owned() + &mu, logp))
+            .map(|(x, logp)| (&x.to_owned() + &mu, logp))
             .filter(|(x, _logp)| self.is_member(&x.mapv(|v| v.into()).view()))
             .collect();
         if filtered_samples.is_empty() {
@@ -297,7 +300,14 @@ impl<T: Float + ScalarOperand> From<Bounds1<T>> for Polytope<T> {
             ],
         )
         .unwrap();
-        let rhs = concatenate(Axis(0), &[item.lower(), item.upper()]).unwrap();
+        let rhs = concatenate(
+            Axis(0),
+            &[
+                (item.lower().to_owned() * T::neg(T::one())).view(),
+                item.upper(),
+            ],
+        )
+        .unwrap();
         let halfspaces = Inequality::new(coeffs, rhs);
         Self { halfspaces }
     }

@@ -8,6 +8,7 @@ use crate::polytope::Polytope;
 use crate::tensorshape::TensorShape;
 use crate::util::solve;
 use good_lp::ResolutionError;
+use log::{error, trace};
 use ndarray::concatenate;
 use ndarray::Array4;
 use ndarray::Dimension;
@@ -69,7 +70,7 @@ impl<T: Float, D: Dimension> Star<T, D> {
 
 impl<T: Float, D: Dimension> Star<T, D>
 where
-    T: ScalarOperand + From<f64>,
+    T: ScalarOperand + From<f64> + Debug,
     f64: From<T>,
 {
     pub fn num_constraints(&self) -> usize {
@@ -232,7 +233,7 @@ impl<T: 'static + Float> Star2<T> {
 
 impl<T: Float> Star2<T>
 where
-    T: ScalarOperand + From<f64>,
+    T: ScalarOperand + From<f64> + Debug,
     f64: From<T>,
 {
     pub fn with_input_bounds(mut self, input_bounds: Bounds1<T>) -> Self {

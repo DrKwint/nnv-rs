@@ -157,7 +157,23 @@ impl PyConstellation {
         }
     }
 
-    pub fn set_output_bounds(
+    pub fn get_input_bounds(&self) -> Option<(Py<PyArray1<f64>>, Py<PyArray1<f64>>)> {
+        let input_bounds = self
+            .constellation
+            .get_input_bounds()
+            .as_ref()
+            .map(|bounds| bounds.as_tuple());
+        let gil = Python::acquire_gil();
+        let py = gil.python();
+        input_bounds.map(|(l, u)| {
+            (
+                PyArray1::from_array(py, &l).to_owned(),
+                PyArray1::from_array(py, &u).to_owned(),
+            )
+        })
+    }
+
+    pub fn set_input_bounds(
         &mut self,
         fixed_part: Option<PyReadonlyArray1<f64>>,
         unfixed_part: Option<(PyReadonlyArray1<f64>, PyReadonlyArray1<f64>)>,

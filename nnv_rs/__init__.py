@@ -27,11 +27,13 @@ class DNN:
         return self.dnn.deeppoly_output_bounds(lower, upper)
 
     def build_from_tensorflow_params(self, affine_list):
-        for aff in affine_list:
+        nlayers = len(affine_list)
+        for i, aff in enumerate(affine_list):
             # Add dense
             self.dnn.add_dense(aff[0].T, aff[1])
             # Add relu
-            self.dnn.add_relu(aff[1].shape[0])
+            if i != nlayers - 1:
+                self.dnn.add_relu(aff[1].shape[0])
 
     def build_from_tensorflow_module(self, network):
         import tensorflow as tf
@@ -71,18 +73,40 @@ class DNN:
 
 class Constellation:
     def __init__(self, dnn, input_bounds=None, safe_value=np.inf):
-        self.constellation = PyConstellation(dnn.dnn, input_bounds)
+        if dnn is None:
+            self.constellation = None
+        else:
+            self.constellation = PyConstellation(dnn.dnn, input_bounds)
         self.safe_value = safe_value
 
-    def set_output_bounds(self, fixed_part, unfixed_part):
-        self.constellation.set_output_bounds(fixed_part, unfixed_part)
+    def set_dnn(self, dnn):
+        if self.constellation is None:
+            bounds = None
+        else:
+            bounds = self.constellation.get_input_bounds()
+        self.constellation = PyConstellation(dnn.dnn, bounds)
+
+    def set_input_bounds(self, fixed_part, loc, scale):
+        loc = np.squeeze(loc)
+        scale = np.squeeze(scale)
+        unfixed_part = (loc - 3.5 * scale, loc + 3.5 * scale)
+        print("Bounds:", unfixed_part)
+        self.constellation.set_input_bounds(fixed_part, unfixed_part)
 
     def importance_sample(self, loc, scale):
         pass
 
+    def bounded_sample_with_input_bounds(self, loc, scale, fixed_part):
+        self.set_input_bounds(
+            np.squeeze(fixed_part).astype(np.float64), loc,
+            scale.astype(np.float64))
+        return self.bounded_sample(loc, scale)
+
     def bounded_sample(self, loc, scale):
+        loc = np.squeeze(loc).astype(np.float64)
+        scale = np.squeeze(scale).astype(np.float64)
         if self.safe_value == np.inf:
-            sample = np.random.normal(loc, scale)
+            sample = np.random.normal(loc[-len(scale):], scale)
             prob = 1.
             for (samp, l, s) in zip(sample, loc, scale):
                 prob *= norm.pdf(samp, l, s)
