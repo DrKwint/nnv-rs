@@ -116,11 +116,8 @@ where
     T: ScalarOperand + Display + Debug + Default + MulAssign + std::convert::From<f64> + Sum,
     f64: std::convert::From<T>,
 {
-    debug!(
-        "Starting Deeppoly at {:?} with input bounds {:?}",
-        dnn_iter.get_idx(),
-        input_bounds
-    );
+    debug!("Starting Deeppoly at {:?}", dnn_iter.get_idx());
+    trace!("with input bounds {:?}", input_bounds);
     let ndim = input_bounds.ndim();
     // Affine expressing bounds on each variable in current layer as a
     // linear function of input bounds
@@ -137,15 +134,16 @@ where
                 Array1::zeros(ndim),
             ),
         ),
-        |(laff, uaff), layer| {
+        |(laff, uaff), op| {
+            trace!("op {:?}", op);
             // Substitute input concrete bounds into current abstract bounds
             // to get current concrete bounds
             let bounds_concrete = Bounds1::new(
                 laff.apply(&Array1::ones(ndim).view()),
                 uaff.apply(&Array1::ones(ndim).view()),
             );
-            let out = layer.apply_bounds(bounds_concrete, laff, uaff);
-            trace!("Deeppoly bounds {:?}", out.0);
+            let out = op.apply_bounds(bounds_concrete, laff, uaff);
+            trace!("new bounds {:?}", out.0);
             out.1
         },
     );
@@ -160,8 +158,8 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::dnn::{Layer, DNN};
-    use crate::test_util::affine2;
+    use crate::dnn::{DNNIndex, Layer, DNN};
+    use crate::test_util::{bounds1, fc_dnn};
     use ndarray::Array2;
     use ndarray::Axis;
     use ndarray::Ix1;

@@ -1,9 +1,10 @@
+#![allow(non_snake_case)]
 use crate::dnn::DNNIterator;
 use crate::star::Star;
-use crate::star_node::ArenaLike;
 use crate::star_node::StarNode;
 use crate::star_node::StarNodeOp;
 use crate::star_node::StarNodeType;
+use crate::util::ArenaLike;
 use crate::Bounds;
 use crate::DNN;
 use log::{debug, trace};
@@ -52,6 +53,17 @@ where
         &self.dnn
     }
 
+    pub fn get_input_bounds(&self) -> &Option<Bounds<T, D>> {
+        &self.input_bounds
+    }
+
+    fn add_node(&mut self, node: StarNode<T, D>) -> usize {
+        let child_idx = self.arena.new_node(node);
+        let other_child_idx = self.children.new_node(None);
+        debug_assert_eq!(child_idx, other_child_idx);
+        child_idx
+    }
+
     pub fn reset_with_star(&mut self, input_star: Star<T, D>, input_bounds: Option<Bounds<T, D>>) {
         let star_node = StarNode::default(input_star);
         self.arena = vec![star_node];
@@ -68,22 +80,20 @@ where
                 fst_child_idx,
                 snd_child_idx,
             }) => {
-                let mut child_ids: Vec<usize> = Vec::new();
-                child_ids.push(fst_child_idx);
+                let mut child_ids: Vec<usize> = vec![fst_child_idx];
                 if let Some(idx) = snd_child_idx {
                     child_ids.push(idx);
                 }
                 Some(child_ids)
             }
             Some(StarNodeType::StepReluDropOut {
-                dim: usize,
-                dropout_prob: T,
+                dim,
+                dropout_prob,
                 fst_child_idx,
                 snd_child_idx,
                 trd_child_idx,
             }) => {
-                let mut child_ids: Vec<usize> = Vec::new();
-                child_ids.push(fst_child_idx);
+                let mut child_ids: Vec<usize> = vec![fst_child_idx];
                 if let Some(idx) = snd_child_idx {
                     child_ids.push(idx);
                 }
@@ -93,7 +103,6 @@ where
                 Some(child_ids)
             }
             None => None,
-            _ => todo!(),
         }
     }
 }
@@ -186,12 +195,17 @@ where
         cdf_samples: usize,
         max_iters: usize,
     ) -> Option<(StarNode<T, Ix2>, T)> {
+        debug!(
+            "Running sample_safe_star with loc: {} scale {} safe_value {}",
+            loc, scale, safe_value
+        );
         let mut rng = rand::thread_rng();
         let mut current_node = 0;
         let mut path = vec![];
         let mut path_logp = T::zero();
         let infeasible_reset =
             |me: &mut Self, x: usize, path: &mut Vec<usize>, path_logp: &mut T| -> usize {
+                debug!("Infeasible reset!");
                 me.arena[x].set_feasible(false);
                 let mut infeas_cdf = me.arena[x].gaussian_cdf(loc, scale, cdf_samples, max_iters);
                 path.drain(..).rev().for_each(|x| {
@@ -213,6 +227,7 @@ where
                 0
             };
         loop {
+            debug!("Current node: {:?}", current_node);
             // base case for feasability
             if current_node == 0 && !self.arena[current_node].get_feasible() {
                 return None;
@@ -222,6 +237,7 @@ where
                 // makes the assumption that bounds are on 0th dimension of output
                 let output_bounds = self.arena[current_node]
                     .get_output_bounds(&self.dnn, &|x| (x.lower()[[0]], x.upper()[[0]]));
+                debug!("Output bounds: {:?}", output_bounds);
                 if output_bounds.1 < safe_value {
                     // handle case where star is safe
                     let safe_star = self.arena[current_node].clone();
@@ -256,13 +272,12 @@ where
                 match result {
                     Some((node, logp)) => {
                         current_node = node;
-                        path_logp = logp;
+                        path_logp += logp;
                     }
                     None => {
                         current_node =
                             infeasible_reset(self, current_node, &mut path, &mut path_logp);
                     }
-                    _ => todo!(),
                 }
             }
         }
@@ -281,10 +296,21 @@ where
     /// # Returns
     /// * `children` - StarNodeType<T>
     pub fn get_children(&mut self, node_id: usize) -> &StarNodeType<T> {
-        if let None = self.children[node_id] {
-            self.expand(node_id);
+        if self
+            .children
+            .get(node_id)
+            .map(|opt| opt.as_ref())
+            .flatten()
+            .is_some()
+        {
+            self.children
+                .get(node_id)
+                .map(|opt| opt.as_ref())
+                .flatten()
+                .unwrap()
+        } else {
+            self.expand(node_id)
         }
-        self.children[node_id].as_ref().unwrap()
     }
 
     /// Expand a node's children, inserting them into the arena.
@@ -297,10 +323,10 @@ where
     ///
     /// # Returns
     /// * `children` - StarNodeType<T>
-    fn expand(&mut self, node_id: usize) {
+    fn expand(&mut self, node_id: usize) -> &StarNodeType<T> {
         let dnn_index = self.arena[node_id].get_dnn_index();
         let dnn_iter = &mut DNNIterator::new(&self.dnn, dnn_index);
-        let arena = &mut self.arena;
+        //let arena = &mut self.arena;
 
         // Get this node's operation from the dnn_iter
         let op = dnn_iter.next();
@@ -308,21 +334,18 @@ where
         let children = match op {
             Some(StarNodeOp::Leaf) => StarNodeType::Leaf,
             Some(StarNodeOp::Affine(aff)) => {
-                let child_idx = self.arena.new_node(
+                let child_idx = self.add_node(
                     StarNode::default(self.arena[node_id].get_star().affine_map2(&aff))
                         .with_dnn_index(dnn_iter.get_idx()),
                 );
                 StarNodeType::Affine { child_idx }
             }
             Some(StarNodeOp::StepRelu(dim)) => {
-                let child_stars = arena[node_id].get_star().step_relu2(dim);
+                let child_stars = self.arena[node_id].get_star().step_relu2(dim);
+                let dnn_idx = dnn_iter.get_idx();
                 let ids: Vec<usize> = child_stars
                     .into_iter()
-                    .map(|star| {
-                        let idx = arena.len();
-                        arena.push(StarNode::default(star).with_dnn_index(dnn_iter.get_idx()));
-                        idx
-                    })
+                    .map(|star| self.add_node(StarNode::default(star).with_dnn_index(dnn_idx)))
                     .collect();
                 StarNodeType::StepRelu {
                     dim,
@@ -331,14 +354,11 @@ where
                 }
             }
             Some(StarNodeOp::StepReluDropout((dropout_prob, dim))) => {
-                let child_stars = arena[node_id].get_star().step_relu2_dropout(dim);
+                let child_stars = self.arena[node_id].get_star().step_relu2_dropout(dim);
+                let dnn_idx = dnn_iter.get_idx();
                 let ids: Vec<usize> = child_stars
                     .into_iter()
-                    .map(|star| {
-                        let idx = arena.len();
-                        arena.push(StarNode::default(star).with_dnn_index(dnn_iter.get_idx()));
-                        idx
-                    })
+                    .map(|star| self.add_node(StarNode::default(star).with_dnn_index(dnn_idx)))
                     .collect();
                 StarNodeType::StepReluDropOut {
                     dim,
@@ -351,6 +371,11 @@ where
             None => panic!(),
         };
         self.children[node_id] = Some(children);
+        self.children
+            .get(node_id)
+            .map(|opt| opt.as_ref())
+            .flatten()
+            .unwrap()
     }
 
     fn select_child(
@@ -363,13 +388,13 @@ where
         max_iters: usize,
         rng: &mut rand::rngs::ThreadRng,
     ) -> Option<(usize, T)> {
-        match self.get_children(current_node) {
+        match *self.get_children(current_node) {
             // leaf node, which must be partially safe and partially unsafe
-            &StarNodeType::Leaf => {
+            StarNodeType::Leaf => {
                 panic!();
             }
-            &StarNodeType::Affine { child_idx } => Some((child_idx, path_logp)),
-            &StarNodeType::StepRelu {
+            StarNodeType::Affine { child_idx } => Some((child_idx, path_logp)),
+            StarNodeType::StepRelu {
                 dim,
                 fst_child_idx,
                 snd_child_idx,
@@ -385,7 +410,18 @@ where
                     .collect();
                 match children.len() {
                     0 => None,
-                    1 => Some((children[0], path_logp)),
+                    1 => {
+                        debug!(
+                            "One child with cdf: {}",
+                            self.arena[children[0]].gaussian_cdf(
+                                loc,
+                                scale,
+                                cdf_samples,
+                                max_iters,
+                            )
+                        );
+                        Some((children[0], path_logp))
+                    }
                     2 => {
                         let fst_cdf = self.arena[children[0]].gaussian_cdf(
                             loc,
@@ -398,6 +434,10 @@ where
                             scale,
                             cdf_samples,
                             max_iters,
+                        );
+                        debug!(
+                            "Selecting between 2 children with CDFs: {} and {}",
+                            fst_cdf, snd_cdf
                         );
 
                         // Handle the case where a CDF gives a non-normal value
@@ -445,7 +485,7 @@ where
                     }
                 }
             }
-            &StarNodeType::StepReluDropOut {
+            StarNodeType::StepReluDropOut {
                 dim,
                 dropout_prob,
                 fst_child_idx,
@@ -531,7 +571,6 @@ where
                     }
                 }
             }
-            _ => todo!(),
         }
     }
 }

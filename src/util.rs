@@ -4,6 +4,7 @@ use good_lp::solvers::highs::{highs, HighsSolution};
 use good_lp::{variable, ResolutionError, Solution, SolverModel};
 use good_lp::{Expression, IntoAffineExpression, ProblemVariables, Variable};
 use itertools::iproduct;
+use log::trace;
 use ndarray::{s, Axis, Slice};
 use ndarray::{Array2, ArrayView1};
 use ndarray_linalg::SVD;
@@ -72,6 +73,7 @@ impl IntoAffineExpression for LinearExpression {
     }
 }
 
+/// Minimizes the expression `c` given the constraint `Ax < b`.
 /// # Panics
 pub fn solve<'a, I, T: 'a>(
     A: I,
@@ -79,12 +81,16 @@ pub fn solve<'a, I, T: 'a>(
     c: ArrayView1<T>,
 ) -> (Result<HighsSolution, ResolutionError>, Option<f64>)
 where
-    T: std::convert::Into<f64> + std::clone::Clone + std::marker::Copy,
+    T: std::convert::Into<f64> + std::clone::Clone + std::marker::Copy + Debug,
     I: IntoIterator<Item = ArrayView1<'a, T>>,
     f64: std::convert::From<T>,
 {
-    let _shh_out = shh::stdout().unwrap();
-    let _shh_err = shh::stderr().unwrap();
+    let mut _shh_out;
+    let mut _shh_err;
+    if !cfg!(test) {
+        _shh_out = shh::stdout().unwrap();
+        _shh_err = shh::stderr().unwrap();
+    }
     let mut problem = ProblemVariables::new();
     let vars = problem.add_vector(variable(), c.len());
     let c_expression = LinearExpression {
@@ -111,6 +117,7 @@ where
                 good_lp::constraint::leq(Expression::from_other_affine(expr), f64::from(*ub));
             unsolved.add_constraint(constr);
         });
+
     let soln = unsolved.solve();
     let fun = soln.as_ref().ok().map(|x| x.eval(c_expression));
     (soln, fun)
@@ -141,4 +148,16 @@ pub fn signed_matmul<T: Float + Sum + Debug>(
             .sum();
     });
     out
+}
+
+pub trait ArenaLike<T> {
+    fn new_node(&mut self, data: T) -> usize;
+}
+
+impl<T> ArenaLike<T> for Vec<T> {
+    fn new_node(&mut self, data: T) -> usize {
+        let new_id = self.len();
+        self.push(data);
+        new_id
+    }
 }

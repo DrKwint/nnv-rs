@@ -35,6 +35,10 @@ impl<T: Float, D: Dimension + ndarray::RemoveAxis> Bounds<T, D> {
         self.data.iter().all(|&x| T::is_finite(x))
     }
 
+    pub fn as_tuple(&self) -> (Array<T, D::Smaller>, Array<T, D::Smaller>) {
+        (self.lower().to_owned(), self.upper().to_owned())
+    }
+
     pub fn lower(&self) -> ArrayView<T, D::Smaller> {
         self.data.index_axis(Axis(0), 0)
     }

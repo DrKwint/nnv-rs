@@ -1,9 +1,12 @@
 use crate::affine::Affine2;
 use ndarray::concatenate;
 use ndarray::Axis;
+use ndarray::Slice;
+use ndarray::Zip;
 use ndarray::{Array1, Array2};
 use ndarray::{ArrayView1, ArrayView2};
 use num::Float;
+use std::convert::TryFrom;
 use std::ops::Mul;
 use std::ops::MulAssign;
 
@@ -26,6 +29,10 @@ impl<T: 'static + Float> Inequality<T> {
         self.rhs.view()
     }
 
+    pub fn num_dims(&self) -> usize {
+        self.coeffs.ncols()
+    }
+
     pub fn num_constraints(&self) -> usize {
         self.rhs.len()
     }
@@ -33,6 +40,27 @@ impl<T: 'static + Float> Inequality<T> {
     pub fn add_eqns(&mut self, eqns: &Self) {
         self.coeffs.append(Axis(0), eqns.coeffs.view()).unwrap();
         self.rhs.append(Axis(0), eqns.rhs.view()).unwrap();
+    }
+
+    pub fn get_eqn(&self, idx: usize) -> Self {
+        let i_idx: isize = isize::try_from(idx).unwrap();
+        Self {
+            coeffs: self
+                .coeffs
+                .slice_axis(Axis(0), Slice::new(i_idx, Some(i_idx + 1), 1))
+                .to_owned(),
+            rhs: self
+                .rhs
+                .slice_axis(Axis(0), Slice::new(i_idx, Some(i_idx + 1), 1))
+                .to_owned(),
+        }
+    }
+
+    pub fn is_member(&self, point: &ArrayView1<T>) -> bool {
+        let vals = self.coeffs.dot(point);
+        Zip::from(&self.rhs)
+            .and(&vals)
+            .fold(true, |acc, ub, v| acc && (v <= ub))
     }
 
     /// Assumes that the zero valued
@@ -82,10 +110,18 @@ impl<T: 'static + Float> From<Affine2<T>> for Inequality<T> {
         }
     }
 }
-/*
-#tests
 
-test_add_eqns
+#[cfg(test)]
+mod tests {
+    use crate::test_util::*;
+    use proptest::prelude::*;
 
-test_reduce_with_values
-*/
+    proptest! {
+        #[test]
+        fn test_inequality_get_eqn(ineq in inequality(3, 4)) {
+            let eqn = ineq.get_eqn(2);
+            let coeffs = eqn.coeffs();
+            prop_assert_eq!(&coeffs.shape(), &vec![1, 3])
+        }
+    }
+}

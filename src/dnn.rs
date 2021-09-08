@@ -152,7 +152,7 @@ where
         todo!();
     }
 
-    pub fn forward2(&self, input: Array<T, Ix2>) -> Array<T, Ix2> {
+    pub fn forward2(&self, _input: Array<T, Ix2>) -> Array<T, Ix2> {
         todo!();
     }
 
@@ -266,25 +266,31 @@ impl<T: 'static + num::Float + std::fmt::Debug> Iterator for DNNIterator<'_, T> 
     type Item = StarNodeOp<T>;
 
     fn next(&mut self) -> Option<Self::Item> {
+        trace!("idx {:?}", self.get_idx());
         if self.finished {
             return None;
         }
-        if let Some(ref mut step) = self.idx.remaining_steps {
-            *step -= 1;
-            if *step == 0 {
-                self.idx.layer += 1;
-            }
-            let next_layer = self.dnn.get_layer(self.idx.layer + 1);
-            if let Some(Layer::Dropout(prob)) = next_layer {
-                Some(StarNodeOp::StepReluDropout((*prob, *step)))
+        self.idx.remaining_steps = self.idx.remaining_steps.and_then(|x| match x {
+            1 => None,
+            x => Some(x - 1),
+        });
+
+        if let Some(ref step) = self.idx.remaining_steps {
+            if let Some(Layer::Dropout(prob)) = self.dnn.get_layer(self.idx.layer + 1) {
+                if *step == 1 {
+                    self.idx.layer += 2;
+                }
+                Some(StarNodeOp::StepReluDropout((*prob, *step - 1)))
             } else {
-                Some(StarNodeOp::StepRelu(*step))
+                if *step == 1 {
+                    self.idx.layer += 1;
+                }
+                Some(StarNodeOp::StepRelu(*step - 1))
             }
         } else {
             let layer = self.dnn.get_layer(self.idx.layer);
             match layer {
                 None => {
-                    self.idx.layer += 1;
                     self.finished = true;
                     Some(StarNodeOp::Leaf)
                 }
@@ -297,9 +303,9 @@ impl<T: 'static + num::Float + std::fmt::Debug> Iterator for DNNIterator<'_, T> 
 
                     let next_layer = self.dnn.get_layer(self.idx.layer + 1);
                     if let Some(Layer::Dropout(prob)) = next_layer {
-                        Some(StarNodeOp::StepReluDropout((*prob, *ndim)))
+                        Some(StarNodeOp::StepReluDropout((*prob, *ndim - 1)))
                     } else {
-                        Some(StarNodeOp::StepRelu(*ndim))
+                        Some(StarNodeOp::StepRelu(*ndim - 1))
                     }
                 }
                 _ => todo!(),

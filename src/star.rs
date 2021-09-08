@@ -8,6 +8,7 @@ use crate::polytope::Polytope;
 use crate::tensorshape::TensorShape;
 use crate::util::solve;
 use good_lp::ResolutionError;
+use log::{error, trace};
 use ndarray::concatenate;
 use ndarray::Array4;
 use ndarray::Dimension;
@@ -43,9 +44,12 @@ pub type Star4<A> = Star<A, Ix4>;
 /// Cham, 2019.
 #[derive(Clone, Debug)]
 pub struct Star<T: Float, D: Dimension> {
-    /// `representation` is the concatenation of [basis center] (where center is a column vector) and captures information about the transformed set
+    /// `representation` is the concatenation of [basis center] (where
+    /// center is a column vector) and captures information about the
+    /// transformed set
     representation: Affine<T, D>,
-    /// `constraints` is the concatenation of [coeffs upper_bounds] and is a representation of the input polyhedron
+    /// `constraints` is the concatenation of [coeffs upper_bounds]
+    /// and is a representation of the input polyhedron
     constraints: Option<Polytope<T>>,
 }
 
@@ -65,7 +69,7 @@ impl<T: Float, D: Dimension> Star<T, D> {
 
 impl<T: Float, D: Dimension> Star<T, D>
 where
-    T: ScalarOperand + From<f64>,
+    T: ScalarOperand + From<f64> + Debug,
     f64: From<T>,
 {
     pub fn num_constraints(&self) -> usize {
@@ -207,6 +211,14 @@ impl<T: 'static + Float> Star2<T> {
         }
     }
 
+    pub fn with_constraints(mut self, constraints: Polytope<T>) -> Self {
+        if self.constraints.is_some() {
+            panic!();
+        }
+        self.constraints = Some(constraints);
+        self
+    }
+
     /// Get the dimension of the input space
     pub fn input_space_dim(&self) -> usize {
         self.representation.input_dim()
@@ -220,7 +232,7 @@ impl<T: 'static + Float> Star2<T> {
 
 impl<T: Float> Star2<T>
 where
-    T: ScalarOperand + From<f64>,
+    T: ScalarOperand + From<f64> + Debug,
     f64: From<T>,
 {
     pub fn with_input_bounds(mut self, input_bounds: Bounds1<T>) -> Self {
@@ -285,16 +297,34 @@ where
         stars.into_iter().filter(|x| !x.is_empty()).collect()
     }
 
+    /// Calculates the minimum value of the equation at index `idx`
+    /// given the constraints
+    ///
+    /// This method assumes that the constraints bound each dimension,
+    /// both lower and upper.
+    ///
     /// # Panics
+    /// TODO: Change output type to Option<T>
+    ///
+    /// TODO: ResolutionError::Unbounded can result whether or not the
+    /// constraints are infeasible if there are zeros in the
+    /// objective. This needs to be checked either here or in the
+    /// solve function. Currently this is way too hard to do, so we
+    /// panic instead. We have an assumption that we start with a
+    /// bounded box and therefore should never be unbounded.
     pub fn get_min(&self, idx: usize) -> T {
-        let eqn = self.representation.get_eqn(idx).get_raw_augmented();
-        let c = &eqn.index_axis(Axis(0), 0);
+        let eqn = self.representation.get_eqn(idx);
 
         if let Some(ref poly) = self.constraints {
-            let solved = solve(poly.coeffs().rows(), poly.ubs(), c.view());
+            let solved = solve(
+                poly.coeffs().rows(),
+                poly.ubs(),
+                eqn.basis().index_axis(Axis(0), 0),
+            );
             let val = match solved.0 {
                 Ok(_) => std::convert::From::from(solved.1.unwrap()),
-                Err(ResolutionError::Unbounded) => T::neg_infinity(),
+                Err(ResolutionError::Infeasible) => panic!("Error, infeasible"),
+                Err(ResolutionError::Unbounded) => panic!("Error, unbounded"),
                 _ => panic!(),
             };
             self.center()[idx] + val
@@ -303,17 +333,28 @@ where
         }
     }
 
+    /// Calculates the maximum value of the equation at index `idx`
+    /// given the constraints
+    ///
+    /// This method assumes that the constraints bound each dimension,
+    /// both lower and upper.
+    ///
     /// # Panics
+    /// TODO: Change output type to Option<T>
     pub fn get_max(&self, idx: usize) -> T {
         let neg_one: T = std::convert::From::from(-1.);
-        let eqn = self.representation.get_eqn(idx).get_raw_augmented();
-        let c = &eqn.index_axis(Axis(0), 0) * neg_one;
+        let eqn = self.representation.get_eqn(idx) * neg_one;
 
         if let Some(ref poly) = self.constraints {
-            let solved = solve(poly.coeffs().rows(), poly.ubs(), c.view());
+            let solved = solve(
+                poly.coeffs().rows(),
+                poly.ubs(),
+                eqn.basis().index_axis(Axis(0), 0),
+            );
             let val = match solved.0 {
                 Ok(_) => std::convert::From::from(solved.1.unwrap()),
-                Err(ResolutionError::Unbounded) => T::neg_infinity(),
+                Err(ResolutionError::Infeasible) => panic!("Error, infeasible"),
+                Err(ResolutionError::Unbounded) => panic!("Error, unbounded"),
                 _ => panic!(),
             };
             self.center()[idx] - val
@@ -419,6 +460,101 @@ impl<T: 'static + Float> Star4<T> {
         Self {
             representation: Affine4::new(Array4::ones(slice_exact), Array1::zeros(shape_slice[3])),
             constraints: None,
+        }
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use crate::test_util::*;
+    use proptest::prelude::*;
+    use proptest::proptest;
+    use std::panic;
+
+    proptest! {
+        #[test]
+        fn test_get_min_feasible(star in non_empty_star(2,3)) {
+            prop_assert!(!star.input_space_polytope().unwrap().is_empty(), "Polytope is empty");
+            prop_assert!(!star.is_empty(), "Non empty star is empty");
+            let result = panic::catch_unwind(|| {
+                star.get_min(0);
+            });
+            prop_assert!(result.is_ok(), "Calculating min resulted in panic for feasible star");
+        }
+
+        #[test]
+        fn test_get_min_infeasible(star in empty_star(2,1)) {
+            prop_assert!(star.input_space_polytope().unwrap().is_empty(), "Polytope is empty");
+            prop_assert!(star.is_empty(), "Empty star is not empty");
+            let result = panic::catch_unwind(|| {
+                star.get_min(0)
+            });
+            prop_assert!(result.is_err(), "Infeasible star did not panic for get_min {:#?}", result);
+        }
+
+        #[test]
+        fn test_get_max_feasible(star in non_empty_star(2,3)) {
+            prop_assert!(!star.input_space_polytope().unwrap().is_empty(), "Polytope is empty");
+            prop_assert!(!star.is_empty(), "Non empty star is empty");
+            let result = panic::catch_unwind(|| {
+                star.get_max(0);
+            });
+            prop_assert!(result.is_ok(), "Calculating min resulted in panic for feasible star");
+        }
+
+        #[test]
+        fn test_get_max_infeasible(star in empty_star(2,1)) {
+            prop_assert!(star.input_space_polytope().unwrap().is_empty(), "Polytope is empty");
+            prop_assert!(star.is_empty(), "Empty star is not empty");
+            let result = panic::catch_unwind(|| {
+                star.get_max(0)
+            });
+            prop_assert!(result.is_err(), "Infeasible star did not panic for get_min {:#?}", result);
+        }
+
+        #[test]
+        fn test_get_min_box_polytope(basis in array2(2, 2)) {
+            let num_dims = 2;
+            let box_coeffs = Array2::eye(num_dims);
+            let mut box_rhs = Array1::ones(num_dims);
+            box_rhs *= 20.;
+
+            let mut box_ineq = Inequality::new(box_coeffs.clone(), box_rhs.clone());
+            let lower_box_ineq = Inequality::new(-1. * box_coeffs, box_rhs);
+
+            box_ineq.add_eqns(&lower_box_ineq);
+            let poly = Polytope::from_halfspaces(box_ineq);
+
+            let center = arr1(&[0.0, 0.0]);
+            let star = Star2::new(basis, center).with_constraints(poly);
+
+            let result = panic::catch_unwind(|| {
+                star.get_min(0);
+            });
+            assert!(result.is_ok());
+        }
+
+        #[test]
+        fn test_get_max_box_polytope(basis in array2(2, 2)) {
+            let num_dims = 2;
+            let box_coeffs = Array2::eye(num_dims);
+            let mut box_rhs = Array1::ones(num_dims);
+            box_rhs *= 20.;
+
+            let mut box_ineq = Inequality::new(box_coeffs.clone(), box_rhs.clone());
+            let lower_box_ineq = Inequality::new(-1. * box_coeffs, box_rhs);
+
+            box_ineq.add_eqns(&lower_box_ineq);
+            let poly = Polytope::from_halfspaces(box_ineq);
+
+            let center = arr1(&[0.0, 0.0]);
+            let star = Star2::new(basis, center).with_constraints(poly);
+
+            let result = panic::catch_unwind(|| {
+                star.get_max(0);
+            });
+            assert!(result.is_ok());
         }
     }
 }
