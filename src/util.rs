@@ -13,7 +13,6 @@ use std::cmp::max;
 use std::collections::HashMap;
 use std::fmt::Debug;
 use std::iter::Sum;
-use std::panic;
 
 pub fn l2_norm(x: ArrayView1<f64>) -> f64 {
     x.dot(&x).sqrt()

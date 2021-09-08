@@ -1,10 +1,12 @@
 use crate::affine::Affine2;
 use ndarray::concatenate;
 use ndarray::Axis;
+use ndarray::Slice;
 use ndarray::Zip;
 use ndarray::{Array1, Array2};
 use ndarray::{ArrayView1, ArrayView2};
 use num::Float;
+use std::convert::TryFrom;
 use std::ops::Mul;
 use std::ops::MulAssign;
 
@@ -41,17 +43,16 @@ impl<T: 'static + Float> Inequality<T> {
     }
 
     pub fn get_eqn(&self, idx: usize) -> Self {
+        let i_idx: isize = isize::try_from(idx).unwrap();
         Self {
             coeffs: self
                 .coeffs
-                .index_axis(Axis(0), idx)
-                .to_owned()
-                .insert_axis(Axis(0)),
+                .slice_axis(Axis(0), Slice::new(i_idx, Some(i_idx + 1), 1))
+                .to_owned(),
             rhs: self
                 .rhs
-                .index_axis(Axis(0), idx)
-                .to_owned()
-                .insert_axis(Axis(0)),
+                .slice_axis(Axis(0), Slice::new(i_idx, Some(i_idx + 1), 1))
+                .to_owned(),
         }
     }
 
@@ -109,10 +110,18 @@ impl<T: 'static + Float> From<Affine2<T>> for Inequality<T> {
         }
     }
 }
-/*
-#tests
 
-test_add_eqns
+#[cfg(test)]
+mod tests {
+    use crate::test_util::*;
+    use proptest::prelude::*;
 
-test_reduce_with_values
-*/
+    proptest! {
+        #[test]
+        fn test_inequality_get_eqn(ineq in inequality(3, 4)) {
+            let eqn = ineq.get_eqn(2);
+            let coeffs = eqn.coeffs();
+            prop_assert_eq!(&coeffs.shape(), &vec![1, 3])
+        }
+    }
+}

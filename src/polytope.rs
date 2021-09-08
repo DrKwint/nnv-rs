@@ -273,6 +273,9 @@ where
 {
     /// Check whether the Star set is empty.
     ///
+    /// This method assumes that the constraints bound each dimension,
+    /// both lower and upper.
+    ///
     /// # Panics
     pub fn is_empty(&self) -> bool {
         let c = Array1::ones(self.num_vars());

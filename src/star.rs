@@ -301,6 +301,9 @@ where
     /// Calculates the minimum value of the equation at index `idx`
     /// given the constraints
     ///
+    /// This method assumes that the constraints bound each dimension,
+    /// both lower and upper.
+    ///
     /// # Panics
     /// TODO: Change output type to Option<T>
     ///
@@ -333,6 +336,9 @@ where
 
     /// Calculates the maximum value of the equation at index `idx`
     /// given the constraints
+    ///
+    /// This method assumes that the constraints bound each dimension,
+    /// both lower and upper.
     ///
     /// # Panics
     /// TODO: Change output type to Option<T>
