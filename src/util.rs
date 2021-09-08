@@ -73,6 +73,7 @@ impl IntoAffineExpression for LinearExpression {
     }
 }
 
+/// Minimizes the expression `c` given the constraint `Ax < b`.
 /// # Panics
 pub fn solve<'a, I, T: 'a>(
     A: I,
@@ -84,8 +85,12 @@ where
     I: IntoIterator<Item = ArrayView1<'a, T>>,
     f64: std::convert::From<T>,
 {
-    let _shh_out = shh::stdout().unwrap();
-    let _shh_err = shh::stderr().unwrap();
+    let mut _shh_out;
+    let mut _shh_err;
+    if !cfg!(test) {
+        _shh_out = shh::stdout().unwrap();
+        _shh_err = shh::stderr().unwrap();
+    }
     let mut problem = ProblemVariables::new();
     let vars = problem.add_vector(variable(), c.len());
     let c_expression = LinearExpression {
@@ -112,6 +117,7 @@ where
                 good_lp::constraint::leq(Expression::from_other_affine(expr), f64::from(*ub));
             unsolved.add_constraint(constr);
         });
+
     let soln = unsolved.solve();
     let fun = soln.as_ref().ok().map(|x| x.eval(c_expression));
     (soln, fun)

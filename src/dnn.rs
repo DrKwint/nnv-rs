@@ -152,7 +152,7 @@ where
         todo!();
     }
 
-    pub fn forward2(&self, input: Array<T, Ix2>) -> Array<T, Ix2> {
+    pub fn forward2(&self, _input: Array<T, Ix2>) -> Array<T, Ix2> {
         todo!();
     }
 

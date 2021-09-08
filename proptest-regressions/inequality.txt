@@ -1,0 +1,7 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 2fb72e1ca5a6fe73ed41ab1cf0a33056da59505cf7cb0ec99c48624309c98838 # shrinks to ineq = Inequality { coeffs: [[0.0, 1.0, 0.0],  [0.0, 1.0, 0.0],  [0.0, 0.0, 1.0],  [0.0, 1.0, 0.0]], shape=[4, 3], strides=[3, 1], layout=Cc (0x5), const ndim=2, rhs: [0.0, 0.0, 0.0, 0.0], shape=[4], strides=[1], layout=CFcf (0xf), const ndim=1 }

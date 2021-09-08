@@ -158,8 +158,8 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::dnn::{Layer, DNN};
-    use crate::test_util::affine2;
+    use crate::dnn::{DNNIndex, Layer, DNN};
+    use crate::test_util::{bounds1, fc_dnn};
     use ndarray::Array2;
     use ndarray::Axis;
     use ndarray::Ix1;

@@ -211,7 +211,7 @@ where
                 */
                 output_fn(deep_poly(
                     bounding_box,
-                    DNNIterator::new(dnn, self.dnn_index.clone()),
+                    DNNIterator::new(dnn, self.dnn_index),
                 ))
             },
             |bounds| bounds,
