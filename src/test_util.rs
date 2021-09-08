@@ -9,6 +9,7 @@ use crate::Layer;
 use crate::DNN;
 use itertools::Itertools;
 use ndarray::concatenate;
+use ndarray::stack;
 use ndarray::Array1;
 use ndarray::Array2;
 use ndarray::ArrayView1;
@@ -24,23 +25,23 @@ use std::ops::Range;
 prop_compose! {
     pub fn array1(len: usize)
         (v in Vec::lift1_with(-10. .. 10., SizeRange::new(len..=len))) -> Array1<f64> {
-        Array1::from_vec(v)
-    }
+            Array1::from_vec(v)
+        }
 }
 
 prop_compose! {
     pub fn array2(rows: usize, cols: usize)
         (v in Vec::lift1_with(array1(cols), SizeRange::new(rows..=rows))) -> Array2<f64> {
-        assert!(rows > 0);
-        ndarray::stack(Axis(0), &v.iter().map(|x| x.view()).collect::<Vec<ArrayView1<f64>>>()).unwrap()
-    }
+            assert!(rows > 0);
+            ndarray::stack(Axis(0), &v.iter().map(|x| x.view()).collect::<Vec<ArrayView1<f64>>>()).unwrap()
+        }
 }
 
 prop_compose! {
     pub fn affine2(in_dim: usize, out_dim: usize)
         (basis in array2(out_dim, in_dim), shift in array1(out_dim)) -> Affine2<f64> {
-        Affine2::new(basis, shift)
-    }
+            Affine2::new(basis, shift)
+        }
 }
 
 prop_compose! {
@@ -126,21 +127,36 @@ prop_compose! {
                     }
                 });
             inequality
-    }
+        }
 }
 
 prop_compose! {
     pub fn polytope(num_dims: usize, num_constraints: usize)
         (ineq in inequality(num_dims, num_constraints)) -> Polytope<f64> {
-        Polytope::from_halfspaces(ineq)
-    }
+            Polytope::from_halfspaces(ineq)
+        }
 }
 
 prop_compose! {
     pub fn non_empty_polytope(num_dims: usize, num_constraints: usize)
-        (ineq in inequality_including_zero(num_dims, num_constraints)) -> Polytope<f64> {
-        Polytope::from_halfspaces(ineq)
-    }
+        (
+            mut ineq in inequality_including_zero(num_dims, num_constraints)
+                .prop_filter("Non-zero intercepts",
+                             |i| !i.rhs().iter().any(|x| *x == 0.0_f64))
+        ) -> Polytope<f64> {
+
+            // Make a box bigger than possible inner inequalities
+            let box_coeffs = Array2::eye(num_dims);
+            let mut box_rhs = Array1::ones(num_dims);
+            box_rhs *= 20.;
+
+            let upper_box_ineq = Inequality::new(box_coeffs.clone(), box_rhs.clone());
+            let lower_box_ineq = Inequality::new(-1. * box_coeffs, box_rhs);
+
+            ineq.add_eqns(&upper_box_ineq);
+            ineq.add_eqns(&lower_box_ineq);
+            Polytope::from_halfspaces(ineq)
+        }
 }
 
 prop_compose! {
@@ -157,8 +173,7 @@ prop_compose! {
         (
             mut ineq in inequality_including_zero(num_dims, num_constraints)
                 .prop_filter("Cannot pass through origin",
-                             |eq| !eq.rhs().iter().any(|x| *x == 0.0_f64)
-                )
+                             |eq| !eq.rhs().iter().any(|x| *x == 0.0_f64))
         ) -> Polytope<f64> {
             // Invert the sign of the inequality
             ineq *= -1.0;
@@ -170,6 +185,17 @@ prop_compose! {
                 ineq.rhs().to_owned()
             );
             ineq.add_eqns(&inverse_ineq);
+
+            // Make a box bigger than possible inner inequalities
+            let box_coeffs = Array2::eye(num_dims);
+            let mut box_rhs = Array1::ones(num_dims);
+            box_rhs *= 20.;
+
+            let upper_box_ineq = Inequality::new(box_coeffs.clone(), box_rhs.clone());
+            let lower_box_ineq = Inequality::new(-1. * box_coeffs, box_rhs);
+
+            ineq.add_eqns(&upper_box_ineq);
+            ineq.add_eqns(&lower_box_ineq);
 
             // Construct the empty polytope.
             Polytope::from_halfspaces(ineq)
@@ -189,8 +215,8 @@ prop_compose! {
             center in array1(num_dims),
             constraints in non_empty_polytope(num_dims, num_constraints)
         ) -> Star2<f64> {
-        Star2::new(basis, center).with_constraints(constraints)
-    }
+            Star2::new(basis, center).with_constraints(constraints)
+        }
 }
 
 prop_compose! {
@@ -206,21 +232,69 @@ prop_compose! {
             center in array1(num_dims),
             constraints in empty_polytope(num_dims, num_constraints)
         ) -> Star2<f64> {
-        Star2::new(basis, center).with_constraints(constraints)
-    }
+            Star2::new(basis, center).with_constraints(constraints)
+        }
+}
+
+prop_compose! {
+    pub fn generic_inequality_including_zero(max_dims: usize, max_constraints: usize)
+        (dim in 1..max_dims, constraints in 1..max_constraints)
+        (ineq in inequality_including_zero(dim, constraints)) -> Inequality<f64> {
+            ineq
+        }
+}
+
+prop_compose! {
+    pub fn generic_empty_polytope(max_dims: usize, max_constraints: usize)
+        (dim in 1..max_dims, constraints in 1..max_constraints)
+        (poly in empty_polytope(dim, constraints)) -> Polytope<f64> {
+            poly
+        }
+}
+
+prop_compose! {
+    pub fn generic_non_empty_polytope(max_dims: usize, max_constraints: usize)
+        (dim in 1..max_dims, constraints in 1..max_constraints)
+        (poly in non_empty_polytope(dim, constraints)) -> Polytope<f64> {
+            poly
+        }
+}
+
+prop_compose! {
+    pub fn generic_empty_star(max_dims: usize, max_constraints: usize)
+        (dim in 1..max_dims, constraints in 1..max_constraints)
+        (star in empty_star(dim, constraints)) -> Star2<f64> {
+            star
+        }
+}
+
+prop_compose! {
+    pub fn generic_non_empty_star(max_dims: usize, max_constraints: usize)
+        (dim in 1..max_dims, constraints in 1..max_constraints)
+        (star in non_empty_star(dim, constraints)) -> Star2<f64> {
+            star
+        }
 }
 
 proptest! {
     #[test]
-    fn test_inequality_including_zero(ineq in inequality_including_zero(2, 1)) {
-        let zero = Array1::zeros(2);
+    fn test_inequality_including_zero(ineq in generic_inequality_including_zero(2, 4)) {
+        let zero = Array1::zeros(ineq.num_dims());
         prop_assert!(ineq.is_member(&zero.view()));
     }
 
     #[test]
-    fn test_empty_polytope(poly in empty_polytope(2, 1)) {
-        let zero = Array1::zeros(2);
-        prop_assert!(!poly.is_member(&zero.view()));
+    fn test_empty_polytope(poly in generic_empty_polytope(2, 4)) {
         prop_assert!(poly.is_empty());
+    }
+
+    #[test]
+    fn test_non_empty_polytope(poly in generic_non_empty_polytope(2, 4)) {
+        prop_assert!(!poly.is_empty());
+    }
+
+    #[test]
+    fn test_non_empty_star(star in generic_non_empty_star(2, 4)) {
+        prop_assert!(!star.is_empty());
     }
 }

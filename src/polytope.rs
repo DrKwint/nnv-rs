@@ -68,6 +68,10 @@ where
         self.halfspaces.coeffs()
     }
 
+    pub fn num_vars(&self) -> usize {
+        self.halfspaces.coeffs().ncols()
+    }
+
     pub fn ubs(&self) -> ArrayView1<T> {
         self.halfspaces.rhs()
     }
@@ -268,8 +272,7 @@ where
     ///
     /// # Panics
     pub fn is_empty(&self) -> bool {
-        let mut c = Array1::zeros(self.halfspaces.rhs().len());
-        c[[0]] = T::one();
+        let c = Array1::ones(self.num_vars());
 
         let solved = solve(
             self.halfspaces.coeffs().rows(),
@@ -277,7 +280,8 @@ where
             c.view(),
         )
         .0;
-        !matches!(solved, Ok(_) | Err(ResolutionError::Unbounded))
+
+        !matches!(solved, Ok(_))
     }
 }
 
@@ -296,49 +300,5 @@ impl<T: Float + ScalarOperand> From<Bounds1<T>> for Polytope<T> {
         let rhs = concatenate(Axis(0), &[item.lower(), item.upper()]).unwrap();
         let halfspaces = Inequality::new(coeffs, rhs);
         Self { halfspaces }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::test_util::*;
-    use proptest::prelude::*;
-
-    proptest! {
-        #[test]
-        fn test_polytope_non_empty(ineq in inequality_including_zero(2, 3)) {
-            let poly = Polytope::from_halfspaces(ineq);
-            prop_assert!(!poly.is_empty());
-        }
-    }
-
-    proptest! {
-        /// Constructs an empty polytope and ensures that it is empty
-        #[test]
-        fn test_polytope_is_empty(mut ineq in inequality_including_zero(2, 2)
-                                  .prop_filter("No 0 as intercept",
-                                               |eq| !eq.rhs()
-                                               .into_iter()
-                                               .any(|x| *x == 0.0_f64))) {
-            // After this operation, ineq no longer contains the zero point.
-            ineq *= -1.;
-
-            // The inverse inequality is reflected across the origin
-            // and pointed in the opposite direction. Thus, for every
-            // inequality in ineq, there exists an inequality in
-            // inverse_ineq such that they do not ever intersect.
-            let inverse_ineq = Inequality::new(
-                ineq.coeffs().to_owned() * -1.,
-                ineq.rhs().to_owned()
-            );
-
-            // Append the inequalities together. Now the inequality
-            // should contain no solution and result in an empty
-            // polytope.
-            ineq.add_eqns(&inverse_ineq);
-            let poly = Polytope::from_halfspaces(ineq);
-            prop_assert!(poly.is_empty());
-        }
     }
 }

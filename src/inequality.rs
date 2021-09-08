@@ -27,6 +27,10 @@ impl<T: 'static + Float> Inequality<T> {
         self.rhs.view()
     }
 
+    pub fn num_dims(&self) -> usize {
+        self.coeffs.ncols()
+    }
+
     pub fn num_constraints(&self) -> usize {
         self.rhs.len()
     }

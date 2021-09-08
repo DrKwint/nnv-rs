@@ -85,8 +85,12 @@ where
     I: IntoIterator<Item = ArrayView1<'a, T>>,
     f64: std::convert::From<T>,
 {
-    // let _shh_out = shh::stdout().unwrap();
-    // let _shh_err = shh::stderr().unwrap();
+    let mut _shh_out;
+    let mut _shh_err;
+    if !cfg!(test) {
+        _shh_out = shh::stdout().unwrap();
+        _shh_err = shh::stderr().unwrap();
+    }
     let mut problem = ProblemVariables::new();
     let vars = problem.add_vector(variable(), c.len());
     let c_expression = LinearExpression {
@@ -116,8 +120,6 @@ where
 
     let soln = unsolved.solve();
     let fun = soln.as_ref().ok().map(|x| x.eval(c_expression));
-    // drop(_shh_out);
-    // drop(_shh_err);
     (soln, fun)
 }
 
