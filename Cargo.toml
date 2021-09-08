@@ -14,7 +14,8 @@ exclude = [
 
 [lib]
 name = "nnv_rs_py"
-crate-type = ["cdylib"]
+crate-type = ["lib", "cdylib"]
+test = true
 
 [dependencies]
 env_logger = "*"

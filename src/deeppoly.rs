@@ -186,6 +186,13 @@ mod tests {
 
     proptest! {
         #[test]
+        fn test_deeppoly_with_dnn(dnn in fc_dnn(2, 2, 1, 2), input_bounds in bounds1(2)) {
+            deep_poly(input_bounds, DNNIterator::new(&dnn, DNNIndex::default()));
+        }
+    }
+
+    proptest! {
+        #[test]
         fn test_deeppoly_correctness(dnn in fc_dnn(8, 4, 5, 5), input_bounds in bounds1(8)) {
             let concrete_input = input_bounds.sample_uniform(0u64);
             let output_bounds = deep_poly(input_bounds, DNNIterator::new(&dnn, DNNIndex::default()));

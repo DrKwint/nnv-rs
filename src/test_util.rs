@@ -237,6 +237,14 @@ prop_compose! {
 }
 
 prop_compose! {
+    pub fn generic_bounds1(max_len: usize)
+        (dim in 1..max_len)
+        (bounds in bounds1(dim)) -> Bounds1<f64> {
+            bounds
+        }
+}
+
+prop_compose! {
     pub fn generic_inequality_including_zero(max_dims: usize, max_constraints: usize)
         (dim in 1..max_dims, constraints in 1..max_constraints)
         (ineq in inequality_including_zero(dim, constraints)) -> Inequality<f64> {

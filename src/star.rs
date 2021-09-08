@@ -468,6 +468,7 @@ impl<T: 'static + Float> Star4<T> {
 mod test {
     use super::*;
     use crate::test_util::*;
+    use ndarray::arr1;
     use proptest::prelude::*;
     use proptest::proptest;
     use std::panic;
@@ -556,5 +557,10 @@ mod test {
             });
             assert!(result.is_ok());
         }
+
+
     }
+
+    #[test]
+    fn test_gaussian_sample() {}
 }

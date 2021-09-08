@@ -131,14 +131,13 @@ impl<T: Float + Display, D: Dimension + RemoveAxis> Display for Bounds<T, D> {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::test_util::bounds1;
+    use crate::test_util::*;
     use proptest::proptest;
 
     proptest! {
         #[test]
-        fn ordering_after_affine(bounds in bounds1(4)) {
-            bounds; // todo!
+        fn test_bounds_sample_uniform(bounds in generic_bounds1(32)) {
+            bounds.sample_uniform(0u64);
         }
-
     }
 }

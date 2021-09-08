@@ -17,17 +17,16 @@ extern crate shh;
 extern crate truncnorm;
 
 pub mod affine;
-mod bounds;
+pub mod bounds;
 pub mod constellation;
-mod deeppoly;
-mod dnn;
-mod inequality;
+pub mod deeppoly;
+pub mod dnn;
+pub mod inequality;
 pub mod polytope;
 pub mod star;
-mod star_node;
-mod tensorshape;
-#[cfg(test)]
-mod test_util;
+pub mod star_node;
+pub mod tensorshape;
+pub mod test_util;
 pub mod util;
 
 use crate::affine::Affine2;
