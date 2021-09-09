@@ -242,7 +242,7 @@ pub struct DNNIndex {
 }
 
 impl DNNIndex {
-    fn increment<T: Float>(&mut self, dnn: &DNN<T>) {
+    fn increment<T: 'static + Float>(&mut self, dnn: &DNN<T>) {
         // Decrement active relu
         let mut advance_layer_flag = false;
         if let Some(ref mut step) = self.remaining_steps {
@@ -262,12 +262,20 @@ impl DNNIndex {
                 self.layer = Some(0);
             }
             // handle relu case
+            if let Some(x) = dnn.get_layer(self.layer.unwrap()) {
+                println!("Layer {}", x);
+            } else {
+                println!("Layer None");
+            }
+
             if let Some(Layer::ReLU(ndims)) = dnn.get_layer(self.layer.unwrap()) {
+                println!("Found relu, setting remaining_steps");
                 self.remaining_steps = Some(*ndims - 1)
             } else {
                 self.remaining_steps = None;
             }
         }
+        println!("Index {:?}", self);
     }
 }
 
@@ -330,36 +338,26 @@ impl<T: 'static + num::Float + std::fmt::Debug> Iterator for DNNIterator<'_, T> 
         // Return operation
         if let Some(ref step) = self.idx.remaining_steps {
             if let Some(Layer::Dropout(prob)) = self.dnn.get_layer(*layer_idx + 1) {
-                if *step == 1 {
-                    *layer_idx += 2;
-                }
-                Some(StarNodeOp::StepReluDropout((*prob, *step - 1)))
+                println!("StepReluDropout");
+                Some(StarNodeOp::StepReluDropout((*prob, *step)))
             } else {
-                if *step == 1 {
-                    *layer_idx += 1;
-                }
-                Some(StarNodeOp::StepRelu(*step - 1))
+                println!("StepRelu");
+                Some(StarNodeOp::StepRelu(*step))
             }
         } else {
             let layer = self.dnn.get_layer(*layer_idx);
             match layer {
                 None => {
+                    println!("Leaf");
                     self.finished = true;
                     Some(StarNodeOp::Leaf)
                 }
                 Some(Layer::Dense(aff)) => {
-                    *layer_idx += 1;
+                    println!("Dense");
                     Some(StarNodeOp::Affine(aff.clone()))
                 }
-                Some(Layer::ReLU(ndim)) => {
-                    self.idx.remaining_steps = Some(*ndim);
-
-                    let next_layer = self.dnn.get_layer(*layer_idx + 1);
-                    if let Some(Layer::Dropout(prob)) = next_layer {
-                        Some(StarNodeOp::StepReluDropout((*prob, *ndim - 1)))
-                    } else {
-                        Some(StarNodeOp::StepRelu(*ndim - 1))
-                    }
+                Some(Layer::ReLU(_)) => {
+                    panic!();
                 }
                 _ => todo!(),
             }

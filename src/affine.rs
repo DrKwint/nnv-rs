@@ -169,14 +169,16 @@ impl<T: 'static + Float + Sum + Debug> Affine2<T> {
         );
         assert_eq!(self.input_dim(), neg_rhs.output_dim());
         Affine2 {
-            basis: crate::util::signed_matmul(&self.basis, &pos_rhs.basis, &neg_rhs.basis),
-            shift: &crate::util::signed_matmul(
-                &self.basis,
-                &pos_rhs.shift.clone().insert_axis(Axis(1)),
-                &neg_rhs.shift.clone().insert_axis(Axis(1)),
-            )
-            .index_axis(Axis(1), 0)
-                + &self.shift,
+            basis: crate::util::signed_matmul(
+                &self.basis.view(),
+                &pos_rhs.basis.view(),
+                &neg_rhs.basis.view(),
+            ),
+            shift: &crate::util::signed_dot(
+                &self.basis.view(),
+                &pos_rhs.shift.view(),
+                &neg_rhs.shift.view(),
+            ) + &self.shift,
         }
     }
 }
@@ -303,8 +305,10 @@ impl<T: 'static + Float> Affine<T, Ix4> {
 
 #[cfg(test)]
 mod tests {
-    use crate::test_util::affine2;
-    use crate::test_util::array1;
+    use crate::affine::Affine2;
+    use crate::test_util::*;
+    use ndarray::Array;
+    use ndarray::ArrayView;
     use proptest::prelude::*;
 
     proptest! {
@@ -319,8 +323,31 @@ mod tests {
         fn get_eqn_works(aff in affine2(2,3)) {
             for i in 0..3 {
                 let eqn = aff.get_eqn(i);
-                prop_assert_eq!(aff.basis.row(i), eqn.basis.row(0))
+                prop_assert_eq!(aff.basis.row(i), eqn.basis.row(0));
             }
+        }
+
+        #[test]
+        fn test_signed_compose(
+            bounds in bounds1(2),
+            coeffs in bounds1(4),
+            shifts in bounds1(2),
+            aff in affine2(2, 2)) {
+
+            let lower_coeffs = coeffs.lower().into_shape((2, 2)).unwrap().to_owned();
+            let upper_coeffs = coeffs.upper().into_shape((2, 2)).unwrap().to_owned();
+
+            let lower_aff = Affine2::new(lower_coeffs, shifts.lower().to_owned());
+            let upper_aff = Affine2::new(upper_coeffs, shifts.upper().to_owned());
+            // prop_assert!(lower.iter().zip(upper.iter()).all(|(a, b)| a < b));
+
+            let new_lower = aff.signed_compose(&lower_aff, &upper_aff);
+            let new_upper = aff.signed_compose(&upper_aff, &lower_aff);
+
+            let lower = new_lower.apply(&bounds.lower());
+            let upper = new_upper.apply(&bounds.upper());
+
+            prop_assert!(lower.iter().zip(upper.iter()).all(|(a, b)| a <= b));
         }
     }
 }

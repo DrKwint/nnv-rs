@@ -142,8 +142,11 @@ where
                 laff.apply(&Array1::ones(ndim).view()),
                 uaff.apply(&Array1::ones(ndim).view()),
             );
+            println!("old bounds {:?}", bounds_concrete);
             let out = op.apply_bounds(bounds_concrete, laff, uaff);
             trace!("new bounds {:?}", out.0);
+            println!("new bounds {:?}", out.0);
+            debug_assert!(out.0.bounds_iter().into_iter().all(|x| x[[0]] <= x[[1]]));
             out.1
         },
     );
@@ -193,10 +196,12 @@ mod tests {
 
     proptest! {
         #[test]
-        fn test_deeppoly_correctness(dnn in fc_dnn(8, 4, 5, 5), input_bounds in bounds1(8)) {
+        fn test_deeppoly_correctness(dnn in fc_dnn(2, 2, 2, 2), input_bounds in bounds1(2)) {
             let concrete_input = input_bounds.sample_uniform(0u64);
-            let output_bounds = deep_poly(input_bounds, DNNIterator::new(&dnn, DNNIndex::default()));
             let concrete_output = dnn.forward(concrete_input.into_dyn()).into_dimensionality::<Ix1>().unwrap();
+
+            let output_bounds = deep_poly(input_bounds, DNNIterator::new(&dnn, DNNIndex::default()));
+
             prop_assert!(output_bounds.is_member(&concrete_output.view()), "\n\nConcrete output: {}\nOutput bounds: {}\n\n", concrete_output, output_bounds)
         }
     }

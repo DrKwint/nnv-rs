@@ -24,6 +24,8 @@ pub enum StarNodeOp<T: num::Float> {
 }
 
 impl<T: num::Float + Default + Sum + Debug + 'static> StarNodeOp<T> {
+    /// bounds: Output bounds: Concrete bounds
+    /// affs: Input bounds: Abstract bounds in terms of inputs
     pub fn apply_bounds(
         &self,
         bounds: Bounds1<T>,
@@ -34,6 +36,10 @@ impl<T: num::Float + Default + Sum + Debug + 'static> StarNodeOp<T> {
             Self::Leaf => (bounds, (lower_aff, upper_aff)),
             Self::Affine(aff) => (
                 bounds,
+                // Bounds1::new(
+                //     aff.signed_matmul(bounds.lower(), bounds.upper()),
+                //     aff.signed_matmul(bounds.upper(), bounds.lower()),
+                // ),
                 (
                     aff.signed_compose(&lower_aff, &upper_aff),
                     aff.signed_compose(&upper_aff, &lower_aff),
