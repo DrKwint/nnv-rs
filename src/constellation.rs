@@ -6,6 +6,7 @@ use crate::star_node::StarNodeOp;
 use crate::star_node::StarNodeType;
 use crate::util::ArenaLike;
 use crate::Bounds;
+use crate::NNVFloat;
 use crate::DNN;
 use log::{debug, trace};
 use ndarray::Dimension;
@@ -107,17 +108,8 @@ where
     }
 }
 
-impl<T: Float> Constellation<T, Ix2>
+impl<T: NNVFloat> Constellation<T, Ix2>
 where
-    T: std::convert::From<f64>
-        + std::convert::Into<f64>
-        + ndarray::ScalarOperand
-        + std::ops::MulAssign
-        + std::fmt::Display
-        + std::fmt::Debug
-        + std::ops::AddAssign
-        + Default
-        + Sum,
     f64: std::convert::From<T>,
 {
     /// Sample from a Gaussian distribution with an upper bound on the output value
@@ -171,7 +163,7 @@ where
     }
 }
 
-impl<T: Float> Constellation<T, Ix2>
+impl<T: crate::NNVFloat> Constellation<T, Ix2>
 where
     T: std::convert::From<f64>
         + std::convert::Into<f64>

@@ -21,7 +21,7 @@ pub fn make_dnn(shape: &Vec<usize>, num_layers: &usize) -> DNN<f64> {
 
     (0..*num_layers).into_iter().for_each(|_| {
         dnn.add_layer(Layer::new_dense(affine2(&shape[0], &shape[1])));
-        dnn.add_layer(Layer::new_relu(shape[0] * shape[1]));
+        dnn.add_layer(Layer::new_relu(shape[1]));
     });
 
     dnn

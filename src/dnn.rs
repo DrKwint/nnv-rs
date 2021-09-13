@@ -5,6 +5,7 @@ use crate::deeppoly::deep_poly_relu;
 use crate::star::Star;
 use crate::star_node::StarNodeOp;
 use crate::tensorshape::TensorShape;
+use crate::util::signed_dot;
 use crate::Affine;
 use log::trace;
 use ndarray::Array;
@@ -197,7 +198,7 @@ where
             Layer::Dense(aff) => {
                 let new_lower = aff.signed_compose(lower_aff, upper_aff);
                 let new_upper = aff.signed_compose(upper_aff, lower_aff);
-                (bounds.clone(), (new_lower, new_upper))
+                (aff.signed_apply(&bounds), (new_lower, new_upper))
             }
             Layer::ReLU(_ndims) => {
                 if (_ndims + 1) == bounds.ndim() {
@@ -242,7 +243,7 @@ pub struct DNNIndex {
 }
 
 impl DNNIndex {
-    fn increment<T: Float>(&mut self, dnn: &DNN<T>) {
+    fn increment<T: 'static + Float>(&mut self, dnn: &DNN<T>) {
         // Decrement active relu
         let mut advance_layer_flag = false;
         if let Some(ref mut step) = self.remaining_steps {
@@ -261,7 +262,7 @@ impl DNNIndex {
             } else {
                 self.layer = Some(0);
             }
-            // handle relu case
+
             if let Some(Layer::ReLU(ndims)) = dnn.get_layer(self.layer.unwrap()) {
                 self.remaining_steps = Some(*ndims - 1)
             } else {
@@ -330,15 +331,9 @@ impl<T: 'static + num::Float + std::fmt::Debug> Iterator for DNNIterator<'_, T> 
         // Return operation
         if let Some(ref step) = self.idx.remaining_steps {
             if let Some(Layer::Dropout(prob)) = self.dnn.get_layer(*layer_idx + 1) {
-                if *step == 1 {
-                    *layer_idx += 2;
-                }
-                Some(StarNodeOp::StepReluDropout((*prob, *step - 1)))
+                Some(StarNodeOp::StepReluDropout((*prob, *step)))
             } else {
-                if *step == 1 {
-                    *layer_idx += 1;
-                }
-                Some(StarNodeOp::StepRelu(*step - 1))
+                Some(StarNodeOp::StepRelu(*step))
             }
         } else {
             let layer = self.dnn.get_layer(*layer_idx);
@@ -347,19 +342,9 @@ impl<T: 'static + num::Float + std::fmt::Debug> Iterator for DNNIterator<'_, T> 
                     self.finished = true;
                     Some(StarNodeOp::Leaf)
                 }
-                Some(Layer::Dense(aff)) => {
-                    *layer_idx += 1;
-                    Some(StarNodeOp::Affine(aff.clone()))
-                }
-                Some(Layer::ReLU(ndim)) => {
-                    self.idx.remaining_steps = Some(*ndim);
-
-                    let next_layer = self.dnn.get_layer(*layer_idx + 1);
-                    if let Some(Layer::Dropout(prob)) = next_layer {
-                        Some(StarNodeOp::StepReluDropout((*prob, *ndim - 1)))
-                    } else {
-                        Some(StarNodeOp::StepRelu(*ndim - 1))
-                    }
+                Some(Layer::Dense(aff)) => Some(StarNodeOp::Affine(aff.clone())),
+                Some(Layer::ReLU(_)) => {
+                    panic!();
                 }
                 _ => todo!(),
             }
@@ -403,24 +388,22 @@ mod tests {
 
         #[test]
         fn test_dnn_iterator_is_finite(dnn in fc_dnn(2, 2, 1, 2)) {
-            let mut iter = DNNIterator::new(&dnn, DNNIndex{layer: None, remaining_steps: None});
-            let mut last_iter: DNNIterator<f64> = iter.clone();
-
-            while iter.next().is_some() {
-                if iter.idx.remaining_steps.is_some() && last_iter.idx.remaining_steps.is_some() {
-                    prop_assert_eq!(iter.idx.layer, last_iter.idx.layer,
-                                    "\nIter: {}\nLast Iter: {}\n", iter, last_iter);
-                    prop_assert!(iter.idx.remaining_steps < last_iter.idx.remaining_steps,
-                                 "\nIter: {}\nLast Iter: {}\n", iter, last_iter);
-                } else if iter.idx.remaining_steps.is_some() {
-                    prop_assert_eq!(iter.idx.layer, last_iter.idx.layer,
-                                    "\nIter: {}\nLast Iter: {}\n", iter, last_iter);
-                } else {
-                    prop_assert!(iter.idx.layer > last_iter.idx.layer,
-                                 "\nIter: {}\nLast Iter: {}\n", iter, last_iter);
+            let expected_steps: usize = dnn.layers.iter().enumerate().map(|(i, layer)| {
+                match layer {
+                    Layer::ReLU(ndims) => *ndims,
+                    Layer::Dropout(_) => {
+                        if let Some(Layer::ReLU(_)) = dnn.get_layer(i - 1) {
+                            0
+                        } else {
+                            1
+                        }
+                    },
+                    _ => 1,
                 }
-                last_iter = iter.clone();
-            }
+            }).sum();
+
+            let iter = DNNIterator::new(&dnn, DNNIndex{layer: None, remaining_steps: None});
+            assert_eq!(iter.count(), expected_steps + 1);
         }
     }
 }
