@@ -10,8 +10,8 @@ mod common;
 #[test]
 fn test_deeppoly_correctness() {
     let dnn = common::make_dnn(&vec![2, 2], &1);
-    let lower_bounds = Array1::ones(4) * -20.;
-    let upper_bounds = Array1::ones(4) * 20.;
+    let lower_bounds = Array1::ones(2) * -20.;
+    let upper_bounds = Array1::ones(2) * 20.;
     let input_bounds = Bounds::new(lower_bounds, upper_bounds);
 
     let concrete_input = input_bounds.sample_uniform(0u64);

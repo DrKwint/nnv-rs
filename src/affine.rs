@@ -332,7 +332,7 @@ mod tests {
         fn test_affine_composability(start in array1(4), aff_1 in affine2(2, 3), aff_2 in affine2(4, 2)) {
             let result_1 = (&aff_1 * &aff_2).apply(&start.view());
             let result_2 = aff_1.apply(&aff_2.apply(&start.view()).view());
-            prop_assert_eq!(result_1, result_2);
+            prop_assert!(result_1.to_owned().abs_diff_eq(&result_2.to_owned(), 1e-8));
         }
 
         #[test]
@@ -353,50 +353,32 @@ mod tests {
         }
 
         #[test]
-        fn test_signed_compose(
-            bounds in bounds1(2),
-            // coeffs in bounds1(2),
-            // shifts in bounds1(2),
-            aff in affine2(2, 2),
-            aff2 in affine2(2,2)) {
-
-            // let lower_coeffs = coeffs.lower().into_shape((2, 2)).unwrap().to_owned();
-            // let upper_coeffs = coeffs.upper().into_shape((2, 2)).unwrap().to_owned();
-            // let lower_coeffs = Array2::from_diag(&coeffs.lower());
-            // let upper_coeffs = Array2::from_diag(&coeffs.upper());
-
-            // let lower_aff = Affine2::new(lower_coeffs, shifts.lower().to_owned());
-            // let upper_aff = Affine2::new(upper_coeffs, shifts.upper().to_owned());
-
-            let mut lower_aff = Affine2::identity(2);
-            let mut upper_aff = Affine2::identity(2);
+        fn test_signed_compose(bounds in bounds1(2), aff in affine2(2, 2), aff2 in affine2(2, 2)) {
+            let lower_aff = Affine2::identity(2);
+            let upper_aff = Affine2::identity(2);
 
             let lower_pre = lower_aff.apply(&bounds.lower());
             let upper_pre = upper_aff.apply(&bounds.upper());
 
             prop_assert!(lower_pre.iter().zip(upper_pre.iter()).all(|(a, b)| a <= b));
 
-            let mut lower;
-            let mut upper;
-
-            lower_aff = aff.signed_compose(&lower_aff, &upper_aff);
-            upper_aff = aff.signed_compose(&upper_aff, &lower_aff);
-            lower = lower_aff.signed_apply(&bounds);
-            upper = upper_aff.signed_apply(&bounds);
+            let lower_aff_2 = aff.signed_compose(&lower_aff, &upper_aff);
+            let upper_aff_2 = aff.signed_compose(&upper_aff, &lower_aff);
+            let mut lower = lower_aff_2.signed_apply(&bounds);
+            let mut upper = upper_aff_2.signed_apply(&bounds);
 
             prop_assert!(lower.lower().iter().zip(upper.lower().iter()).all(|(a, b)| a <= b));
             prop_assert!(lower.upper().iter().zip(upper.upper().iter()).all(|(a, b)| a <= b));
             prop_assert!(lower.lower().iter().zip(upper.upper().iter()).all(|(a, b)| a <= b));
 
-            lower_aff = aff2.signed_compose(&lower_aff, &upper_aff);
-            upper_aff = aff2.signed_compose(&upper_aff, &lower_aff);
-            lower = lower_aff.signed_apply(&bounds);
-            upper = upper_aff.signed_apply(&bounds);
+            let lower_aff_3 = aff2.signed_compose(&lower_aff_2, &upper_aff_2);
+            let upper_aff_3 = aff2.signed_compose(&upper_aff_2, &lower_aff_2);
+            lower = lower_aff_3.signed_apply(&bounds);
+            upper = upper_aff_3.signed_apply(&bounds);
 
             prop_assert!(lower.lower().iter().zip(upper.lower().iter()).all(|(a, b)| a <= b));
             prop_assert!(lower.upper().iter().zip(upper.upper().iter()).all(|(a, b)| a <= b));
             prop_assert!(lower.lower().iter().zip(upper.upper().iter()).all(|(a, b)| a <= b));
-
         }
     }
 }

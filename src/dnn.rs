@@ -5,6 +5,7 @@ use crate::deeppoly::deep_poly_relu;
 use crate::star::Star;
 use crate::star_node::StarNodeOp;
 use crate::tensorshape::TensorShape;
+use crate::util::signed_dot;
 use crate::Affine;
 use log::trace;
 use ndarray::Array;
@@ -197,7 +198,7 @@ where
             Layer::Dense(aff) => {
                 let new_lower = aff.signed_compose(lower_aff, upper_aff);
                 let new_upper = aff.signed_compose(upper_aff, lower_aff);
-                (bounds.clone(), (new_lower, new_upper))
+                (aff.signed_apply(&bounds), (new_lower, new_upper))
             }
             Layer::ReLU(_ndims) => {
                 if (_ndims + 1) == bounds.ndim() {
@@ -401,24 +402,22 @@ mod tests {
 
         #[test]
         fn test_dnn_iterator_is_finite(dnn in fc_dnn(2, 2, 1, 2)) {
-            let mut iter = DNNIterator::new(&dnn, DNNIndex{layer: None, remaining_steps: None});
-            let mut last_iter: DNNIterator<f64> = iter.clone();
-
-            while iter.next().is_some() {
-                if iter.idx.remaining_steps.is_some() && last_iter.idx.remaining_steps.is_some() {
-                    prop_assert_eq!(iter.idx.layer, last_iter.idx.layer,
-                                    "\nIter: {}\nLast Iter: {}\n", iter, last_iter);
-                    prop_assert!(iter.idx.remaining_steps < last_iter.idx.remaining_steps,
-                                 "\nIter: {}\nLast Iter: {}\n", iter, last_iter);
-                } else if iter.idx.remaining_steps.is_some() {
-                    prop_assert_eq!(iter.idx.layer, last_iter.idx.layer,
-                                    "\nIter: {}\nLast Iter: {}\n", iter, last_iter);
-                } else {
-                    prop_assert!(iter.idx.layer > last_iter.idx.layer,
-                                 "\nIter: {}\nLast Iter: {}\n", iter, last_iter);
+            let expected_steps: usize = dnn.layers.iter().enumerate().map(|(i, layer)| {
+                match layer {
+                    Layer::ReLU(ndims) => *ndims,
+                    Layer::Dropout(_) => {
+                        if let Some(Layer::ReLU(_)) = dnn.get_layer(i - 1) {
+                            0
+                        } else {
+                            1
+                        }
+                    },
+                    _ => 1,
                 }
-                last_iter = iter.clone();
-            }
+            }).sum();
+
+            let iter = DNNIterator::new(&dnn, DNNIndex{layer: None, remaining_steps: None});
+            assert_eq!(iter.count(), expected_steps + 1);
         }
     }
 }

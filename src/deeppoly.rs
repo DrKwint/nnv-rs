@@ -1,6 +1,8 @@
 use crate::affine::Affine2;
 use crate::bounds::Bounds1;
 use crate::dnn::DNNIterator;
+use crate::NNVFloat;
+use approx::AbsDiffEq;
 use log::{debug, error, log_enabled, trace, warn, Level};
 use ndarray::Array1;
 use ndarray::Array2;
@@ -14,12 +16,18 @@ use std::fmt::Display;
 use std::iter::Sum;
 use std::ops::MulAssign;
 
-pub fn deep_poly_steprelu<T: 'static + Float + Default>(
+pub fn deep_poly_steprelu<T: 'static + Float + Default + Debug>(
     dim: usize,
     mut bounds: Bounds1<T>,
     mut lower_aff: Affine2<T>,
     mut upper_aff: Affine2<T>,
 ) -> (Bounds1<T>, (Affine2<T>, Affine2<T>)) {
+    println!("");
+    println!("Found Relu:");
+    println!("\tdim {:?}", &dim);
+    println!("\tbounds {:?}", &bounds);
+    println!("\tlower_aff {:?}", &lower_aff);
+    println!("\tupper_aff {:?}", &upper_aff);
     let mut bounds_slice = bounds.index_mut(dim);
     let (mut lbasis, mut lshift) = lower_aff.get_eqn_mut(dim);
     let (mut ubasis, mut ushift) = upper_aff.get_eqn_mut(dim);
@@ -36,8 +44,10 @@ pub fn deep_poly_steprelu<T: 'static + Float + Default>(
         // here, leave mul and shift at defaults
         // then, spanning branch
     } else {
-        ubasis.mapv_inplace(|x| x * (u / (u - l)));
-        ushift.mapv_inplace(|x| x - ((u * l) / (u - l)));
+        // Using y = ax + b:
+        ubasis.mapv_inplace(|a| a * (u / (u - l)));
+        ushift.mapv_inplace(|b| u * (b - l) / (u - l));
+
         // use approximation with least area
         if u < T::neg(l) {
             // Eqn. 3 from the paper
@@ -48,6 +58,11 @@ pub fn deep_poly_steprelu<T: 'static + Float + Default>(
             // Eqn. 4 from the paper, leave l_mul at default
         }
     }
+    println!("");
+    println!("\tOutput bounds {:?}", &bounds);
+    println!("\tOutput laff {:?}", &lower_aff);
+    println!("\tOutput uaff {:?}", &upper_aff);
+    println!("\n\n");
     debug_assert!(bounds.is_all_finite());
     (bounds, (lower_aff, upper_aff))
 }
@@ -108,12 +123,8 @@ pub fn deep_poly_relu<
     (out, (lower_aff, upper_aff))
 }
 
-pub fn deep_poly<T: 'static + Float>(
-    input_bounds: Bounds1<T>,
-    dnn_iter: DNNIterator<T>,
-) -> Bounds1<T>
+pub fn deep_poly<T: NNVFloat>(input_bounds: Bounds1<T>, dnn_iter: DNNIterator<T>) -> Bounds1<T>
 where
-    T: ScalarOperand + Display + Debug + Default + MulAssign + std::convert::From<f64> + Sum,
     f64: std::convert::From<T>,
 {
     debug!("Starting Deeppoly at {:?}", dnn_iter.get_idx());
@@ -123,39 +134,42 @@ where
     // linear function of input bounds
     let aff_bounds = dnn_iter.fold(
         // Initialize with identity
-        //(Affine2::identity(ndim), Affine2::identity(ndim)),
         (
-            Affine2::new(
-                Array2::from_diag(&input_bounds.lower()),
-                Array1::zeros(ndim),
-            ),
-            Affine2::new(
-                Array2::from_diag(&input_bounds.upper()),
-                Array1::zeros(ndim),
-            ),
+            input_bounds.clone(),
+            (Affine2::identity(ndim), Affine2::identity(ndim)),
         ),
-        |(laff, uaff), op| {
-            trace!("op {:?}", op);
-            // Substitute input concrete bounds into current abstract bounds
-            // to get current concrete bounds
-            let bounds_concrete = Bounds1::new(
-                laff.apply(&Array1::ones(ndim).view()),
-                uaff.apply(&Array1::ones(ndim).view()),
-            );
-            println!("old bounds {:?}", bounds_concrete);
-            let out = op.apply_bounds(bounds_concrete, laff, uaff);
-            trace!("new bounds {:?}", out.0);
-            println!("new bounds {:?}", out.0);
+        |(bounds_concrete, (laff, uaff)), op| {
+            let out = op.apply_bounds(&bounds_concrete, &laff, &uaff);
             debug_assert!(out.0.bounds_iter().into_iter().all(|x| x[[0]] <= x[[1]]));
-            out.1
+            if cfg!(debug_assertions) {
+                let lower_bounds = out.1 .0.signed_apply(&input_bounds);
+                let upper_bounds = out.1 .1.signed_apply(&input_bounds);
+                let realized_abstract_bounds = Bounds1::new(
+                    lower_bounds.lower().to_owned(),
+                    upper_bounds.upper().to_owned(),
+                );
+                assert!(
+                    realized_abstract_bounds.subset(&out.0),
+                    "\n\nRealized abstract: {:?}\nConcrete: {:?}\n\n",
+                    realized_abstract_bounds,
+                    bounds_concrete
+                );
+            }
+            out
         },
     );
     // Final substitution to get output bounds
-    Bounds1::new(
-        aff_bounds.0.apply(&Array1::ones(ndim).view()),
-        aff_bounds.1.apply(&Array1::ones(ndim).view()),
-    )
-    //aff_bounds
+    let lower_bounds = aff_bounds.1 .0.signed_apply(&input_bounds);
+    let upper_bounds = aff_bounds.1 .1.signed_apply(&input_bounds);
+    println!("Lower {:?}", &lower_bounds);
+    println!("Upper {:?}", &upper_bounds);
+    println!("Concrete {:?}", aff_bounds.0);
+    let bounds = Bounds1::new(
+        lower_bounds.lower().to_owned(),
+        upper_bounds.upper().to_owned(),
+    );
+    debug_assert!(bounds.bounds_iter().into_iter().all(|x| x[[0]] <= x[[1]]));
+    bounds
 }
 
 #[cfg(test)]

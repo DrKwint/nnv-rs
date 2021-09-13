@@ -28,26 +28,28 @@ impl<T: num::Float + Default + Sum + Debug + 'static> StarNodeOp<T> {
     /// affs: Input bounds: Abstract bounds in terms of inputs
     pub fn apply_bounds(
         &self,
-        bounds: Bounds1<T>,
-        lower_aff: Affine2<T>,
-        upper_aff: Affine2<T>,
+        bounds: &Bounds1<T>,
+        lower_aff: &Affine2<T>,
+        upper_aff: &Affine2<T>,
     ) -> (Bounds1<T>, (Affine2<T>, Affine2<T>)) {
         match self {
-            Self::Leaf => (bounds, (lower_aff, upper_aff)),
-            Self::Affine(aff) => (
-                bounds,
-                // Bounds1::new(
-                //     aff.signed_matmul(bounds.lower(), bounds.upper()),
-                //     aff.signed_matmul(bounds.upper(), bounds.lower()),
-                // ),
+            Self::Leaf => (bounds.clone(), (lower_aff.clone(), upper_aff.clone())),
+            Self::Affine(aff) => {
+                println!("Aff {:?}", &aff);
                 (
-                    aff.signed_compose(&lower_aff, &upper_aff),
-                    aff.signed_compose(&upper_aff, &lower_aff),
-                ),
-            ),
-            Self::StepRelu(dim) => {
-                crate::deeppoly::deep_poly_steprelu(*dim, bounds, lower_aff, upper_aff)
+                    aff.signed_apply(&bounds),
+                    (
+                        aff.signed_compose(&lower_aff, &upper_aff),
+                        aff.signed_compose(&upper_aff, &lower_aff),
+                    ),
+                )
             }
+            Self::StepRelu(dim) => crate::deeppoly::deep_poly_steprelu(
+                *dim,
+                bounds.clone(),
+                lower_aff.clone(),
+                upper_aff.clone(),
+            ),
             _ => todo!(),
         }
     }
@@ -172,7 +174,8 @@ where
         + std::ops::MulAssign
         + std::ops::AddAssign
         + std::default::Default
-        + std::iter::Sum,
+        + std::iter::Sum
+        + approx::AbsDiffEq,
     f64: std::convert::From<T>,
 {
     pub fn gaussian_sample<R: Rng>(
