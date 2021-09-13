@@ -262,21 +262,13 @@ impl DNNIndex {
             } else {
                 self.layer = Some(0);
             }
-            // handle relu case
-            if let Some(x) = dnn.get_layer(self.layer.unwrap()) {
-                println!("Layer {}", x);
-            } else {
-                println!("Layer None");
-            }
 
             if let Some(Layer::ReLU(ndims)) = dnn.get_layer(self.layer.unwrap()) {
-                println!("Found relu, setting remaining_steps");
                 self.remaining_steps = Some(*ndims - 1)
             } else {
                 self.remaining_steps = None;
             }
         }
-        println!("Index {:?}", self);
     }
 }
 
@@ -339,24 +331,18 @@ impl<T: 'static + num::Float + std::fmt::Debug> Iterator for DNNIterator<'_, T> 
         // Return operation
         if let Some(ref step) = self.idx.remaining_steps {
             if let Some(Layer::Dropout(prob)) = self.dnn.get_layer(*layer_idx + 1) {
-                println!("StepReluDropout");
                 Some(StarNodeOp::StepReluDropout((*prob, *step)))
             } else {
-                println!("StepRelu");
                 Some(StarNodeOp::StepRelu(*step))
             }
         } else {
             let layer = self.dnn.get_layer(*layer_idx);
             match layer {
                 None => {
-                    println!("Leaf");
                     self.finished = true;
                     Some(StarNodeOp::Leaf)
                 }
-                Some(Layer::Dense(aff)) => {
-                    println!("Dense");
-                    Some(StarNodeOp::Affine(aff.clone()))
-                }
+                Some(Layer::Dense(aff)) => Some(StarNodeOp::Affine(aff.clone())),
                 Some(Layer::ReLU(_)) => {
                     panic!();
                 }

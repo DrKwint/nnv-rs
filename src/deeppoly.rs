@@ -22,12 +22,6 @@ pub fn deep_poly_steprelu<T: 'static + Float + Default + Debug>(
     mut lower_aff: Affine2<T>,
     mut upper_aff: Affine2<T>,
 ) -> (Bounds1<T>, (Affine2<T>, Affine2<T>)) {
-    println!("");
-    println!("Found Relu:");
-    println!("\tdim {:?}", &dim);
-    println!("\tbounds {:?}", &bounds);
-    println!("\tlower_aff {:?}", &lower_aff);
-    println!("\tupper_aff {:?}", &upper_aff);
     let mut bounds_slice = bounds.index_mut(dim);
     let (mut lbasis, mut lshift) = lower_aff.get_eqn_mut(dim);
     let (mut ubasis, mut ushift) = upper_aff.get_eqn_mut(dim);
@@ -58,11 +52,6 @@ pub fn deep_poly_steprelu<T: 'static + Float + Default + Debug>(
             // Eqn. 4 from the paper, leave l_mul at default
         }
     }
-    println!("");
-    println!("\tOutput bounds {:?}", &bounds);
-    println!("\tOutput laff {:?}", &lower_aff);
-    println!("\tOutput uaff {:?}", &upper_aff);
-    println!("\n\n");
     debug_assert!(bounds.is_all_finite());
     (bounds, (lower_aff, upper_aff))
 }
@@ -161,9 +150,6 @@ where
     // Final substitution to get output bounds
     let lower_bounds = aff_bounds.1 .0.signed_apply(&input_bounds);
     let upper_bounds = aff_bounds.1 .1.signed_apply(&input_bounds);
-    println!("Lower {:?}", &lower_bounds);
-    println!("Upper {:?}", &upper_bounds);
-    println!("Concrete {:?}", aff_bounds.0);
     let bounds = Bounds1::new(
         lower_bounds.lower().to_owned(),
         upper_bounds.upper().to_owned(),

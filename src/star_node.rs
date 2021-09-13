@@ -34,16 +34,13 @@ impl<T: num::Float + Default + Sum + Debug + 'static> StarNodeOp<T> {
     ) -> (Bounds1<T>, (Affine2<T>, Affine2<T>)) {
         match self {
             Self::Leaf => (bounds.clone(), (lower_aff.clone(), upper_aff.clone())),
-            Self::Affine(aff) => {
-                println!("Aff {:?}", &aff);
+            Self::Affine(aff) => (
+                aff.signed_apply(&bounds),
                 (
-                    aff.signed_apply(&bounds),
-                    (
-                        aff.signed_compose(&lower_aff, &upper_aff),
-                        aff.signed_compose(&upper_aff, &lower_aff),
-                    ),
-                )
-            }
+                    aff.signed_compose(&lower_aff, &upper_aff),
+                    aff.signed_compose(&upper_aff, &lower_aff),
+                ),
+            ),
             Self::StepRelu(dim) => crate::deeppoly::deep_poly_steprelu(
                 *dim,
                 bounds.clone(),
