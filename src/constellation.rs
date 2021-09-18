@@ -87,8 +87,8 @@ where
                 Some(child_ids)
             }
             Some(StarNodeType::StepReluDropOut {
-                dim: usize,
-                dropout_prob: T,
+                dim,
+                dropout_prob,
                 fst_child_idx,
                 snd_child_idx,
                 trd_child_idx,
@@ -104,7 +104,6 @@ where
                 Some(child_ids)
             }
             None => None,
-            _ => todo!(),
         }
     }
 }
@@ -251,8 +250,8 @@ where
                     continue;
                 } else if let StarNodeType::Leaf = self.get_children(current_node) {
                     // do procedure to select safe part
-                    println!("You did it!");
-                    panic!();
+                    let safe_star = self.arena[current_node].get_safe_star(safe_value);
+                    return Some((safe_star, path_logp));
                 } else {
                     // otherwise, push to path and continue expanding
                     path.push(current_node);
@@ -284,7 +283,6 @@ where
                         current_node =
                             infeasible_reset(self, current_node, &mut path, &mut path_logp);
                     }
-                    _ => todo!(),
                 }
             }
         }
@@ -588,7 +586,6 @@ where
                     }
                 }
             }
-            _ => todo!(),
         }
     }
 }

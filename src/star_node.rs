@@ -4,7 +4,7 @@ use crate::deeppoly::deep_poly;
 use crate::dnn::DNNIndex;
 use crate::dnn::DNNIterator;
 use crate::dnn::DNN;
-use crate::star::Star;
+use crate::star::{Star, Star2};
 use log::debug;
 use log::trace;
 use ndarray::Dimension;
@@ -151,6 +151,17 @@ where
         + std::iter::Sum,
     f64: std::convert::From<T>,
 {
+    pub fn get_safe_star(&self, safe_value: T) -> Self {
+        let safe_star = self.star.get_safe_subset(safe_value);
+        Self {
+            star: safe_star,
+            dnn_index: self.dnn_index,
+            star_cdf: None,
+            output_bounds: None,
+            is_feasible: true,
+        }
+    }
+
     pub fn gaussian_cdf(
         &mut self,
         mu: &Array1<T>,

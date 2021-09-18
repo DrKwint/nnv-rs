@@ -12,6 +12,7 @@ use ndarray::{ArrayViewMut0, ArrayViewMut1};
 use ndarray::{Axis, Dimension};
 use ndarray::{Ix1, Ix2, Ix4, IxDyn};
 use num::Float;
+use std::convert::TryFrom;
 use std::fmt::{Debug, Display};
 use std::iter::Sum;
 use std::ops::{Add, AddAssign, Mul, MulAssign};
@@ -55,6 +56,23 @@ impl<T: Float, D: Dimension> Affine<T, D> {
             basis: self.basis.into_dyn(),
             shift: self.shift,
         }
+    }
+}
+
+impl<T: Float, D: Dimension + ndarray::RemoveAxis> Affine<T, D> {
+    /// Get a single equation (i.e., a set of coefficients and a shift/RHS)
+    pub fn get_eqn(&self, index: usize) -> Self {
+        let idx = isize::try_from(index).unwrap();
+        let basis = self
+            .basis
+            .slice_axis(Axis(0), ndarray::Slice::new(idx, Some(idx), 1))
+            .to_owned();
+        let shift = self
+            .shift
+            .index_axis(Axis(0), index)
+            .to_owned()
+            .insert_axis(Axis(0));
+        Self { basis, shift }
     }
 }
 
@@ -106,21 +124,6 @@ impl<T: 'static + Float> Affine2<T> {
 
     pub fn get_raw_augmented(&self) -> Array2<T> {
         concatenate![Axis(1), self.basis, self.shift.clone().insert_axis(Axis(0))]
-    }
-
-    /// Get a single equation (i.e., a set of coefficients and a shift/RHS)
-    pub fn get_eqn(&self, index: usize) -> Self {
-        let basis = self
-            .basis
-            .index_axis(Axis(0), index)
-            .to_owned()
-            .insert_axis(Axis(0));
-        let shift = self
-            .shift
-            .index_axis(Axis(0), index)
-            .to_owned()
-            .insert_axis(Axis(0));
-        Self { basis, shift }
     }
 
     pub fn get_eqn_mut(&mut self, index: usize) -> (ArrayViewMut1<T>, ArrayViewMut0<T>) {

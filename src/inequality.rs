@@ -3,7 +3,7 @@ use log::debug;
 use ndarray::concatenate;
 use ndarray::Axis;
 use ndarray::{Array1, Array2};
-use ndarray::{ArrayView1, ArrayView2};
+use ndarray::{ArrayView1, ArrayView2, ArrayViewMut1};
 use num::Float;
 use std::ops::Mul;
 use std::ops::MulAssign;
@@ -27,6 +27,10 @@ impl<T: 'static + Float> Inequality<T> {
         self.rhs.view()
     }
 
+    pub fn rhs_mut(&mut self) -> ArrayViewMut1<T> {
+        self.rhs.view_mut()
+    }
+
     pub fn num_constraints(&self) -> usize {
         self.rhs.len()
     }
@@ -46,7 +50,7 @@ impl<T: 'static + Float> Inequality<T> {
             .rows()
             .into_iter()
             .zip(self.rhs().iter())
-            .filter(|(coeffs, rhs)| !coeffs.iter().all(|x| *x == T::zero()))
+            .filter(|(coeffs, _rhs)| !coeffs.iter().all(|x| *x == T::zero()))
             .unzip();
         self.coeffs = ndarray::stack(Axis(0), &coeffs).unwrap();
         self.rhs = Array1::from_vec(rhs);

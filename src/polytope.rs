@@ -5,6 +5,7 @@ use crate::inequality::Inequality;
 use crate::rand::distributions::Distribution;
 use rand::Rng;
 
+use crate::ndarray_linalg::Inverse;
 use crate::util::embed_identity;
 use crate::util::l2_norm;
 use crate::util::solve;
@@ -13,7 +14,6 @@ use good_lp::solvers::highs::highs;
 use log::debug;
 use ndarray::Slice;
 use ndarray::{concatenate, s, Array};
-use ndarray_linalg::solve::Inverse;
 use truncnorm::distributions::MultivariateTruncatedNormal;
 use truncnorm::truncnorm::mv_truncnormal_cdf;
 use truncnorm::truncnorm::mv_truncnormal_rand;
@@ -103,12 +103,12 @@ where
         n: usize,
         max_iters: usize,
     ) -> (f64, f64, f64) {
-        let (sq_constr_lb, sq_constr_ub, sq_constr_sigma, sq_coeffs) = self.blah(mu, sigma);
+        let (sq_constr_lb, sq_constr_ub, sq_constr_sigma, sq_coeffs) = self.prepare(mu, sigma);
         debug!("Gaussian CDF with mu {:?} sigma {:?}", mu, sq_constr_sigma);
         mv_truncnormal_cdf(sq_constr_lb, sq_constr_ub, sq_constr_sigma, n, max_iters)
     }
 
-    fn blah(
+    fn prepare(
         &self,
         mu: &Array1<T>,
         sigma: &Array2<T>,
@@ -163,7 +163,7 @@ where
         n: usize,
         max_iters: usize,
     ) -> Vec<(Array1<f64>, f64)> {
-        let (sq_constr_lb, sq_constr_ub, sq_constr_sigma, sq_coeffs) = self.blah(mu, sigma);
+        let (sq_constr_lb, sq_constr_ub, sq_constr_sigma, sq_coeffs) = self.prepare(mu, sigma);
         let mu = mu.mapv(std::convert::Into::into);
         let (centered_samples, logp) = if sq_constr_sigma.len() == 1 {
             let sample = MultivariateTruncatedNormal::<Ix1>::new(

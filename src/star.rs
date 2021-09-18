@@ -76,95 +76,34 @@ where
             None => 0,
         }
     }
+
+    /// Add constraints to restrict the input set. Each row represents a
+    /// constraint and the last column represents the upper bounds.
+    pub fn add_constraints(mut self, new_constraints: &Inequality<T>) -> Self {
+        // assert_eq!(self.representation.is_lhs, new_constraints.is_lhs);
+        if let Some(ref mut constrs) = self.constraints {
+            constrs.add_constraints(new_constraints);
+        } else {
+            self.constraints = Some(Polytope::from_halfspaces(new_constraints.clone()));
+        }
+        self
+    }
 }
 
-/*
-impl<T: Float> Star<T, IxDyn>
+impl<T: Float> Star2<T>
 where
-    T: std::convert::From<f64>
-        + std::convert::Into<f64>
-        + ndarray::ScalarOperand
-        + std::fmt::Display
-        + std::fmt::Debug
-        + std::ops::MulAssign,
-    f64: std::convert::From<T>,
+    T: ScalarOperand + From<f64> + Debug + std::ops::MulAssign + std::ops::AddAssign,
+    f64: From<T>,
 {
-    /// # Panics
-    pub fn gaussian_sample<R: Rng>(
-        self,
-        rng: &mut R,
-        mu: &Array1<T>,
-        sigma: &Array2<T>,
-        n: usize,
-        max_iters: usize,
-        input_bounds: &Option<Bounds1<T>>,
-    ) -> Vec<(Array1<T>, T)> {
-        match self.ndim() {
-            2 => {
-                let star: Star2<T> = self.into_dimensionality::<Ix2>().unwrap();
-                star.gaussian_sample(rng, mu, sigma, n, max_iters, input_bounds)
-                    .into_iter()
-                    .map(|(sample, logp)| (sample.mapv(|x| x.into()), logp.into()))
-                    .collect()
-            }
-            _ => panic!(),
-        }
-    }
-
-    /// # Panics
-    pub fn step_relu(self, idx: usize) -> Vec<Self> {
-        match self.ndim() {
-            2 => {
-                let star: Star2<T> = self.into_dimensionality::<Ix2>().unwrap();
-                star.step_relu2(idx)
-                    .into_iter()
-                    .map(Star::into_dyn)
-                    .collect()
-            }
-            _ => panic!(),
-        }
-    }
-
-    /// # Panics
-    pub fn affine_map(self, aff: Affine<T, IxDyn>) -> Self {
-        match self.ndim() {
-            2 => {
-                let star: Star2<T> = self.into_dimensionality::<Ix2>().unwrap();
-                let aff: Affine2<T> = aff.into_dimensionality::<Ix2>().unwrap();
-                star.affine_map2(&aff).into_dyn()
-            }
-            _ => panic!(),
-        }
-    }
-
-    /// # Panics
-    pub fn get_min(self, idx: usize) -> T {
-        match self.ndim() {
-            2 => self.into_dimensionality::<Ix2>().unwrap().get_min(idx),
-            _ => panic!(),
-        }
-    }
-
-    /// # Panics
-    pub fn get_max(self, idx: usize) -> T {
-        match self.ndim() {
-            2 => self.into_dimensionality::<Ix2>().unwrap().get_max(idx),
-            _ => panic!(),
-        }
-    }
-
-    /// # Errors
-    pub fn into_dimensionality<D: Dimension>(self) -> Result<Star<T, D>, ShapeError> {
-        let constraints = self.constraints;
-        self.representation
-            .into_dimensionality::<D>()
-            .map(|representation| Star {
-                representation,
-                constraints,
-            })
+    pub fn get_safe_subset(&self, safe_value: T) -> Self {
+        let subset = self.clone();
+        let mut new_constr: Inequality<T> = self.representation.clone().into();
+        let mut rhs = new_constr.rhs_mut();
+        rhs *= T::neg(T::one());
+        rhs += safe_value;
+        subset.add_constraints(&new_constr)
     }
 }
-*/
 
 impl<T: 'static + Float> Star2<T> {
     /// Create a new Star with given dimension.
@@ -314,18 +253,6 @@ where
         let lbs = Array1::from_iter((0..self.representation_space_dim()).map(|x| self.get_min(x)));
         let ubs = Array1::from_iter((0..self.representation_space_dim()).map(|x| self.get_max(x)));
         Bounds1::new(lbs, ubs)
-    }
-
-    /// Add constraints to restrict the input set. Each row represents a
-    /// constraint and the last column represents the upper bounds.
-    pub fn add_constraints(mut self, new_constraints: &Inequality<T>) -> Self {
-        // assert_eq!(self.representation.is_lhs, new_constraints.is_lhs);
-        if let Some(ref mut constrs) = self.constraints {
-            constrs.add_constraints(new_constraints);
-        } else {
-            self.constraints = Some(Polytope::from_halfspaces(new_constraints.clone()));
-        }
-        self
     }
 
     /// Check whether the Star set is empty.
