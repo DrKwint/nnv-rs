@@ -331,7 +331,6 @@ where
     fn expand(&mut self, node_id: usize) -> &StarNodeType<T> {
         let dnn_index = self.arena[node_id].get_dnn_index();
         let dnn_iter = &mut DNNIterator::new(&self.dnn, dnn_index);
-        //let arena = &mut self.arena;
 
         // Get this node's operation from the dnn_iter
         let op = dnn_iter.next();

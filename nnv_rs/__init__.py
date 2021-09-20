@@ -3,6 +3,8 @@ import numpy as np
 import tree
 from scipy.stats import norm
 
+SAMPLE_STD_DEVS = 3.5
+
 
 class DNN:
     def __init__(self, network):
@@ -87,7 +89,8 @@ class Constellation:
         self.constellation = PyConstellation(dnn.dnn, bounds)
 
     def set_input_bounds(self, fixed_part, loc, scale):
-        unfixed_part = (loc - 3.5 * scale, loc + 3.5 * scale)
+        unfixed_part = (loc - SAMPLE_STD_DEVS * scale,
+                        loc + SAMPLE_STD_DEVS * scale)
         self.constellation.set_input_bounds(fixed_part, unfixed_part)
 
     def importance_sample(self, loc, scale):
