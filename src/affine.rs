@@ -66,7 +66,7 @@ impl<T: Float, D: Dimension + ndarray::RemoveAxis> Affine<T, D> {
         let idx = isize::try_from(index).unwrap();
         let basis = self
             .basis
-            .slice_axis(Axis(0), ndarray::Slice::new(idx, Some(idx), 1))
+            .slice_axis(Axis(0), ndarray::Slice::new(idx, Some(idx + 1), 1))
             .to_owned();
         let shift = self
             .shift
@@ -343,6 +343,7 @@ mod tests {
             for i in 0..3 {
                 let eqn = aff.get_eqn(i);
                 prop_assert_eq!(aff.basis.row(i), eqn.basis.row(0));
+                prop_assert_eq!(aff.shift[i], eqn.shift[0]);
             }
         }
 
