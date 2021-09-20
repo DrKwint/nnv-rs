@@ -20,7 +20,7 @@ class DNN:
             assert (type(network[0][0]) == np.ndarray)
             self.build_from_tensorflow_params(network)
         else:
-            raise NotImplementedError(type_str)
+            raise NotImplementedError(str(type_))
 
     def input_shape(self):
         return self.dnn.input_shape()
@@ -104,6 +104,8 @@ class Constellation:
         return self.bounded_sample(loc, scale)
 
     def bounded_sample(self, loc, scale):
+        loc = np.squeeze(loc).astype(np.float64)
+        scale = np.squeeze(scale).astype(np.float64)
         if self.safe_value == np.inf:
             sample = np.random.normal(loc[-len(scale):], scale)
             prob = 1.

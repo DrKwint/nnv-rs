@@ -21,7 +21,6 @@ use truncnorm::truncnorm::mv_truncnormal_rand;
 use good_lp::Expression;
 
 use good_lp::ProblemVariables;
-use good_lp::ResolutionError;
 
 use good_lp::Variable;
 use good_lp::{variable, Solution, SolverModel};
@@ -69,6 +68,10 @@ where
         self.halfspaces.coeffs()
     }
 
+    pub fn num_vars(&self) -> usize {
+        self.halfspaces.coeffs().ncols()
+    }
+
     pub fn ubs(&self) -> ArrayView1<T> {
         self.halfspaces.rhs()
     }
@@ -90,10 +93,7 @@ where
     }
 
     pub fn is_member(&self, point: &ArrayView1<T>) -> bool {
-        let vals = self.coeffs().dot(point);
-        Zip::from(self.ubs())
-            .and(&vals)
-            .fold(true, |acc, ub, v| acc && (v <= ub))
+        self.halfspaces.is_member(point)
     }
 
     pub fn gaussian_cdf(
@@ -141,7 +141,7 @@ where
         sq_ub.slice_mut(s![..ub.len()]).assign(&ub);
 
         let extended_reduced_mu = if sq_coeffs.nrows() == mu.len() {
-            mu.clone()
+            mu
         } else {
             let mut e_r_mu = Array1::zeros(sq_coeffs.nrows());
             e_r_mu.slice_mut(s![..mu.len()]).assign(&mu);
@@ -280,10 +280,12 @@ where
 {
     /// Check whether the Star set is empty.
     ///
+    /// This method assumes that the constraints bound each dimension,
+    /// both lower and upper.
+    ///
     /// # Panics
     pub fn is_empty(&self) -> bool {
-        let mut c = Array1::zeros(self.halfspaces.rhs().len());
-        c[[0]] = T::one();
+        let c = Array1::ones(self.num_vars());
 
         let solved = solve(
             self.halfspaces.coeffs().rows(),
@@ -291,7 +293,8 @@ where
             c.view(),
         )
         .0;
-        !matches!(solved, Ok(_) | Err(ResolutionError::Unbounded))
+
+        !matches!(solved, Ok(_))
     }
 }
 

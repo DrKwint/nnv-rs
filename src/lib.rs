@@ -2,6 +2,8 @@
 #![feature(fn_traits)]
 #![feature(destructuring_assignment)]
 #![feature(unboxed_closures)]
+#![feature(trait_alias)]
+extern crate approx;
 extern crate env_logger;
 extern crate good_lp;
 extern crate highs;
@@ -17,17 +19,16 @@ extern crate shh;
 extern crate truncnorm;
 
 pub mod affine;
-mod bounds;
+pub mod bounds;
 pub mod constellation;
-mod deeppoly;
-mod dnn;
-mod inequality;
+pub mod deeppoly;
+pub mod dnn;
+pub mod inequality;
 pub mod polytope;
 pub mod star;
-mod star_node;
-mod tensorshape;
-#[cfg(test)]
-mod test_util;
+pub mod star_node;
+pub mod tensorshape;
+pub mod test_util;
 pub mod util;
 
 use crate::affine::Affine2;
@@ -48,6 +49,19 @@ use pyo3::types::PyTuple;
 use pyo3::PyObjectProtocol;
 use rand::thread_rng;
 use star::Star2;
+
+pub trait NNVFloat = 'static
+    + num::Float
+    + std::convert::From<f64>
+    + std::convert::Into<f64>
+    + ndarray::ScalarOperand
+    + std::fmt::Display
+    + std::fmt::Debug
+    + std::ops::MulAssign
+    + std::ops::AddAssign
+    + std::default::Default
+    + std::iter::Sum
+    + approx::AbsDiffEq;
 
 #[pyclass]
 #[derive(Clone, Debug)]
@@ -70,15 +84,25 @@ impl PyDNN {
 
     fn add_dense(&mut self, filters: PyReadonlyArray2<f32>, bias: PyReadonlyArray1<f32>) {
         self.dnn.add_layer(Layer::new_dense(Affine2::new(
-            filters.as_array().to_owned().mapv(f64::from),
-            bias.as_array().to_owned().mapv(f64::from),
+            filters
+                .as_array()
+                .to_owned()
+                .mapv(|x| <f64 as num::NumCast>::from(x).unwrap()),
+            bias.as_array()
+                .to_owned()
+                .mapv(|x| <f64 as num::NumCast>::from(x).unwrap()),
         )))
     }
 
     fn add_conv(&mut self, filters: PyReadonlyArray4<f32>, bias: PyReadonlyArray1<f32>) {
         self.dnn.add_layer(Layer::new_conv(Affine4::new(
-            filters.as_array().to_owned().mapv(f64::from),
-            bias.as_array().to_owned().mapv(f64::from),
+            filters
+                .as_array()
+                .to_owned()
+                .mapv(|x| <f64 as num::NumCast>::from(x).unwrap()),
+            bias.as_array()
+                .to_owned()
+                .mapv(|x| <f64 as num::NumCast>::from(x).unwrap()),
         )))
     }
 

@@ -6,7 +6,7 @@ use good_lp::{Expression, IntoAffineExpression, ProblemVariables, Variable};
 use itertools::iproduct;
 use log::trace;
 use ndarray::{s, Axis, Slice};
-use ndarray::{Array2, ArrayView1};
+use ndarray::{Array1, Array2, ArrayView1, ArrayView2};
 use ndarray_linalg::SVD;
 use num::Float;
 use std::cmp::max;
@@ -73,6 +73,7 @@ impl IntoAffineExpression for LinearExpression {
     }
 }
 
+/// Minimizes the expression `c` given the constraint `Ax < b`.
 /// # Panics
 pub fn solve<'a, I, T: 'a>(
     A: I,
@@ -84,8 +85,12 @@ where
     I: IntoIterator<Item = ArrayView1<'a, T>>,
     f64: std::convert::From<T>,
 {
-    let _shh_out = shh::stdout().unwrap();
-    let _shh_err = shh::stderr().unwrap();
+    let mut _shh_out;
+    let mut _shh_err;
+    if !cfg!(test) {
+        _shh_out = shh::stdout().unwrap();
+        _shh_err = shh::stderr().unwrap();
+    }
     let mut problem = ProblemVariables::new();
     let vars = problem.add_vector(variable(), c.len());
     let c_expression = LinearExpression {
@@ -112,6 +117,7 @@ where
                 good_lp::constraint::leq(Expression::from_other_affine(expr), f64::from(*ub));
             unsolved.add_constraint(constr);
         });
+
     let soln = unsolved.solve();
     let fun = soln.as_ref().ok().map(|x| x.eval(c_expression));
     (soln, fun)
@@ -123,9 +129,9 @@ where
 /// * `B` - The positive array of shape `nk`
 /// * `C` - The negative array of shape `nk`
 pub fn signed_matmul<T: Float + Sum + Debug>(
-    A: &Array2<T>,
-    B: &Array2<T>,
-    C: &Array2<T>,
+    A: &ArrayView2<T>,
+    B: &ArrayView2<T>,
+    C: &ArrayView2<T>,
 ) -> Array2<T> {
     assert_eq!(A.ncols(), B.nrows());
     assert_eq!(A.ncols(), C.nrows());
@@ -144,6 +150,29 @@ pub fn signed_matmul<T: Float + Sum + Debug>(
     out
 }
 
+pub fn signed_dot<T: Float + Sum + Debug>(
+    A: &ArrayView2<T>,
+    B: &ArrayView1<T>,
+    C: &ArrayView1<T>,
+) -> Array1<T> {
+    assert_eq!(A.ncols(), B.len());
+    assert_eq!(A.ncols(), C.len());
+
+    let mut out = Array1::zeros(A.nrows());
+    (0..A.nrows()).for_each(|i| {
+        out[[i]] = (0..A.ncols())
+            .map(|k| {
+                if A[[i, k]] >= T::zero() {
+                    A[[i, k]] * B[[k]]
+                } else {
+                    A[[i, k]] * C[[k]]
+                }
+            })
+            .sum();
+    });
+    out
+}
+
 pub trait ArenaLike<T> {
     fn new_node(&mut self, data: T) -> usize;
 }
@@ -153,5 +182,39 @@ impl<T> ArenaLike<T> for Vec<T> {
         let new_id = self.len();
         self.push(data);
         new_id
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test_util::*;
+    use proptest::prelude::*;
+
+    proptest! {
+        #[test]
+        fn test_pos_eq_signed_dot(arr1 in array1(3), mut arr2 in array2(3, 3)) {
+            arr2 = arr2.map(|x| f64::abs(*x));
+            let neg = Array1::ones(3) * -1.;
+            let result = signed_dot(&arr2.view(), &arr1.view(), &neg.view());
+            prop_assert_eq!(result, &arr2.dot(&arr1));
+        }
+
+        #[test]
+        fn test_neg_signed_dot(arr1 in array1(3), mut arr2 in array2(3, 3)) {
+            arr2 = arr2.map(|x| f64::abs(*x));
+            arr2 *= -1.;
+            arr2 -= 0.1;
+            let pos = Array1::ones(3);
+            let result = signed_dot(&arr2.view(), &pos.view(), &arr1.view());
+            prop_assert_eq!(result, &arr2.dot(&arr1));
+        }
+
+        #[test]
+        fn test_signed_dot(bounds in bounds1(3), arr in array2(3, 3)) {
+            let lower = signed_dot(&arr.view(), &bounds.lower().view(), &bounds.upper().view());
+            let upper = signed_dot(&arr.view(), &bounds.upper().view(), &bounds.lower().view());
+            prop_assert!(lower.iter().zip(upper.iter()).all(|(a, b)| a < b));
+        }
     }
 }

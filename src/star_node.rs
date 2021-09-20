@@ -24,24 +24,29 @@ pub enum StarNodeOp<T: num::Float> {
 }
 
 impl<T: num::Float + Default + Sum + Debug + 'static> StarNodeOp<T> {
+    /// bounds: Output bounds: Concrete bounds
+    /// affs: Input bounds: Abstract bounds in terms of inputs
     pub fn apply_bounds(
         &self,
-        bounds: Bounds1<T>,
-        lower_aff: Affine2<T>,
-        upper_aff: Affine2<T>,
+        bounds: &Bounds1<T>,
+        lower_aff: &Affine2<T>,
+        upper_aff: &Affine2<T>,
     ) -> (Bounds1<T>, (Affine2<T>, Affine2<T>)) {
         match self {
-            Self::Leaf => (bounds, (lower_aff, upper_aff)),
+            Self::Leaf => (bounds.clone(), (lower_aff.clone(), upper_aff.clone())),
             Self::Affine(aff) => (
-                bounds,
+                aff.signed_apply(&bounds),
                 (
                     aff.signed_compose(&lower_aff, &upper_aff),
                     aff.signed_compose(&upper_aff, &lower_aff),
                 ),
             ),
-            Self::StepRelu(dim) => {
-                crate::deeppoly::deep_poly_steprelu(*dim, bounds, lower_aff, upper_aff)
-            }
+            Self::StepRelu(dim) => crate::deeppoly::deep_poly_steprelu(
+                *dim,
+                bounds.clone(),
+                lower_aff.clone(),
+                upper_aff.clone(),
+            ),
             _ => todo!(),
         }
     }
@@ -148,7 +153,8 @@ where
         + std::ops::MulAssign
         + std::ops::AddAssign
         + std::default::Default
-        + std::iter::Sum,
+        + std::iter::Sum
+        + approx::AbsDiffEq,
     f64: std::convert::From<T>,
 {
     pub fn get_safe_star(&self, safe_value: T) -> Self {
@@ -225,7 +231,7 @@ where
                 */
                 output_fn(deep_poly(
                     bounding_box,
-                    DNNIterator::new(dnn, self.dnn_index.clone()),
+                    DNNIterator::new(dnn, self.dnn_index),
                 ))
             },
             |bounds| bounds,

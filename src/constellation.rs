@@ -1,3 +1,4 @@
+#![allow(non_snake_case)]
 use crate::dnn::DNNIterator;
 use crate::star::Star;
 use crate::star_node::StarNode;
@@ -5,6 +6,7 @@ use crate::star_node::StarNodeOp;
 use crate::star_node::StarNodeType;
 use crate::util::ArenaLike;
 use crate::Bounds;
+use crate::NNVFloat;
 use crate::DNN;
 use log::{debug, trace};
 use ndarray::Dimension;
@@ -79,8 +81,7 @@ where
                 fst_child_idx,
                 snd_child_idx,
             }) => {
-                let mut child_ids: Vec<usize> = Vec::new();
-                child_ids.push(fst_child_idx);
+                let mut child_ids: Vec<usize> = vec![fst_child_idx];
                 if let Some(idx) = snd_child_idx {
                     child_ids.push(idx);
                 }
@@ -93,8 +94,7 @@ where
                 snd_child_idx,
                 trd_child_idx,
             }) => {
-                let mut child_ids: Vec<usize> = Vec::new();
-                child_ids.push(fst_child_idx);
+                let mut child_ids: Vec<usize> = vec![fst_child_idx];
                 if let Some(idx) = snd_child_idx {
                     child_ids.push(idx);
                 }
@@ -108,17 +108,8 @@ where
     }
 }
 
-impl<T: Float> Constellation<T, Ix2>
+impl<T: NNVFloat> Constellation<T, Ix2>
 where
-    T: std::convert::From<f64>
-        + std::convert::Into<f64>
-        + ndarray::ScalarOperand
-        + std::ops::MulAssign
-        + std::fmt::Display
-        + std::fmt::Debug
-        + std::ops::AddAssign
-        + Default
-        + Sum,
     f64: std::convert::From<T>,
 {
     /// Sample from a Gaussian distribution with an upper bound on the output value
@@ -166,7 +157,7 @@ where
     }
 }
 
-impl<T: Float> Constellation<T, Ix2>
+impl<T: crate::NNVFloat> Constellation<T, Ix2>
 where
     T: std::convert::From<f64>
         + std::convert::Into<f64>
@@ -393,13 +384,13 @@ where
         rng: &mut rand::rngs::ThreadRng,
     ) -> Option<(usize, T)> {
         let input_bounds = self.input_bounds.clone();
-        match self.get_children(current_node) {
+        match *self.get_children(current_node) {
             // leaf node, which must be partially safe and partially unsafe
-            &StarNodeType::Leaf => {
+            StarNodeType::Leaf => {
                 panic!();
             }
-            &StarNodeType::Affine { child_idx } => Some((child_idx, path_logp)),
-            &StarNodeType::StepRelu {
+            StarNodeType::Affine { child_idx } => Some((child_idx, path_logp)),
+            StarNodeType::StepRelu {
                 dim,
                 fst_child_idx,
                 snd_child_idx,
@@ -442,6 +433,10 @@ where
                             cdf_samples,
                             max_iters,
                             &input_bounds,
+                        );
+                        debug!(
+                            "Selecting between 2 children with CDFs: {} and {}",
+                            fst_cdf, snd_cdf
                         );
                         debug!(
                             "Selecting between 2 children with CDFs: {} and {}",
@@ -495,7 +490,7 @@ where
                     }
                 }
             }
-            &StarNodeType::StepReluDropOut {
+            StarNodeType::StepReluDropOut {
                 dim,
                 dropout_prob,
                 fst_child_idx,

@@ -75,6 +75,19 @@ impl<T: Float, D: Dimension + ndarray::RemoveAxis> Bounds<T, D> {
     }
 }
 
+impl<T: crate::NNVFloat, D: Dimension + ndarray::RemoveAxis> Bounds<T, D> {
+    pub fn subset(&self, rhs: &Self) -> bool {
+        Zip::from(self.bounds_iter())
+            .and(rhs.bounds_iter())
+            .all(|me, rhs| {
+                let diff = me.to_owned() - rhs;
+                let eps = <T as num::NumCast>::from(1e-8).unwrap();
+                (diff[[0]] >= T::zero() || diff[[0]] <= eps)
+                    && (diff[[1]] <= T::zero() || diff[[1]] <= eps)
+            })
+    }
+}
+
 impl<
         T: Float + rand::distributions::uniform::SampleUniform,
         D: Dimension + ndarray::RemoveAxis,
@@ -131,14 +144,13 @@ impl<T: Float + Display, D: Dimension + RemoveAxis> Display for Bounds<T, D> {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::test_util::bounds1;
+    use crate::test_util::*;
     use proptest::proptest;
 
     proptest! {
         #[test]
-        fn ordering_after_affine(bounds in bounds1(4)) {
-            bounds; // todo!
+        fn test_bounds_sample_uniform(bounds in generic_bounds1(32)) {
+            bounds.sample_uniform(0u64);
         }
-
     }
 }
