@@ -3,6 +3,8 @@ import numpy as np
 import tree
 from scipy.stats import norm
 
+SAMPLE_STD_DEVS = 3.5
+
 
 class DNN:
     def __init__(self, network):
@@ -18,7 +20,7 @@ class DNN:
             assert (type(network[0][0]) == np.ndarray)
             self.build_from_tensorflow_params(network)
         else:
-            raise NotImplementedError(type_str)
+            raise NotImplementedError(str(type_))
 
     def input_shape(self):
         return self.dnn.input_shape()
@@ -87,19 +89,18 @@ class Constellation:
         self.constellation = PyConstellation(dnn.dnn, bounds)
 
     def set_input_bounds(self, fixed_part, loc, scale):
-        loc = np.squeeze(loc)
-        scale = np.squeeze(scale)
-        unfixed_part = (loc - 3.5 * scale, loc + 3.5 * scale)
-        print("Bounds:", unfixed_part)
+        unfixed_part = (loc - SAMPLE_STD_DEVS * scale,
+                        loc + SAMPLE_STD_DEVS * scale)
         self.constellation.set_input_bounds(fixed_part, unfixed_part)
 
     def importance_sample(self, loc, scale):
         pass
 
     def bounded_sample_with_input_bounds(self, loc, scale, fixed_part):
-        self.set_input_bounds(
-            np.squeeze(fixed_part).astype(np.float64), loc,
-            scale.astype(np.float64))
+        loc = np.squeeze(loc).astype(np.float64)
+        scale = np.squeeze(scale).astype(np.float64)
+        fixed_part = np.squeeze(fixed_part).astype(np.float64)
+        self.set_input_bounds(fixed_part, loc, scale)
         return self.bounded_sample(loc, scale)
 
     def bounded_sample(self, loc, scale):

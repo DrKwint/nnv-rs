@@ -4,7 +4,7 @@ use crate::deeppoly::deep_poly;
 use crate::dnn::DNNIndex;
 use crate::dnn::DNNIterator;
 use crate::dnn::DNN;
-use crate::star::Star;
+use crate::star::{Star, Star2};
 use log::debug;
 use log::trace;
 use ndarray::Dimension;
@@ -129,24 +129,6 @@ where
         todo!()
     }
 
-    pub fn gaussian_cdf(
-        &mut self,
-        mu: &Array1<T>,
-        sigma: &Array2<T>,
-        n: usize,
-        max_iters: usize,
-    ) -> T {
-        self.star_cdf.map_or_else(
-            || {
-                let out = self.star.trunc_gaussian_cdf(mu, sigma, n, max_iters);
-                let cdf = out.0.into();
-                self.star_cdf = Some(cdf);
-                cdf
-            },
-            |cdf| cdf,
-        )
-    }
-
     pub fn set_cdf(&mut self, val: T) {
         self.star_cdf = Some(val);
     }
@@ -175,6 +157,38 @@ where
         + approx::AbsDiffEq,
     f64: std::convert::From<T>,
 {
+    pub fn get_safe_star(&self, safe_value: T) -> Self {
+        let safe_star = self.star.get_safe_subset(safe_value);
+        Self {
+            star: safe_star,
+            dnn_index: self.dnn_index,
+            star_cdf: None,
+            output_bounds: None,
+            is_feasible: true,
+        }
+    }
+
+    pub fn gaussian_cdf(
+        &mut self,
+        mu: &Array1<T>,
+        sigma: &Array2<T>,
+        n: usize,
+        max_iters: usize,
+        input_bounds: &Option<Bounds1<T>>,
+    ) -> T {
+        self.star_cdf.map_or_else(
+            || {
+                let out = self
+                    .star
+                    .trunc_gaussian_cdf(mu, sigma, n, max_iters, input_bounds);
+                let cdf = out.0.into();
+                self.star_cdf = Some(cdf);
+                cdf
+            },
+            |cdf| cdf,
+        )
+    }
+
     pub fn gaussian_sample<R: Rng>(
         &self,
         rng: &mut R,

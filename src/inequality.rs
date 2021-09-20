@@ -1,10 +1,11 @@
 use crate::affine::Affine2;
+use log::debug;
 use ndarray::concatenate;
 use ndarray::Axis;
 use ndarray::Slice;
 use ndarray::Zip;
 use ndarray::{Array1, Array2};
-use ndarray::{ArrayView1, ArrayView2};
+use ndarray::{ArrayView1, ArrayView2, ArrayViewMut1};
 use num::Float;
 use std::convert::TryFrom;
 use std::ops::Mul;
@@ -29,6 +30,10 @@ impl<T: 'static + Float> Inequality<T> {
         self.rhs.view()
     }
 
+    pub fn rhs_mut(&mut self) -> ArrayViewMut1<T> {
+        self.rhs.view_mut()
+    }
+
     pub fn num_dims(&self) -> usize {
         self.coeffs.ncols()
     }
@@ -40,6 +45,22 @@ impl<T: 'static + Float> Inequality<T> {
     pub fn add_eqns(&mut self, eqns: &Self) {
         self.coeffs.append(Axis(0), eqns.coeffs.view()).unwrap();
         self.rhs.append(Axis(0), eqns.rhs.view()).unwrap();
+    }
+
+    pub fn any_nan(&self) -> bool {
+        self.coeffs().iter().any(|x| x.is_nan()) || self.rhs.iter().any(|x| x.is_nan())
+    }
+
+    pub fn filter_trivial(&mut self) {
+        let (coeffs, rhs): (Vec<ArrayView1<T>>, Vec<_>) = self
+            .coeffs
+            .rows()
+            .into_iter()
+            .zip(self.rhs().iter())
+            .filter(|(coeffs, _rhs)| !coeffs.iter().all(|x| *x == T::zero()))
+            .unzip();
+        self.coeffs = ndarray::stack(Axis(0), &coeffs).unwrap();
+        self.rhs = Array1::from_vec(rhs);
     }
 
     pub fn get_eqn(&self, idx: usize) -> Self {
