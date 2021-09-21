@@ -23,11 +23,12 @@ pub struct Bounds<T: Float, D: Dimension> {
 }
 
 impl<T: Float, D: Dimension + ndarray::RemoveAxis> Bounds<T, D> {
-    pub fn new<S: Dimension + Dimension<Larger = D>>(
-        lower: Array<T, S>,
-        upper: Array<T, S>,
+    /// # Panics
+    pub fn new<'a, S: Dimension + Dimension<Larger = D>>(
+        lower: ArrayView<'a, T, S>,
+        upper: ArrayView<'a, T, S>,
     ) -> Bounds<T, D> {
-        let data: Array<T, D> = stack(Axis(0), &[lower.view(), upper.view()]).unwrap();
+        let data: Array<T, D> = stack(Axis(0), &[lower, upper]).unwrap();
         Self { data }
     }
 
@@ -110,7 +111,7 @@ impl<T: 'static + Float + Default> Bounds1<T> {
     pub fn affine_map(&self, aff: Affine2<T>) -> Self {
         let lower = aff.apply(&self.lower());
         let upper = aff.apply(&self.upper());
-        Self::new(lower, upper)
+        Self::new(lower.view(), upper.view())
     }
 
     pub fn split_at(&self, index: usize) -> (Self, Self) {
@@ -143,14 +144,13 @@ impl<T: Float + Display, D: Dimension + RemoveAxis> Display for Bounds<T, D> {
 
 #[cfg(test)]
 mod test {
-    use super::*;
     use crate::test_util::*;
     use proptest::proptest;
 
     proptest! {
         #[test]
         fn test_bounds_sample_uniform(bounds in generic_bounds1(32)) {
-            bounds.sample_uniform(0u64);
+            bounds.sample_uniform(0_u64);
         }
     }
 }

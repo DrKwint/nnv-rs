@@ -103,7 +103,7 @@ where
         n: usize,
         max_iters: usize,
     ) -> (f64, f64, f64) {
-        let (sq_constr_lb, sq_constr_ub, sq_constr_sigma, sq_coeffs) = self.prepare(mu, sigma);
+        let (sq_constr_lb, sq_constr_ub, sq_constr_sigma, _sq_coeffs) = self.prepare(mu, sigma);
         debug!("Gaussian CDF with mu {:?} sigma {:?}", mu, sq_constr_sigma);
         mv_truncnormal_cdf(sq_constr_lb, sq_constr_ub, sq_constr_sigma, n, max_iters)
     }

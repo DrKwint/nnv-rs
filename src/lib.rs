@@ -1,3 +1,4 @@
+#![warn(clippy::all, clippy::pedantic, clippy::nursery, clippy::cargo)]
 #![allow(clippy::must_use_candidate)]
 #![feature(fn_traits)]
 #![feature(destructuring_assignment)]
@@ -33,14 +34,14 @@ pub mod util;
 
 use crate::affine::Affine2;
 use crate::affine::Affine4;
-use crate::bounds::Bounds;
 use crate::bounds::Bounds1;
 use crate::dnn::DNNIndex;
 use crate::dnn::DNNIterator;
-use crate::dnn::Layer;
-use crate::dnn::DNN;
 use affine::Affine;
+pub use bounds::Bounds;
 use constellation::Constellation;
+pub use dnn::Layer;
+pub use dnn::DNN;
 use ndarray::Ix2;
 use numpy::PyArray1;
 use numpy::{PyReadonlyArray1, PyReadonlyArray2, PyReadonlyArray4};
@@ -49,6 +50,7 @@ use pyo3::types::PyTuple;
 use pyo3::PyObjectProtocol;
 use rand::thread_rng;
 use star::Star2;
+pub use star_node::StarNode;
 
 pub trait NNVFloat = 'static
     + num::Float
@@ -124,11 +126,11 @@ impl PyDNN {
         upper_input_bounds: PyReadonlyArray1<f64>,
     ) -> Py<PyTuple> {
         let input_bounds = Bounds1::new(
-            lower_input_bounds.as_array().to_owned(),
-            upper_input_bounds.as_array().to_owned(),
+            lower_input_bounds.as_array().view(),
+            upper_input_bounds.as_array().view(),
         );
         let output_bounds = deeppoly::deep_poly(
-            input_bounds,
+            &input_bounds,
             DNNIterator::new(&self.dnn, DNNIndex::default()),
         );
         let gil = Python::acquire_gil();
@@ -160,9 +162,7 @@ impl PyConstellation {
     ) -> Self {
         let dnn = py_dnn.dnn;
         let input_shape = dnn.input_shape();
-
-        let bounds = input_bounds
-            .map(|(lbs, ubs)| Bounds::new(lbs.as_array().to_owned(), ubs.as_array().to_owned()));
+        let bounds = input_bounds.map(|(lbs, ubs)| Bounds::new(lbs.as_array(), ubs.as_array()));
 
         let star = match input_shape.rank() {
             1 => {
@@ -186,7 +186,7 @@ impl PyConstellation {
             .constellation
             .get_input_bounds()
             .as_ref()
-            .map(|bounds| bounds.as_tuple());
+            .map(bounds::Bounds::as_tuple);
         let gil = Python::acquire_gil();
         let py = gil.python();
         input_bounds.map(|(l, u)| {
@@ -203,9 +203,9 @@ impl PyConstellation {
         unfixed_part: Option<(PyReadonlyArray1<f64>, PyReadonlyArray1<f64>)>,
     ) {
         let fixed_bounds =
-            fixed_part.map(|x| Bounds1::new(x.as_array().to_owned(), x.as_array().to_owned()));
-        let unfixed_bounds = unfixed_part
-            .map(|(l, u)| Bounds1::new(l.as_array().to_owned(), u.as_array().to_owned()));
+            fixed_part.map(|x| Bounds1::new(x.as_array().view(), x.as_array().view()));
+        let unfixed_bounds =
+            unfixed_part.map(|(l, u)| Bounds1::new(l.as_array().view(), u.as_array().view()));
         let bounds = match (fixed_bounds, unfixed_bounds) {
             (Some(f), Some(u)) => Some(f.append(u)),
             (Some(f), None) => Some(f),

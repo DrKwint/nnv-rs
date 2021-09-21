@@ -8,7 +8,7 @@ use crate::util::ArenaLike;
 use crate::Bounds;
 use crate::NNVFloat;
 use crate::DNN;
-use log::{debug, trace};
+use log::debug;
 use ndarray::Dimension;
 use ndarray::Ix2;
 use ndarray::{Array1, Array2};
@@ -243,10 +243,9 @@ where
                     // do procedure to select safe part
                     let safe_star = self.arena[current_node].get_safe_star(safe_value);
                     return Some((safe_star, path_logp));
-                } else {
-                    // otherwise, push to path and continue expanding
-                    path.push(current_node);
                 }
+                // otherwise, push to path and continue expanding
+                path.push(current_node);
             }
             // expand node
             {
@@ -259,8 +258,8 @@ where
                 let result = self.select_child(
                     current_node,
                     path_logp,
-                    &loc,
-                    &scale,
+                    loc,
+                    scale,
                     cdf_samples,
                     max_iters,
                     &mut rng,
@@ -290,19 +289,19 @@ where
     /// * `dnn_iter` - The iterator of operations in the dnn
     ///
     /// # Returns
-    /// * `children` - StarNodeType<T>
+    /// * `children` - `StarNodeType<T>`
+    ///
+    /// # Panics
     pub fn get_children(&mut self, node_id: usize) -> &StarNodeType<T> {
         if self
             .children
             .get(node_id)
-            .map(|opt| opt.as_ref())
-            .flatten()
+            .and_then(std::option::Option::as_ref)
             .is_some()
         {
             self.children
                 .get(node_id)
-                .map(|opt| opt.as_ref())
-                .flatten()
+                .and_then(std::option::Option::as_ref)
                 .unwrap()
         } else {
             self.expand(node_id)
@@ -318,7 +317,7 @@ where
     /// * `dnn_iter` - The iterator of operations in the dnn
     ///
     /// # Returns
-    /// * `children` - StarNodeType<T>
+    /// * `children` - `StarNodeType<T>`
     fn expand(&mut self, node_id: usize) -> &StarNodeType<T> {
         let dnn_index = self.arena[node_id].get_dnn_index();
         let dnn_iter = &mut DNNIterator::new(&self.dnn, dnn_index);
@@ -345,7 +344,7 @@ where
                 StarNodeType::StepRelu {
                     dim,
                     fst_child_idx: ids[0],
-                    snd_child_idx: ids.get(1).cloned(),
+                    snd_child_idx: ids.get(1).copied(),
                 }
             }
             Some(StarNodeOp::StepReluDropout((dropout_prob, dim))) => {
@@ -359,8 +358,8 @@ where
                     dim,
                     dropout_prob,
                     fst_child_idx: ids[0],
-                    snd_child_idx: ids.get(1).cloned(),
-                    trd_child_idx: ids.get(2).cloned(),
+                    snd_child_idx: ids.get(1).copied(),
+                    trd_child_idx: ids.get(2).copied(),
                 }
             }
             None => panic!(),
@@ -368,8 +367,7 @@ where
         self.children[node_id] = Some(children);
         self.children
             .get(node_id)
-            .map(|opt| opt.as_ref())
-            .flatten()
+            .and_then(std::option::Option::as_ref)
             .unwrap()
     }
 

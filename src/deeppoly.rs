@@ -2,20 +2,16 @@ use crate::affine::Affine2;
 use crate::bounds::Bounds1;
 use crate::dnn::DNNIterator;
 use crate::NNVFloat;
-use approx::AbsDiffEq;
-use log::{debug, error, log_enabled, trace, warn, Level};
+use log::{debug, trace};
 use ndarray::Array1;
-use ndarray::Array2;
 use ndarray::ArrayView1;
 use ndarray::ArrayViewMut1;
 use ndarray::ScalarOperand;
 use ndarray::Zip;
 use num::Float;
 use std::fmt::Debug;
-use std::fmt::Display;
-use std::iter::Sum;
-use std::ops::MulAssign;
 
+/// # Panics
 pub fn deep_poly_steprelu<T: 'static + Float + Default + Debug>(
     dim: usize,
     mut bounds: Bounds1<T>,
@@ -112,7 +108,8 @@ pub fn deep_poly_relu<
     (out, (lower_aff, upper_aff))
 }
 
-pub fn deep_poly<T: NNVFloat>(input_bounds: Bounds1<T>, dnn_iter: DNNIterator<T>) -> Bounds1<T>
+/// # Panics
+pub fn deep_poly<T: NNVFloat>(input_bounds: &Bounds1<T>, dnn_iter: DNNIterator<T>) -> Bounds1<T>
 where
     f64: std::convert::From<T>,
 {
@@ -131,12 +128,10 @@ where
             let out = op.apply_bounds(&bounds_concrete, &laff, &uaff);
             debug_assert!(out.0.bounds_iter().into_iter().all(|x| x[[0]] <= x[[1]]));
             if cfg!(debug_assertions) {
-                let lower_bounds = out.1 .0.signed_apply(&input_bounds);
-                let upper_bounds = out.1 .1.signed_apply(&input_bounds);
-                let realized_abstract_bounds = Bounds1::new(
-                    lower_bounds.lower().to_owned(),
-                    upper_bounds.upper().to_owned(),
-                );
+                let lower_bounds = out.1 .0.signed_apply(input_bounds);
+                let upper_bounds = out.1 .1.signed_apply(input_bounds);
+                let realized_abstract_bounds =
+                    Bounds1::new(lower_bounds.lower(), upper_bounds.upper());
                 assert!(
                     realized_abstract_bounds.subset(&out.0),
                     "\n\nRealized abstract: {:?}\nConcrete: {:?}\n\n",
@@ -148,12 +143,9 @@ where
         },
     );
     // Final substitution to get output bounds
-    let lower_bounds = aff_bounds.1 .0.signed_apply(&input_bounds);
-    let upper_bounds = aff_bounds.1 .1.signed_apply(&input_bounds);
-    let bounds = Bounds1::new(
-        lower_bounds.lower().to_owned(),
-        upper_bounds.upper().to_owned(),
-    );
+    let lower_bounds = aff_bounds.1 .0.signed_apply(input_bounds);
+    let upper_bounds = aff_bounds.1 .1.signed_apply(input_bounds);
+    let bounds = Bounds1::new(lower_bounds.lower(), upper_bounds.upper());
     debug_assert!(bounds.bounds_iter().into_iter().all(|x| x[[0]] <= x[[1]]));
     bounds
 }
@@ -182,25 +174,27 @@ mod tests {
         );
         let dense2 = Layer::new_dense(aff2);
         let relu2: Layer<f64> = Layer::new_relu(2);
-        let dnn = DNN::new(vec![dense1, relu1, dense2, relu2]);
-        let bounds: Bounds1<f64> =
-            Bounds1::new(Array1::from_vec(vec![0.0, 0.0, 0.]), Array1::zeros(3));
+        let _dnn = DNN::new(vec![dense1, relu1, dense2, relu2]);
+        let _bounds: Bounds1<f64> = Bounds1::new(
+            Array1::from_vec(vec![0.0, 0.0, 0.]).view(),
+            Array1::zeros(3).view(),
+        );
     }
 
     proptest! {
         #[test]
         fn test_deeppoly_with_dnn(dnn in fc_dnn(2, 2, 1, 2), input_bounds in bounds1(2)) {
-            deep_poly(input_bounds, DNNIterator::new(&dnn, DNNIndex::default()));
+            deep_poly(&input_bounds, DNNIterator::new(&dnn, DNNIndex::default()));
         }
     }
 
     proptest! {
         #[test]
         fn test_deeppoly_correctness(dnn in fc_dnn(2, 2, 2, 2), input_bounds in bounds1(2)) {
-            let concrete_input = input_bounds.sample_uniform(0u64);
+            let concrete_input = input_bounds.sample_uniform(0_u64);
             let concrete_output = dnn.forward(concrete_input.into_dyn()).into_dimensionality::<Ix1>().unwrap();
 
-            let output_bounds = deep_poly(input_bounds, DNNIterator::new(&dnn, DNNIndex::default()));
+            let output_bounds = deep_poly(&input_bounds, DNNIterator::new(&dnn, DNNIndex::default()));
 
             prop_assert!(output_bounds.is_member(&concrete_output.view()), "\n\nConcrete output: {}\nOutput bounds: {}\n\n", concrete_output, output_bounds)
         }
@@ -208,7 +202,7 @@ mod tests {
 
     #[test]
     fn test_deeppoly_relu_gt_correctness() {
-        let bounds: Bounds1<f64> = Bounds1::new(Array1::zeros(4), Array1::ones(4));
+        let bounds: Bounds1<f64> = Bounds1::new(Array1::zeros(4).view(), Array1::ones(4).view());
         let lower_aff = Affine2::identity(4);
         let upper_aff = Affine2::identity(4);
         let (new_b, (new_l, new_u)) = deep_poly_relu(&bounds, &lower_aff, &upper_aff);
@@ -219,18 +213,23 @@ mod tests {
 
     #[test]
     fn test_deeppoly_relu_lt_correctness() {
-        let bounds: Bounds1<f64> = Bounds1::new(Array1::ones(4) * -1., Array1::zeros(4));
+        let bounds: Bounds1<f64> =
+            Bounds1::new((Array1::ones(4) * -1.).view(), Array1::zeros(4).view());
         let lower_aff = Affine2::identity(4) + (-4.);
         let upper_aff = Affine2::identity(4);
         let (new_b, (new_l, new_u)) = deep_poly_relu(&bounds, &lower_aff, &upper_aff);
-        assert_eq!(new_b, Bounds1::new(Array1::zeros(4), Array1::zeros(4)));
+        assert_eq!(
+            new_b,
+            Bounds1::new(Array1::zeros(4).view(), Array1::zeros(4).view())
+        );
         assert_eq!(new_l, Affine2::identity(4) * 0.);
         assert_eq!(new_u, Affine2::identity(4) * 0.);
     }
 
     #[test]
     fn test_deeppoly_relu_spanning_firstbranch_correctness() {
-        let bounds: Bounds1<f64> = Bounds1::new(Array1::ones(4) * -2., Array1::ones(4));
+        let bounds: Bounds1<f64> =
+            Bounds1::new((Array1::ones(4) * -2.).view(), Array1::ones(4).view());
         let lower_aff = Affine2::identity(4);
         let upper_aff = Affine2::identity(4);
         let upper_aff_update = Affine2::new(
@@ -238,14 +237,18 @@ mod tests {
             &bounds.upper() * &bounds.lower() / (&bounds.upper() - &bounds.lower()) * -1.,
         );
         let (new_b, (new_l, new_u)) = deep_poly_relu(&bounds, &lower_aff, &upper_aff);
-        assert_eq!(new_b, Bounds1::new(Array1::zeros(4), Array1::ones(4)));
+        assert_eq!(
+            new_b,
+            Bounds1::new(Array1::zeros(4).view(), Array1::ones(4).view())
+        );
         assert_eq!(new_l, lower_aff * 0.);
         assert_eq!(new_u, upper_aff * &upper_aff_update);
     }
 
     #[test]
     fn test_deeppoly_relu_spanning_secondbranch_correctness() {
-        let bounds: Bounds1<f64> = Bounds1::new(Array1::ones(4) * -1., Array1::ones(4));
+        let bounds: Bounds1<f64> =
+            Bounds1::new((Array1::ones(4) * -1.).view(), Array1::ones(4).view());
         let lower_aff = Affine2::identity(4);
         let upper_aff = Affine2::identity(4);
         let upper_aff_update = Affine2::new(

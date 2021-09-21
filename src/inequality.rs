@@ -1,5 +1,4 @@
 use crate::affine::Affine2;
-use log::debug;
 use ndarray::concatenate;
 use ndarray::Axis;
 use ndarray::Slice;
@@ -42,6 +41,7 @@ impl<T: 'static + Float> Inequality<T> {
         self.rhs.len()
     }
 
+    /// # Panics
     pub fn add_eqns(&mut self, eqns: &Self) {
         self.coeffs.append(Axis(0), eqns.coeffs.view()).unwrap();
         self.rhs.append(Axis(0), eqns.rhs.view()).unwrap();
@@ -51,6 +51,7 @@ impl<T: 'static + Float> Inequality<T> {
         self.coeffs().iter().any(|x| x.is_nan()) || self.rhs.iter().any(|x| x.is_nan())
     }
 
+    /// # Panics
     pub fn filter_trivial(&mut self) {
         let (coeffs, rhs): (Vec<ArrayView1<T>>, Vec<_>) = self
             .coeffs
@@ -63,6 +64,7 @@ impl<T: 'static + Float> Inequality<T> {
         self.rhs = Array1::from_vec(rhs);
     }
 
+    /// # Panics
     pub fn get_eqn(&self, idx: usize) -> Self {
         let i_idx: isize = isize::try_from(idx).unwrap();
         Self {
@@ -134,7 +136,7 @@ impl<T: 'static + Float> From<Affine2<T>> for Inequality<T> {
 
 #[cfg(test)]
 mod tests {
-    use crate::test_util::*;
+    use crate::test_util::inequality;
     use proptest::prelude::*;
 
     proptest! {

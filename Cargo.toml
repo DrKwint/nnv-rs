@@ -33,13 +33,18 @@ num = "^0.4.0"
 numpy = "^0.13.2"
 pyo3 = "^0.13"
 rand = "^0.8.4"
-truncnorm = "^0.1.0"
+truncnorm = "^0.1.1"
 shh = "^1.0.1"
 
 [dev-dependencies]
 ndarray-rand = "^0.14.0"
 proptest = "1.0.0"
 proptest-derive = "0.2.0"
+criterion = "0.3"
+
+[[bench]]
+name = "my_benchmark"
+harness = false
 
 [dev-dependencies.cargo-husky]
 version = "1"

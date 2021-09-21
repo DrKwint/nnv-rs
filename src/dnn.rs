@@ -5,8 +5,8 @@ use crate::deeppoly::deep_poly_relu;
 use crate::star::Star;
 use crate::star_node::StarNodeOp;
 use crate::tensorshape::TensorShape;
-use crate::util::signed_dot;
 use crate::Affine;
+use crate::NNVFloat;
 use log::trace;
 use ndarray::Array;
 use ndarray::ArrayD;
@@ -39,16 +39,8 @@ impl<T: Float> DNN<T> {
         &self.layers
     }
 }
-impl<T> DNN<T>
+impl<T: NNVFloat> DNN<T>
 where
-    T: 'static
-        + Float
-        + std::convert::From<f64>
-        + std::convert::Into<f64>
-        + ndarray::ScalarOperand
-        + std::fmt::Display
-        + std::fmt::Debug
-        + std::ops::MulAssign,
     f64: std::convert::From<T>,
 {
     pub fn forward(&self, input: ArrayD<T>) -> ArrayD<T> {
@@ -56,16 +48,8 @@ where
     }
 }
 
-impl<T> DNN<T>
+impl<T: NNVFloat> DNN<T>
 where
-    T: 'static
-        + Float
-        + std::convert::From<f64>
-        + std::convert::Into<f64>
-        + ndarray::ScalarOperand
-        + std::fmt::Display
-        + std::fmt::Debug
-        + std::ops::MulAssign,
     f64: std::convert::From<T>,
 {
     pub fn input_shape(&self) -> TensorShape {
@@ -73,16 +57,8 @@ where
     }
 }
 
-impl<T: 'static + num::Float> fmt::Display for DNN<T>
+impl<T: NNVFloat> fmt::Display for DNN<T>
 where
-    T: 'static
-        + Float
-        + std::convert::From<f64>
-        + std::convert::Into<f64>
-        + ndarray::ScalarOperand
-        + std::fmt::Display
-        + std::fmt::Debug
-        + std::ops::MulAssign,
     f64: std::convert::From<T>,
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -120,18 +96,11 @@ impl<T: Float> Layer<T> {
     }
 }
 
-impl<T> Layer<T>
+impl<T: NNVFloat> Layer<T>
 where
-    T: 'static
-        + Float
-        + std::convert::From<f64>
-        + std::convert::Into<f64>
-        + ndarray::ScalarOperand
-        + std::fmt::Display
-        + std::fmt::Debug
-        + std::ops::MulAssign,
     f64: std::convert::From<T>,
 {
+    /// # Panics
     pub fn input_shape(&self) -> TensorShape {
         match self {
             Layer::Dense(aff) => TensorShape::new(vec![Some(aff.input_dim())]),
@@ -141,6 +110,8 @@ where
     }
 
     /// Give output shape as generically as possible
+    ///
+    /// # Panics
     pub fn output_shape(&self) -> TensorShape {
         match self {
             Layer::Dense(aff) => TensorShape::new(vec![Some(aff.output_dim())]),
@@ -149,14 +120,18 @@ where
     }
 
     /// Give the concrete output shape that results from giving an input with the specified shape
+    ///
+    /// # Panics
     pub fn calculate_output_shape(&self, _input_shape: &TensorShape) -> TensorShape {
         todo!();
     }
 
-    pub fn forward2(&self, _input: Array<T, Ix2>) -> Array<T, Ix2> {
+    /// # Panics
+    pub fn forward2(&self, _input: &Array<T, Ix2>) -> Array<T, Ix2> {
         todo!();
     }
 
+    /// # Panics
     pub fn forward(&self, input: ArrayD<T>) -> ArrayD<T> {
         match self {
             Layer::Dense(aff) => {
@@ -169,7 +144,8 @@ where
         }
     }
 
-    pub fn apply_star2(&self, star: Star<T, Ix2>) -> Star<T, Ix2> {
+    /// # Panics
+    pub fn apply_star2(&self, star: &Star<T, Ix2>) -> Star<T, Ix2> {
         match self {
             Layer::Dense(aff) => star.affine_map2(aff),
             _ => panic!(),
@@ -188,6 +164,7 @@ where
         + Default
         + Sum,
 {
+    /// # Panics
     pub fn apply_bounds(
         &self,
         lower_aff: &Affine2<T>,
@@ -198,22 +175,22 @@ where
             Layer::Dense(aff) => {
                 let new_lower = aff.signed_compose(lower_aff, upper_aff);
                 let new_upper = aff.signed_compose(upper_aff, lower_aff);
-                (aff.signed_apply(&bounds), (new_lower, new_upper))
+                (aff.signed_apply(bounds), (new_lower, new_upper))
             }
-            Layer::ReLU(_ndims) => {
-                if (_ndims + 1) == bounds.ndim() {
+            Layer::ReLU(ndims) => {
+                if (ndims + 1) == bounds.ndim() {
                     deep_poly_relu(bounds, lower_aff, upper_aff)
                 } else {
-                    let (bounds_head, bounds_tail) = bounds.split_at(*_ndims);
-                    let (lower_aff_head, lower_aff_tail) = lower_aff.split_at(*_ndims);
-                    let (upper_aff_head, upper_aff_tail) = lower_aff.split_at(*_ndims);
+                    let (bounds_head, bounds_tail) = bounds.split_at(*ndims);
+                    let (lower_aff_head, lower_aff_tail) = lower_aff.split_at(*ndims);
+                    let (upper_aff_head, upper_aff_tail) = lower_aff.split_at(*ndims);
                     let (bounds_part, (lower_part, upper_part)) =
                         deep_poly_relu(&bounds_head, &lower_aff_head, &upper_aff_head);
                     (
                         bounds_part.append(bounds_tail),
                         (
-                            lower_part.append(lower_aff_tail),
-                            upper_part.append(upper_aff_tail),
+                            lower_part.append(&lower_aff_tail),
+                            upper_part.append(&upper_aff_tail),
                         ),
                     )
                 }
@@ -355,7 +332,7 @@ impl<T: 'static + num::Float + std::fmt::Debug> Iterator for DNNIterator<'_, T> 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test_util::*;
+    use crate::test_util::{array1, fc_dnn};
     use proptest::prelude::*;
 
     #[test]
