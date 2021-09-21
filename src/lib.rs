@@ -157,6 +157,8 @@ impl PyConstellation {
     pub fn py_new(
         py_dnn: PyDNN,
         input_bounds: Option<(PyReadonlyArray1<f64>, PyReadonlyArray1<f64>)>,
+        loc: PyReadonlyArray1<f64>,
+        scale: PyReadonlyArray2<f64>,
     ) -> Self {
         let dnn = py_dnn.dnn;
         let input_shape = dnn.input_shape();
@@ -177,7 +179,13 @@ impl PyConstellation {
             }
         };
         Self {
-            constellation: Constellation::new(star, dnn, bounds),
+            constellation: Constellation::new(
+                star,
+                dnn,
+                bounds,
+                loc.as_array().to_owned(),
+                scale.as_array().to_owned(),
+            ),
         }
     }
 
@@ -222,20 +230,14 @@ impl PyConstellation {
     #[allow(clippy::too_many_arguments)]
     pub fn bounded_sample_multivariate_gaussian(
         &mut self,
-        loc: PyReadonlyArray1<f64>,
-        scale: PyReadonlyArray2<f64>,
         safe_value: f64,
         cdf_samples: usize,
         num_samples: usize,
         max_iters: usize,
     ) -> (Py<PyArray1<f64>>, f64, f64) {
         let mut rng = thread_rng();
-        let loc = loc.as_array().to_owned();
-        let scale = scale.as_array().to_owned();
         let (samples, branch_logp) = self.constellation.bounded_sample_multivariate_gaussian(
             &mut rng,
-            &loc,
-            &scale,
             safe_value,
             cdf_samples,
             num_samples,

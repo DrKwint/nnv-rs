@@ -7,6 +7,7 @@ use crate::inequality::Inequality;
 use crate::polytope::Polytope;
 use crate::tensorshape::TensorShape;
 use crate::util::solve;
+use crate::NNVFloat;
 use good_lp::ResolutionError;
 use log::debug;
 use log::{error, trace};
@@ -44,7 +45,7 @@ pub type Star4<A> = Star<A, Ix4>;
 /// deep neural networks." International Symposium on Formal Methods. Springer,
 /// Cham, 2019.
 #[derive(Clone, Debug)]
-pub struct Star<T: Float, D: Dimension> {
+pub struct Star<T: NNVFloat, D: Dimension> {
     /// `representation` is the concatenation of [basis center] (where
     /// center is a column vector) and captures information about the
     /// transformed set
@@ -54,7 +55,7 @@ pub struct Star<T: Float, D: Dimension> {
     constraints: Option<Polytope<T>>,
 }
 
-impl<T: Float, D: Dimension> Star<T, D> {
+impl<T: NNVFloat, D: Dimension> Star<T, D> {
     pub fn ndim(&self) -> usize {
         self.representation.ndim()
     }
@@ -68,7 +69,7 @@ impl<T: Float, D: Dimension> Star<T, D> {
     }
 }
 
-impl<T: Float, D: Dimension> Star<T, D>
+impl<T: NNVFloat, D: Dimension> Star<T, D>
 where
     T: ScalarOperand + From<f64> + Debug,
     f64: From<T>,
@@ -93,7 +94,7 @@ where
     }
 }
 
-impl<T: Float> Star2<T>
+impl<T: NNVFloat> Star2<T>
 where
     T: ScalarOperand + From<f64> + Debug + std::ops::MulAssign + std::ops::AddAssign,
     f64: From<T>,
@@ -108,7 +109,7 @@ where
     }
 }
 
-impl<T: 'static + Float> Star2<T> {
+impl<T: 'static + NNVFloat> Star2<T> {
     /// Create a new Star with given dimension.
     ///
     /// By default this Star covers the space because it has no constraints. To add constraints call `.add_constraints`.
@@ -153,7 +154,7 @@ impl<T: 'static + Float> Star2<T> {
     }
 }
 
-impl<T: Float> Star2<T>
+impl<T: NNVFloat> Star2<T>
 where
     T: ScalarOperand + From<f64> + Debug,
     f64: From<T>,
@@ -168,7 +169,7 @@ where
     }
 }
 
-impl<T: Float> Star2<T>
+impl<T: NNVFloat> Star2<T>
 where
     T: ndarray::ScalarOperand,
 {
@@ -181,7 +182,7 @@ where
     }
 }
 
-impl<T: Float> Star2<T>
+impl<T: NNVFloat> Star2<T>
 where
     T: std::convert::From<f64>
         + std::convert::Into<f64>
@@ -299,7 +300,9 @@ where
             .map_or(false, crate::polytope::Polytope::is_empty)
     }
 
-    /// TODO: doc this
+    /// # Returns
+    ///
+    /// (cdf estimate, estimate error, cdf upper bound)
     ///
     /// # Panics
     pub fn trunc_gaussian_cdf(
@@ -320,37 +323,16 @@ where
             if let Some(bounds) = input_bounds {
                 let lbs = bounds.lower();
                 let ubs = bounds.upper();
-                /*
-                let unfixed_idxs = Zip::from(lbs).and(ubs).map_collect(|&lb, &ub| lb != ub);
-                let sigma_rows: Vec<ArrayView2<T>> = sigma
-                    .rows()
-                    .into_iter()
-                    .zip(&unfixed_idxs)
-                    .filter(|(_row, &fix)| fix)
-                    .map(|(row, _fix)| row.insert_axis(Axis(0)))
-                    .collect();
-                let mut reduced_sigma = concatenate(Axis(0), sigma_rows.as_slice()).unwrap();
-                let sigma_cols: Vec<ArrayView2<T>> = reduced_sigma
-                    .columns()
-                    .into_iter()
-                    .zip(&unfixed_idxs)
-                    .filter(|(_row, &fix)| fix)
-                    .map(|(row, _fix)| row.insert_axis(Axis(1)))
-                    .collect();
-                reduced_sigma = concatenate(Axis(1), sigma_cols.as_slice()).unwrap();
-                let reduced_mu: Array1<T> = mu
-                    .into_iter()
-                    .zip(&unfixed_idxs)
-                    .filter(|(_val, &fix)| fix)
-                    .map(|(&val, _fix)| val)
-                    .collect();
-                */
                 debug_assert!(!poly.any_nan());
-                let (mut reduced_poly, (_reduced_lbs, _reduced_ubs)) =
-                    poly.reduce_fixed_inputs(&lbs, &ubs);
-                reduced_poly.filter_trivial();
-                debug_assert!(!reduced_poly.any_nan());
-                reduced_poly.gaussian_cdf(&mu, &sigma, n, max_iters)
+                if let Some((mut reduced_poly, (_reduced_lbs, _reduced_ubs))) =
+                    poly.reduce_fixed_inputs(&lbs, &ubs)
+                {
+                    reduced_poly.filter_trivial();
+                    debug_assert!(!reduced_poly.any_nan());
+                    reduced_poly.gaussian_cdf(&mu, &sigma, n, max_iters)
+                } else {
+                    (1., 0., 1.)
+                }
             } else {
                 poly.gaussian_cdf(mu, sigma, n, max_iters)
             }
@@ -361,6 +343,11 @@ where
     }
 
     /// # Panics
+    ///
+    /// # Returns
+    /// Vec<(samples, pdf of sample)>
+    ///
+    ///
     // Allow if_let_else because rng is used in both branches, so closures don't work
     #[allow(clippy::too_many_lines, clippy::option_if_let_else)]
     pub fn gaussian_sample<R: Rng>(
@@ -377,34 +364,13 @@ where
             if let Some(bounds) = input_bounds {
                 let lbs = bounds.lower();
                 let ubs = bounds.upper();
-                /*
-                let unfixed_idxs = Zip::from(lbs).and(ubs).map_collect(|&lb, &ub| lb != ub);
-                let sigma_rows: Vec<ArrayView2<T>> = sigma
-                    .rows()
-                    .into_iter()
-                    .zip(&unfixed_idxs)
-                    .filter(|(_row, &fix)| fix)
-                    .map(|(row, _fix)| row.insert_axis(Axis(0)))
-                    .collect();
-                let mut reduced_sigma = concatenate(Axis(0), sigma_rows.as_slice()).unwrap();
-                let sigma_cols: Vec<ArrayView2<T>> = reduced_sigma
-                    .columns()
-                    .into_iter()
-                    .zip(&unfixed_idxs)
-                    .filter(|(_row, &fix)| fix)
-                    .map(|(row, _fix)| row.insert_axis(Axis(1)))
-                    .collect();
-                reduced_sigma = concatenate(Axis(1), sigma_cols.as_slice()).unwrap();
-                let reduced_mu: Array1<T> = mu
-                    .into_iter()
-                    .zip(&unfixed_idxs)
-                    .filter(|(_val, &fix)| fix)
-                    .map(|(&val, _fix)| val)
-                    .collect();
-                */
-                let (reduced_poly, (_reduced_lbs, _reduced_ubs)) =
-                    poly.reduce_fixed_inputs(&lbs, &ubs);
-                reduced_poly.gaussian_sample(rng, &mu, &sigma, n, max_iters)
+                if let Some((reduced_poly, (_reduced_lbs, _reduced_ubs))) =
+                    poly.reduce_fixed_inputs(&lbs, &ubs)
+                {
+                    reduced_poly.gaussian_sample(rng, &mu, &sigma, n, max_iters)
+                } else {
+                    vec![]
+                }
             } else {
                 poly.gaussian_sample(rng, mu, sigma, n, max_iters)
             }
@@ -415,7 +381,7 @@ where
     }
 }
 
-impl<T: 'static + Float> Star4<T> {
+impl<T: 'static + NNVFloat> Star4<T> {
     /// Create a new Star with given dimension.
     ///
     /// By default this Star covers the space because it has no constraints. To add constraints call `.add_constraints`.

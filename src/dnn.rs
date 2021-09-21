@@ -7,6 +7,7 @@ use crate::star_node::StarNodeOp;
 use crate::tensorshape::TensorShape;
 use crate::util::signed_dot;
 use crate::Affine;
+use crate::NNVFloat;
 use log::trace;
 use ndarray::Array;
 use ndarray::ArrayD;
@@ -18,11 +19,11 @@ use std::fmt;
 use std::iter::Sum;
 
 #[derive(Default, Clone, Debug)]
-pub struct DNN<T: num::Float> {
+pub struct DNN<T: NNVFloat> {
     layers: Vec<Layer<T>>,
 }
 
-impl<T: Float> DNN<T> {
+impl<T: NNVFloat> DNN<T> {
     pub fn new(layers: Vec<Layer<T>>) -> Self {
         Self { layers }
     }
@@ -39,52 +40,19 @@ impl<T: Float> DNN<T> {
         &self.layers
     }
 }
-impl<T> DNN<T>
-where
-    T: 'static
-        + Float
-        + std::convert::From<f64>
-        + std::convert::Into<f64>
-        + ndarray::ScalarOperand
-        + std::fmt::Display
-        + std::fmt::Debug
-        + std::ops::MulAssign,
-    f64: std::convert::From<T>,
-{
+impl<T: NNVFloat> DNN<T> {
     pub fn forward(&self, input: ArrayD<T>) -> ArrayD<T> {
         self.layers.iter().fold(input, |x, layer| layer.forward(x))
     }
 }
 
-impl<T> DNN<T>
-where
-    T: 'static
-        + Float
-        + std::convert::From<f64>
-        + std::convert::Into<f64>
-        + ndarray::ScalarOperand
-        + std::fmt::Display
-        + std::fmt::Debug
-        + std::ops::MulAssign,
-    f64: std::convert::From<T>,
-{
+impl<T: NNVFloat> DNN<T> {
     pub fn input_shape(&self) -> TensorShape {
         self.layers[0].input_shape()
     }
 }
 
-impl<T: 'static + num::Float> fmt::Display for DNN<T>
-where
-    T: 'static
-        + Float
-        + std::convert::From<f64>
-        + std::convert::Into<f64>
-        + ndarray::ScalarOperand
-        + std::fmt::Display
-        + std::fmt::Debug
-        + std::ops::MulAssign,
-    f64: std::convert::From<T>,
-{
+impl<T: NNVFloat> fmt::Display for DNN<T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let layers: Vec<String> = self.layers.iter().map(|x| format!("{}", x)).collect();
         write!(f, "Input {} => {}", self.input_shape(), layers.join(" => "))
@@ -92,7 +60,7 @@ where
 }
 
 #[derive(Clone, Debug)]
-pub enum Layer<T: num::Float> {
+pub enum Layer<T: NNVFloat> {
     Dense(Affine<T, Ix2>),
     Conv(Affine<T, Ix4>),
     BatchNorm(Affine<T, Ix2>),
@@ -102,7 +70,7 @@ pub enum Layer<T: num::Float> {
     Dropout(T),
 }
 
-impl<T: Float> Layer<T> {
+impl<T: NNVFloat> Layer<T> {
     pub fn new_dense(aff: Affine2<T>) -> Self {
         Self::Dense(aff)
     }
@@ -120,18 +88,7 @@ impl<T: Float> Layer<T> {
     }
 }
 
-impl<T> Layer<T>
-where
-    T: 'static
-        + Float
-        + std::convert::From<f64>
-        + std::convert::Into<f64>
-        + ndarray::ScalarOperand
-        + std::fmt::Display
-        + std::fmt::Debug
-        + std::ops::MulAssign,
-    f64: std::convert::From<T>,
-{
+impl<T: NNVFloat> Layer<T> {
     pub fn input_shape(&self) -> TensorShape {
         match self {
             Layer::Dense(aff) => TensorShape::new(vec![Some(aff.input_dim())]),
@@ -177,17 +134,7 @@ where
     }
 }
 
-impl<T> Layer<T>
-where
-    T: 'static
-        + Float
-        + ndarray::ScalarOperand
-        + std::fmt::Display
-        + std::fmt::Debug
-        + std::ops::MulAssign
-        + Default
-        + Sum,
-{
+impl<T: NNVFloat> Layer<T> {
     pub fn apply_bounds(
         &self,
         lower_aff: &Affine2<T>,
@@ -223,7 +170,7 @@ where
     }
 }
 
-impl<T: 'static + num::Float> fmt::Display for Layer<T> {
+impl<T: NNVFloat> fmt::Display for Layer<T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             Layer::Dense(aff) => write!(f, "Dense {}", aff.output_dim()),
@@ -243,7 +190,7 @@ pub struct DNNIndex {
 }
 
 impl DNNIndex {
-    fn increment<T: 'static + Float>(&mut self, dnn: &DNN<T>) {
+    fn increment<T: NNVFloat>(&mut self, dnn: &DNN<T>) {
         // Decrement active relu
         let mut advance_layer_flag = false;
         if let Some(ref mut step) = self.remaining_steps {
@@ -273,13 +220,13 @@ impl DNNIndex {
 }
 
 #[derive(Debug, Clone)]
-pub struct DNNIterator<'a, T: num::Float> {
+pub struct DNNIterator<'a, T: NNVFloat> {
     dnn: &'a DNN<T>,
     idx: DNNIndex,
     finished: bool,
 }
 
-impl<'a, T: Float> fmt::Display for DNNIterator<'a, T> {
+impl<'a, T: NNVFloat> fmt::Display for DNNIterator<'a, T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(
             f,
@@ -289,7 +236,7 @@ impl<'a, T: Float> fmt::Display for DNNIterator<'a, T> {
     }
 }
 
-impl<'a, T: Float> DNNIterator<'a, T> {
+impl<'a, T: NNVFloat> DNNIterator<'a, T> {
     pub fn new(dnn: &'a DNN<T>, idx: DNNIndex) -> Self {
         Self {
             dnn,
@@ -303,7 +250,7 @@ impl<'a, T: Float> DNNIterator<'a, T> {
     }
 }
 
-impl<T: 'static + num::Float + std::fmt::Debug> Iterator for DNNIterator<'_, T> {
+impl<T: NNVFloat> Iterator for DNNIterator<'_, T> {
     type Item = StarNodeOp<T>;
 
     fn next(&mut self) -> Option<Self::Item> {
