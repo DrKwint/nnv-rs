@@ -5,7 +5,7 @@ use crate::inequality::Inequality;
 use crate::rand::distributions::Distribution;
 use rand::Rng;
 
-use crate::ndarray_linalg::{Inverse, Eigh, UPLO};
+use crate::ndarray_linalg::{Eigh, Inverse, UPLO};
 use crate::util::embed_identity;
 use crate::util::l2_norm;
 use crate::util::solve;
@@ -112,7 +112,8 @@ where
         }
 
         // println!("Gaussian CDF with mu {:?} sigma {:?} lb {:?} ub {:?}", mu, sq_constr_sigma, sq_constr_lb, sq_constr_ub);
-        let (est, est_err, ub) = mv_truncnormal_cdf(sq_constr_lb, sq_constr_ub, sq_constr_sigma, n, max_iters);
+        let (est, est_err, ub) =
+            mv_truncnormal_cdf(sq_constr_lb, sq_constr_ub, sq_constr_sigma, n, max_iters);
         debug_assert!(est >= 0.);
         (est, est_err, ub)
     }
