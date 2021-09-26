@@ -1,10 +1,11 @@
+#![allow(clippy::module_name_repetitions)]
 use crate::affine::Affine2;
 use crate::bounds::Bounds1;
 use crate::deeppoly::deep_poly;
 use crate::dnn::DNNIndex;
 use crate::dnn::DNNIterator;
 use crate::dnn::DNN;
-use crate::star::{Star, Star2};
+use crate::star::Star;
 use crate::NNVFloat;
 use log::debug;
 use log::trace;
@@ -27,6 +28,8 @@ pub enum StarNodeOp<T: NNVFloat> {
 impl<T: NNVFloat> StarNodeOp<T> {
     /// bounds: Output bounds: Concrete bounds
     /// affs: Input bounds: Abstract bounds in terms of inputs
+    ///
+    /// # Panics
     pub fn apply_bounds(
         &self,
         bounds: &Bounds1<T>,
@@ -36,10 +39,10 @@ impl<T: NNVFloat> StarNodeOp<T> {
         match self {
             Self::Leaf => (bounds.clone(), (lower_aff.clone(), upper_aff.clone())),
             Self::Affine(aff) => (
-                aff.signed_apply(&bounds),
+                aff.signed_apply(bounds),
                 (
-                    aff.signed_compose(&lower_aff, &upper_aff),
-                    aff.signed_compose(&upper_aff, &lower_aff),
+                    aff.signed_compose(lower_aff, upper_aff),
+                    aff.signed_compose(upper_aff, lower_aff),
                 ),
             ),
             Self::StepRelu(dim) => crate::deeppoly::deep_poly_steprelu(
@@ -48,7 +51,7 @@ impl<T: NNVFloat> StarNodeOp<T> {
                 lower_aff.clone(),
                 upper_aff.clone(),
             ),
-            _ => todo!(),
+            Self::StepReluDropout(_dim) => todo!(),
         }
     }
 }
@@ -126,10 +129,6 @@ where
         self.is_feasible = val
     }
 
-    pub fn get_expanded(&self) -> bool {
-        todo!()
-    }
-
     pub fn set_cdf(&mut self, val: T) {
         self.star_cdf = Some(val);
     }
@@ -197,6 +196,7 @@ where
         )
     }
 
+    /// # Panics
     pub fn gaussian_sample<R: Rng>(
         &self,
         rng: &mut R,
@@ -238,7 +238,7 @@ where
                 self.output_bounds = Some(bounds);
                 */
                 output_fn(deep_poly(
-                    bounding_box,
+                    &bounding_box,
                     DNNIterator::new(dnn, self.dnn_index),
                 ))
             },

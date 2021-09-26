@@ -1,3 +1,4 @@
+#![allow(clippy::cast_possible_wrap, clippy::cast_sign_loss)]
 use std::fmt::Display;
 use std::ops::Index;
 
@@ -46,7 +47,7 @@ impl TensorShape {
 }
 
 impl From<TensorShape> for Vec<Option<usize>> {
-    fn from(ts: TensorShape) -> Vec<Option<usize>> {
+    fn from(ts: TensorShape) -> Self {
         ts.dims
     }
 }

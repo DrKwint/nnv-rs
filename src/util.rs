@@ -4,7 +4,6 @@ use good_lp::solvers::highs::{highs, HighsSolution};
 use good_lp::{variable, ResolutionError, Solution, SolverModel};
 use good_lp::{Expression, IntoAffineExpression, ProblemVariables, Variable};
 use itertools::iproduct;
-use log::trace;
 use ndarray::{s, Axis, Slice};
 use ndarray::{Array1, Array2, ArrayView1, ArrayView2};
 use ndarray_linalg::SVD;
@@ -128,6 +127,8 @@ where
 /// * `A` - The base array of shape `mn`
 /// * `B` - The positive array of shape `nk`
 /// * `C` - The negative array of shape `nk`
+///
+/// # Panics
 pub fn signed_matmul<T: Float + Sum + Debug>(
     A: &ArrayView2<T>,
     B: &ArrayView2<T>,
@@ -150,6 +151,7 @@ pub fn signed_matmul<T: Float + Sum + Debug>(
     out
 }
 
+/// # Panics
 pub fn signed_dot<T: Float + Sum + Debug>(
     A: &ArrayView2<T>,
     B: &ArrayView1<T>,
@@ -188,7 +190,7 @@ impl<T> ArenaLike<T> for Vec<T> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test_util::*;
+    use crate::test_util::{array1, array2, bounds1};
     use proptest::prelude::*;
 
     proptest! {

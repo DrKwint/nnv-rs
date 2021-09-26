@@ -8,9 +8,6 @@ use crate::Bounds1;
 use crate::Constellation;
 use crate::Layer;
 use crate::DNN;
-use itertools::Itertools;
-use ndarray::concatenate;
-use ndarray::stack;
 use ndarray::Array1;
 use ndarray::Array2;
 use ndarray::ArrayView1;
@@ -22,7 +19,6 @@ use proptest::prelude::any;
 use proptest::prelude::*;
 use proptest::sample::SizeRange;
 use std::mem;
-use std::ops::Range;
 
 prop_compose! {
     pub fn array1(len: usize)
@@ -42,7 +38,7 @@ prop_compose! {
     pub fn array2(rows: usize, cols: usize)
         (v in Vec::lift1_with(array1(cols), SizeRange::new(rows..=rows))) -> Array2<f64> {
             assert!(rows > 0);
-            ndarray::stack(Axis(0), &v.iter().map(|x| x.view()).collect::<Vec<ArrayView1<f64>>>()).unwrap()
+            ndarray::stack(Axis(0), &v.iter().map(ndarray::ArrayBase::view).collect::<Vec<ArrayView1<f64>>>()).unwrap()
         }
 }
 
@@ -57,7 +53,7 @@ prop_compose! {
     pub fn bounds1(len: usize)(mut lower in array1(len), mut upper in array1(len)) -> Bounds1<f64> {
         Zip::from(&mut lower).and(&mut upper).for_each(|l, u| if *l > *u {mem::swap(l, u)});
         assert!(Zip::from(&lower).and(&upper).all(|l, u| l <= u));
-        Bounds::new(lower, upper)
+        Bounds::new(lower.view(), upper.view())
     }
 }
 
@@ -82,12 +78,11 @@ prop_compose! {
             pairs.map(|(&x, &y)| affine2(x,y)).collect::<Vec<_>>()}
         ) -> DNN<f64> {
             let mut dnn = DNN::default();
-            affines.into_iter()
-                .for_each(|aff| {
+            for aff in affines {
                     let output_dim = aff.output_dim();
                     dnn.add_layer(Layer::new_dense(aff));
                     dnn.add_layer(Layer::new_relu(output_dim))
-                });
+                }
             dnn
         }
 }
@@ -98,7 +93,7 @@ prop_compose! {
     {
         let lbs = loc.clone() - 3.5 * scale_diag.clone();
         let ubs = loc.clone() + 3.5 * scale_diag.clone();
-        let input_bounds = Bounds1::new(lbs, ubs);
+        let input_bounds = Bounds1::new(lbs.view(), ubs.view());
         let star = Star2::new(Array2::eye(input_size), Array1::zeros(input_size)).with_input_bounds(input_bounds.clone());
         Constellation::new(star, dnn, Some(input_bounds), loc, Array2::from_diag(&scale_diag).to_owned())
     }
@@ -111,11 +106,7 @@ prop_compose! {
             rhs in array1(num_constraints)
         ) -> Inequality<f64> {
             coeffs.rows_mut().into_iter().for_each(|mut row| {
-                let mut all_zeros = false;
                 if row.iter().all(|x| *x == 0.0_f64) {
-                    all_zeros = true;
-                }
-                if all_zeros {
                     let mut rng = rand::thread_rng();
                     let one_idx = rng.gen_range(0..row.len());
                     row[one_idx] = 1.0;

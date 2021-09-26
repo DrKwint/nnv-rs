@@ -10,15 +10,13 @@ use crate::util::solve;
 use crate::NNVFloat;
 use good_lp::ResolutionError;
 use log::debug;
-use log::{error, trace};
-use ndarray::concatenate;
 use ndarray::Array4;
+use ndarray::ArrayView1;
 use ndarray::Dimension;
 use ndarray::Ix4;
 use ndarray::ScalarOperand;
 use ndarray::{Array1, Array2};
-use ndarray::{ArrayView1, ArrayView2};
-use ndarray::{Axis, Ix2, Zip};
+use ndarray::{Axis, Ix2};
 use num::Float;
 use rand::Rng;
 use std::fmt::Debug;
@@ -135,6 +133,7 @@ impl<T: 'static + NNVFloat> Star2<T> {
         }
     }
 
+    /// # Panics
     pub fn with_constraints(mut self, constraints: Polytope<T>) -> Self {
         if self.constraints.is_some() {
             panic!();
@@ -230,7 +229,7 @@ where
     /// # Panics
     /// TODO: Change output type to Option<T>
     ///
-    /// TODO: ResolutionError::Unbounded can result whether or not the
+    /// TODO: `ResolutionError::Unbounded` can result whether or not the
     /// constraints are infeasible if there are zeros in the
     /// objective. This needs to be checked either here or in the
     /// solve function. Currently this is way too hard to do, so we
@@ -290,7 +289,7 @@ where
     pub fn calculate_axis_aligned_bounding_box(&self) -> Bounds1<T> {
         let lbs = Array1::from_iter((0..self.representation_space_dim()).map(|x| self.get_min(x)));
         let ubs = Array1::from_iter((0..self.representation_space_dim()).map(|x| self.get_max(x)));
-        Bounds1::new(lbs, ubs)
+        Bounds1::new(lbs.view(), ubs.view())
     }
 
     /// Check whether the Star set is empty.
@@ -407,7 +406,7 @@ impl<T: 'static + NNVFloat> Star4<T> {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::test_util::*;
+    use crate::test_util::{array2, empty_star, non_empty_star};
     use ndarray::arr1;
     use proptest::prelude::*;
     use proptest::proptest;
@@ -500,7 +499,4 @@ mod test {
 
 
     }
-
-    #[test]
-    fn test_gaussian_sample() {}
 }

@@ -40,6 +40,11 @@ shh = "^1.0.1"
 ndarray-rand = "^0.14.0"
 proptest = "1.0.0"
 proptest-derive = "0.2.0"
+criterion = "0.3"
+
+[[bench]]
+name = "my_benchmark"
+harness = false
 
 [dev-dependencies.cargo-husky]
 version = "1"

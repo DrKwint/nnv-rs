@@ -62,6 +62,8 @@ impl<T: Float, D: Dimension> Affine<T, D> {
 
 impl<T: Float, D: Dimension + ndarray::RemoveAxis> Affine<T, D> {
     /// Get a single equation (i.e., a set of coefficients and a shift/RHS)
+    ///
+    /// # Panics
     pub fn get_eqn(&self, index: usize) -> Self {
         let idx = isize::try_from(index).unwrap();
         let basis = self
@@ -156,7 +158,8 @@ impl<T: 'static + Float> Affine2<T> {
         )
     }
 
-    pub fn append(mut self, other: Self) -> Self {
+    /// # Panics
+    pub fn append(mut self, other: &Self) -> Self {
         self.basis.append(Axis(1), other.basis.view()).unwrap();
         self
     }
@@ -174,9 +177,10 @@ impl<T: 'static + Float + Sum + Debug> Affine2<T> {
             &bounds.upper().view(),
             &bounds.lower().view(),
         ) + &self.shift;
-        Bounds1::new(lower, upper)
+        Bounds1::new(lower.view(), upper.view())
     }
 
+    /// # Panics
     pub fn signed_compose(&self, pos_rhs: &Self, neg_rhs: &Self) -> Self {
         assert_eq!(
             self.input_dim(),
@@ -325,9 +329,6 @@ impl<T: 'static + Float> Affine<T, Ix4> {
 mod tests {
     use crate::affine::Affine2;
     use crate::test_util::*;
-    use ndarray::Array;
-    use ndarray::Array2;
-    use ndarray::ArrayView;
     use proptest::prelude::*;
 
     proptest! {
