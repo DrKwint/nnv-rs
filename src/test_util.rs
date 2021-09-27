@@ -5,12 +5,14 @@ use crate::polytope::Polytope;
 use crate::star::Star2;
 use crate::Bounds;
 use crate::Bounds1;
+use crate::Constellation;
 use crate::Layer;
 use crate::DNN;
 use ndarray::Array1;
 use ndarray::Array2;
 use ndarray::ArrayView1;
 use ndarray::Axis;
+use ndarray::Ix2;
 use ndarray::Zip;
 use proptest::arbitrary::functor::ArbitraryF1;
 use proptest::prelude::any;
@@ -21,6 +23,13 @@ use std::mem;
 prop_compose! {
     pub fn array1(len: usize)
         (v in Vec::lift1_with(-10. .. 10., SizeRange::new(len..=len))) -> Array1<f64> {
+            Array1::from_vec(v)
+        }
+}
+
+prop_compose! {
+    pub fn pos_def_array1(len: usize)
+        (v in Vec::lift1_with(0.00001 .. 10., SizeRange::new(len..=len))) -> Array1<f64> {
             Array1::from_vec(v)
         }
 }
@@ -76,6 +85,18 @@ prop_compose! {
                 }
             dnn
         }
+}
+
+prop_compose! {
+    pub fn constellation(input_size: usize, output_size: usize, nlayers: usize, max_layer_width: usize)
+        (loc in array1(input_size), scale_diag in pos_def_array1(input_size), dnn in fc_dnn(input_size, output_size, nlayers, max_layer_width)) -> Constellation<f64, Ix2>
+    {
+        let lbs = loc.clone() - 3.5 * scale_diag.clone();
+        let ubs = loc.clone() + 3.5 * scale_diag.clone();
+        let input_bounds = Bounds1::new(lbs.view(), ubs.view());
+        let star = Star2::new(Array2::eye(input_size), Array1::zeros(input_size)).with_input_bounds(input_bounds.clone());
+        Constellation::new(star, dnn, Some(input_bounds), loc, Array2::from_diag(&scale_diag).to_owned())
+    }
 }
 
 prop_compose! {
@@ -275,6 +296,24 @@ prop_compose! {
         }
 }
 
+prop_compose! {
+    pub fn generic_fc_dnn(max_input_size: usize, max_output_size: usize, max_nlayers: usize, max_layer_width: usize)
+        (input_size in 1..max_input_size, output_size in 1..max_output_size, nlayers in 1..max_nlayers)
+        (dnn in fc_dnn(input_size, output_size, nlayers, max_layer_width)) -> DNN<f64>
+    {
+        dnn
+    }
+}
+
+prop_compose! {
+    pub fn generic_constellation(max_input_size: usize, max_output_size: usize, max_nlayers: usize, max_layer_width: usize)
+        (input_size in 1..max_input_size, output_size in 1..max_output_size, nlayers in 1..max_nlayers)
+        (constellation in constellation(input_size, output_size, nlayers, max_layer_width)) -> Constellation<f64, Ix2>
+        {
+            constellation
+        }
+}
+
 proptest! {
     #[test]
     fn test_inequality_including_zero(ineq in generic_inequality_including_zero(2, 4)) {
@@ -295,5 +334,11 @@ proptest! {
     #[test]
     fn test_non_empty_star(star in generic_non_empty_star(2, 4)) {
         prop_assert!(!star.is_empty());
+    }
+
+    #[test]
+    fn test_generic_fc_dnn(_dnn in generic_fc_dnn(5, 5, 5, 5)) {
+        // Yes, this is the full test. The test is that we can
+        // construct varying sizes of dnns.
     }
 }

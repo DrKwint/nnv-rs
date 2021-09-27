@@ -12,20 +12,23 @@ use log::debug;
 use ndarray::Dimension;
 use ndarray::Ix2;
 use ndarray::{Array1, Array2};
-use num::Float;
 use rand::distributions::{Bernoulli, Distribution};
 use rand::Rng;
 use std::iter::Sum;
 
 /// Data structure representing the paths through a deep neural network (DNN)
-pub struct Constellation<T: Float, D: Dimension> {
+#[derive(Debug)]
+pub struct Constellation<T: NNVFloat, D: Dimension> {
     arena: Vec<StarNode<T, D>>,
     children: Vec<Option<StarNodeType<T>>>,
+    cdf: Vec<Option<T>>,
+    loc: Array1<T>,
+    scale: Array2<T>,
     dnn: DNN<T>,
     input_bounds: Option<Bounds<T, D>>,
 }
 
-impl<T: Float, D: Dimension> Constellation<T, D>
+impl<T: NNVFloat, D: Dimension> Constellation<T, D>
 where
     T: std::convert::From<f64>
         + std::convert::Into<f64>
@@ -38,13 +41,23 @@ where
     f64: std::convert::From<T>,
 {
     /// Instantiate a Constellation with given input set and network
-    pub fn new(input_star: Star<T, D>, dnn: DNN<T>, input_bounds: Option<Bounds<T, D>>) -> Self {
+    pub fn new(
+        input_star: Star<T, D>,
+        dnn: DNN<T>,
+        input_bounds: Option<Bounds<T, D>>,
+        loc: Array1<T>,
+        scale: Array2<T>,
+    ) -> Self {
         let star_node = StarNode::default(input_star);
         let children = vec![None];
         let arena = vec![star_node];
+        let cdf = vec![None];
         Self {
             arena,
             children,
+            cdf,
+            loc,
+            scale,
             dnn,
             input_bounds,
         }
@@ -65,6 +78,12 @@ where
         child_idx
     }
 
+    pub fn reset_input_distribution(&mut self, loc: Array1<T>, scale: Array2<T>) {
+        self.loc = loc;
+        self.scale = scale;
+        self.cdf.iter_mut().for_each(|x| *x = None);
+    }
+
     pub fn reset_with_star(&mut self, input_star: Star<T, D>, input_bounds: Option<Bounds<T, D>>) {
         let star_node = StarNode::default(input_star);
         self.arena = vec![star_node];
@@ -77,7 +96,7 @@ where
             Some(StarNodeType::Leaf) => Some(vec![]),
             Some(StarNodeType::Affine { child_idx }) => Some(vec![child_idx]),
             Some(StarNodeType::StepRelu {
-                dim,
+                dim: _,
                 fst_child_idx,
                 snd_child_idx,
             }) => {
@@ -136,8 +155,6 @@ where
     pub fn bounded_sample_multivariate_gaussian<R: Rng>(
         &mut self,
         rng: &mut R,
-        loc: &Array1<T>,
-        scale: &Array2<T>,
         safe_value: T,
         cdf_samples: usize,
         num_samples: usize,
@@ -145,10 +162,17 @@ where
     ) -> (Vec<(Array1<T>, T)>, T) {
         let input_bounds = self.input_bounds.clone();
         if let Some((safe_star, path_logp)) =
-            self.sample_safe_star(loc, scale, safe_value, cdf_samples, max_iters)
+            self.sample_safe_star(safe_value, cdf_samples, max_iters)
         {
             (
-                safe_star.gaussian_sample(rng, loc, scale, num_samples, max_iters, &input_bounds),
+                safe_star.gaussian_sample(
+                    rng,
+                    &self.loc,
+                    &self.scale,
+                    num_samples,
+                    max_iters,
+                    &input_bounds,
+                ),
                 path_logp,
             )
         } else {
@@ -171,20 +195,19 @@ where
         + Sum,
     f64: std::convert::From<T>,
 {
+    ///
     /// # Panics
+    ///
+    /// loc, scale: Input Gaussian
+    /// safe_value
     #[allow(clippy::too_many_lines)]
     pub fn sample_safe_star(
         &mut self,
-        loc: &Array1<T>,
-        scale: &Array2<T>,
         safe_value: T,
         cdf_samples: usize,
         max_iters: usize,
     ) -> Option<(StarNode<T, Ix2>, T)> {
-        debug!(
-            "Running sample_safe_star with loc: {} scale {} safe_value {}",
-            loc, scale, safe_value
-        );
+        debug!("Running sample_safe_star with: safe_value {}", safe_value);
         let mut rng = rand::thread_rng();
         let mut current_node = 0;
         let mut path = vec![];
@@ -198,7 +221,7 @@ where
             debug!("Infeasible reset!");
             me.arena[x].set_feasible(false);
             let mut infeas_cdf =
-                me.arena[x].gaussian_cdf(loc, scale, cdf_samples, max_iters, &input_bounds);
+                me.arena[x].gaussian_cdf(&me.loc, &me.scale, cdf_samples, max_iters, &input_bounds);
             path.drain(..).rev().for_each(|x| {
                 // check if all chilren are infeasible
                 if me
@@ -211,8 +234,13 @@ where
                     me.arena[x].add_cdf(T::neg(T::one()) * infeas_cdf);
                 } else {
                     me.arena[x].set_feasible(false);
-                    infeas_cdf =
-                        me.arena[x].gaussian_cdf(loc, scale, cdf_samples, max_iters, &input_bounds)
+                    infeas_cdf = me.arena[x].gaussian_cdf(
+                        &me.loc,
+                        &me.scale,
+                        cdf_samples,
+                        max_iters,
+                        &input_bounds,
+                    )
                 }
             });
             *path_logp = T::zero();
@@ -255,15 +283,8 @@ where
                 //     let safe_star = self.arena[current_node].clone();
                 //     return Some((safe_star, path_logp));
                 // }
-                let result = self.select_child(
-                    current_node,
-                    path_logp,
-                    loc,
-                    scale,
-                    cdf_samples,
-                    max_iters,
-                    &mut rng,
-                );
+                let result =
+                    self.select_child(current_node, path_logp, cdf_samples, max_iters, &mut rng);
                 match result {
                     Some((node, logp)) => {
                         current_node = node;
@@ -375,8 +396,6 @@ where
         &mut self,
         current_node: usize,
         mut path_logp: T,
-        loc: &Array1<T>,
-        scale: &Array2<T>,
         cdf_samples: usize,
         max_iters: usize,
         rng: &mut rand::rngs::ThreadRng,
@@ -408,8 +427,8 @@ where
                         debug!(
                             "One child with cdf: {}",
                             self.arena[children[0]].gaussian_cdf(
-                                loc,
-                                scale,
+                                &self.loc,
+                                &self.scale,
                                 cdf_samples,
                                 max_iters,
                                 &input_bounds
@@ -419,15 +438,15 @@ where
                     }
                     2 => {
                         let fst_cdf = self.arena[children[0]].gaussian_cdf(
-                            loc,
-                            scale,
+                            &self.loc,
+                            &self.scale,
                             cdf_samples,
                             max_iters,
                             &input_bounds,
                         );
                         let snd_cdf = self.arena[children[1]].gaussian_cdf(
-                            loc,
-                            scale,
+                            &self.loc,
+                            &self.scale,
                             cdf_samples,
                             max_iters,
                             &input_bounds,
@@ -442,29 +461,41 @@ where
                         );
 
                         // Handle the case where a CDF gives a non-normal value
+                        debug_assert!(fst_cdf.is_sign_positive());
+                        debug_assert!(snd_cdf.is_sign_positive());
                         let fst_prob = match (fst_cdf.is_normal(), snd_cdf.is_normal()) {
                             (true, true) => fst_cdf / (fst_cdf + snd_cdf),
                             (false, true) => {
                                 let parent_cdf = self.arena[current_node].gaussian_cdf(
-                                    loc,
-                                    scale,
+                                    &self.loc,
+                                    &self.scale,
                                     cdf_samples,
                                     max_iters,
                                     &input_bounds,
                                 );
-                                let derived_fst_cdf = parent_cdf - snd_cdf;
+                                let mut derived_fst_cdf = parent_cdf - snd_cdf;
+
+                                // CDFs are estimates and it is
+                                // possible for the parent to have
+                                // smaller CDF than the child.
+                                if derived_fst_cdf.is_sign_negative() {
+                                    derived_fst_cdf = T::epsilon();
+                                }
                                 self.arena[children[0]].set_cdf(derived_fst_cdf);
                                 derived_fst_cdf / (derived_fst_cdf + snd_cdf)
                             }
                             (true, false) => {
                                 let parent_cdf = self.arena[current_node].gaussian_cdf(
-                                    loc,
-                                    scale,
+                                    &self.loc,
+                                    &self.scale,
                                     cdf_samples,
                                     max_iters,
                                     &input_bounds,
                                 );
-                                let derived_snd_cdf = parent_cdf - fst_cdf;
+                                let mut derived_snd_cdf = parent_cdf - fst_cdf;
+                                if derived_snd_cdf.is_sign_negative() {
+                                    derived_snd_cdf = T::epsilon();
+                                }
                                 self.arena[children[1]].set_cdf(derived_snd_cdf);
                                 fst_cdf / (fst_cdf + derived_snd_cdf)
                             }
@@ -474,7 +505,7 @@ where
                             }
                         };
                         // Safe unwrap due to above handling
-                        let dist = Bernoulli::new(fst_prob.into()).unwrap();
+                        let dist = Bernoulli::new(fst_prob.clone().into()).expect(&format!("Bad fst_prob: {:?} fst_cdf: {:?} snd_cdf: {:?}, fst_n {:?}, snd_n {:?}", fst_prob, fst_cdf, snd_cdf, fst_cdf.is_normal(), snd_cdf.is_normal()));
                         if dist.sample(rng) {
                             path_logp += fst_prob.ln();
                             Some((children[0], path_logp))
@@ -519,15 +550,15 @@ where
                         1 => Some((children[0], path_logp)),
                         _ => {
                             let fst_cdf = self.arena[children[0]].gaussian_cdf(
-                                loc,
-                                scale,
+                                &self.loc,
+                                &self.scale,
                                 cdf_samples,
                                 max_iters,
                                 &input_bounds,
                             );
                             let snd_cdf = self.arena[children[1]].gaussian_cdf(
-                                loc,
-                                scale,
+                                &self.loc,
+                                &self.scale,
                                 cdf_samples,
                                 max_iters,
                                 &input_bounds,
@@ -538,8 +569,8 @@ where
                                 (true, true) => fst_cdf / (fst_cdf + snd_cdf),
                                 (false, true) => {
                                     let parent_cdf = self.arena[current_node].gaussian_cdf(
-                                        loc,
-                                        scale,
+                                        &self.loc,
+                                        &self.scale,
                                         cdf_samples,
                                         max_iters,
                                         &input_bounds,
@@ -550,8 +581,8 @@ where
                                 }
                                 (true, false) => {
                                     let parent_cdf = self.arena[current_node].gaussian_cdf(
-                                        loc,
-                                        scale,
+                                        &self.loc,
+                                        &self.scale,
                                         cdf_samples,
                                         max_iters,
                                         &input_bounds,
@@ -578,6 +609,23 @@ where
                     }
                 }
             }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::affine::Affine2;
+    use crate::test_util::*;
+    use ndarray::Array;
+    use ndarray::Array2;
+    use ndarray::ArrayView;
+    use proptest::prelude::*;
+
+    proptest! {
+        #[test]
+        fn test_sample_safe_star(mut constellation in generic_constellation(2, 2, 2, 2)) {
+            constellation.sample_safe_star(1.0, 1, 1);
         }
     }
 }

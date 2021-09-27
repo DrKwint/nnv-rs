@@ -6,6 +6,8 @@ use crate::dnn::DNNIndex;
 use crate::dnn::DNNIterator;
 use crate::dnn::DNN;
 use crate::star::Star;
+use crate::NNVFloat;
+use log::debug;
 use log::trace;
 use ndarray::Dimension;
 use ndarray::Ix2;
@@ -16,14 +18,14 @@ use std::fmt::Debug;
 use std::iter::Sum;
 
 #[derive(Debug, Clone)]
-pub enum StarNodeOp<T: num::Float> {
+pub enum StarNodeOp<T: NNVFloat> {
     Leaf,
     Affine(Affine2<T>),
     StepRelu(usize),
     StepReluDropout((T, usize)),
 }
 
-impl<T: num::Float + Default + Sum + Debug + 'static> StarNodeOp<T> {
+impl<T: NNVFloat> StarNodeOp<T> {
     /// bounds: Output bounds: Concrete bounds
     /// affs: Input bounds: Abstract bounds in terms of inputs
     ///
@@ -55,7 +57,7 @@ impl<T: num::Float + Default + Sum + Debug + 'static> StarNodeOp<T> {
 }
 
 #[derive(Debug, Clone)]
-pub enum StarNodeType<T: num::Float> {
+pub enum StarNodeType<T: NNVFloat> {
     Leaf,
     Affine {
         child_idx: usize,
@@ -75,7 +77,7 @@ pub enum StarNodeType<T: num::Float> {
 }
 
 #[derive(Debug, Clone)]
-pub struct StarNode<T: num::Float, D: Dimension> {
+pub struct StarNode<T: NNVFloat, D: Dimension> {
     star: Star<T, D>,
     dnn_index: DNNIndex,
     star_cdf: Option<T>,
@@ -83,7 +85,7 @@ pub struct StarNode<T: num::Float, D: Dimension> {
     is_feasible: bool,
 }
 
-impl<T: num::Float, D: Dimension> StarNode<T, D> {
+impl<T: NNVFloat, D: Dimension> StarNode<T, D> {
     pub fn default(star: Star<T, D>) -> Self {
         Self {
             star,
@@ -100,7 +102,7 @@ impl<T: num::Float, D: Dimension> StarNode<T, D> {
     }
 }
 
-impl<T: num::Float, D: Dimension> StarNode<T, D>
+impl<T: NNVFloat, D: Dimension> StarNode<T, D>
 where
     T: std::convert::From<f64>
         + std::convert::Into<f64>
@@ -134,7 +136,11 @@ where
     /// # Panics
     pub fn add_cdf(&mut self, add: T) {
         if let Some(ref mut cdf) = self.star_cdf {
-            *cdf += add
+            *cdf += add;
+            // Do this test due to cdfs being approximations
+            if cdf.is_sign_negative() {
+                *cdf = T::epsilon();
+            }
         } else {
             // TODO
         }
@@ -179,11 +185,15 @@ where
                 let out = self
                     .star
                     .trunc_gaussian_cdf(mu, sigma, n, max_iters, input_bounds);
-                let cdf = out.0.into();
+                let cdf: T = out.0.into();
+                debug_assert!(cdf.is_sign_positive());
                 self.star_cdf = Some(cdf);
                 cdf
             },
-            |cdf| cdf,
+            |cdf| {
+                debug_assert!(cdf.is_sign_positive());
+                cdf
+            },
         )
     }
 
