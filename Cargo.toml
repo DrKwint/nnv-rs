@@ -40,7 +40,7 @@ shh = "^1.0.1"
 ndarray-rand = "^0.14.0"
 proptest = "1.0.0"
 proptest-derive = "0.2.0"
-criterion = "0.3"
+criterion = { version = "0.3", features = ["html_reports"] }
 pprof = { version = "0.5", features = ["flamegraph", "criterion" ] }
 
 [[bench]]

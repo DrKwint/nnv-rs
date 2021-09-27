@@ -37,28 +37,19 @@ impl<T: NNVFloat> DNN<T> {
         &self.layers
     }
 }
-impl<T: NNVFloat> DNN<T>
-where
-    f64: std::convert::From<T>,
-{
+impl<T: NNVFloat> DNN<T> {
     pub fn forward(&self, input: ArrayD<T>) -> ArrayD<T> {
         self.layers.iter().fold(input, |x, layer| layer.forward(x))
     }
 }
 
-impl<T: NNVFloat> DNN<T>
-where
-    f64: std::convert::From<T>,
-{
+impl<T: NNVFloat> DNN<T> {
     pub fn input_shape(&self) -> TensorShape {
         self.layers[0].input_shape()
     }
 }
 
-impl<T: NNVFloat> fmt::Display for DNN<T>
-where
-    f64: std::convert::From<T>,
-{
+impl<T: NNVFloat> fmt::Display for DNN<T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let layers: Vec<String> = self.layers.iter().map(|x| format!("{}", x)).collect();
         write!(f, "Input {} => {}", self.input_shape(), layers.join(" => "))
@@ -94,10 +85,7 @@ impl<T: NNVFloat> Layer<T> {
     }
 }
 
-impl<T: NNVFloat> Layer<T>
-where
-    f64: std::convert::From<T>,
-{
+impl<T: NNVFloat> Layer<T> {
     /// # Panics
     pub fn input_shape(&self) -> TensorShape {
         match self {

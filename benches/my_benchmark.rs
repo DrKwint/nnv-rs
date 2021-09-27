@@ -38,7 +38,7 @@ fn bench(c: &mut Criterion) {
         (Array1::ones(input_size) * 3.5).view(),
     );
     let root_star = Star2::default(&dnn.input_shape()).with_input_bounds(bounds.clone());
-    let mut root_node = StarNode::default(root_star.clone());
+    let mut root_node = StarNode::default(root_star.clone(), None);
     let loc = Array1::zeros(input_size);
     let scale = Array2::from_diag(&Array1::ones(input_size));
     c.bench_function("starnode::get_output_bounds from root", |b| {
@@ -48,9 +48,14 @@ fn bench(c: &mut Criterion) {
     group.sample_size(10);
     group.bench_function("constellation::sample_safe_star", |b| {
         b.iter(|| {
-            let mut constellation =
-                Constellation::new(root_star.clone(), dnn.clone(), Some(bounds.clone()));
-            constellation.sample_safe_star(&loc, &scale, 1., 100, 20)
+            let mut constellation = Constellation::new(
+                root_star.clone(),
+                dnn.clone(),
+                Some(bounds.clone()),
+                loc.clone(),
+                scale.clone(),
+            );
+            constellation.sample_safe_star(1., 100, 20)
         })
     });
     group.finish();

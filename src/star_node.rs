@@ -54,7 +54,7 @@ impl<T: NNVFloat> StarNodeOp<T> {
 }
 
 #[derive(Debug, Clone)]
-pub enum StarNodeType<T: num::Float> {
+pub enum StarNodeType<T: NNVFloat> {
     Leaf,
     Affine {
         child_idx: usize,
@@ -125,7 +125,11 @@ impl<T: NNVFloat, D: Dimension> StarNode<T, D> {
     /// # Panics
     pub fn add_cdf(&mut self, add: T) {
         if let Some(ref mut cdf) = self.star_cdf {
-            *cdf += add
+            *cdf += add;
+            // Do this test due to cdfs being approximations
+            if cdf.is_sign_negative() {
+                *cdf = T::epsilon();
+            }
         } else {
             // TODO
         }
@@ -158,11 +162,15 @@ impl<T: NNVFloat> StarNode<T, Ix2> {
                 let out = self
                     .star
                     .trunc_gaussian_cdf(mu, sigma, n, max_iters, input_bounds);
-                let cdf = out.0.into();
+                let cdf: T = out.0.into();
+                debug_assert!(cdf.is_sign_positive());
                 self.star_cdf = Some(cdf);
                 cdf
             },
-            |cdf| cdf,
+            |cdf| {
+                debug_assert!(cdf.is_sign_positive());
+                cdf
+            },
         )
     }
 
@@ -182,33 +190,6 @@ impl<T: NNVFloat> StarNode<T, Ix2> {
             .iter()
             .map(|(arr, val)| (arr.mapv(|x| x.into()), num::NumCast::from(*val).unwrap()))
             .collect()
-    }
-
-    pub fn _calculate_output_bounds(
-        &mut self,
-        dnn: &DNN<T>,
-        output_fn: &dyn Fn(Bounds1<T>) -> (T, T),
-    ) {
-        trace!("get_output_bounds on star {:?}", self.star);
-        let bounding_box = self.star.calculate_axis_aligned_bounding_box();
-        // TODO: update this to use DeepPoly to get proper bounds rather than this estimate
-        /*
-            let bounds = {
-            let out_star = dnn
-            .get_layers()
-            .iter()
-            .skip(self.dnn_layer)
-            .fold(self.star.clone(), |s: Star<T, Ix2>, l: &Layer<T>| {
-            l.apply_star2(s)
-        });
-            (out_star.clone().get_min(idx), out_star.get_max(idx))
-        };
-            self.output_bounds = Some(bounds);
-             */
-        self.output_bounds = Some(output_fn(deep_poly(
-            &bounding_box,
-            DNNIterator::new(dnn, self.dnn_index),
-        )));
     }
 
     /// # Panics
@@ -231,5 +212,17 @@ impl<T: NNVFloat> StarNode<T, Ix2> {
             self.output_bounds = Some(output_fn(deep_poly(self.get_local_bounds(), dnn_iter)));
         }
         self.output_bounds.unwrap()
+    }
+}
+
+/// Testing getters and setters
+#[cfg(test)]
+impl<T: NNVFloat> StarNode<T, Ix2> {
+    pub fn get_local_bounds_direct(&self) -> Option<&Bounds1<T>> {
+        self.local_bounds.as_ref()
+    }
+
+    pub fn set_local_bounds_direct(&mut self, bounds: Option<Bounds1<T>>) {
+        self.local_bounds = bounds
     }
 }

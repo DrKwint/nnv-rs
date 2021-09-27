@@ -18,6 +18,7 @@ pub struct Inequality<T: NNVFloat> {
 
 impl<T: NNVFloat> Inequality<T> {
     pub fn new(coeffs: Array2<T>, rhs: Array1<T>) -> Self {
+        debug_assert_eq!(coeffs.nrows(), rhs.len());
         Self { coeffs, rhs }
     }
 
@@ -88,20 +89,32 @@ impl<T: NNVFloat> Inequality<T> {
 
     /// Assumes that the zero valued
     ///
+    /// TODO: Test this function
+    ///
     /// # Panics
-    pub fn reduce_with_values(&self, x: ArrayView1<T>, idxs: ArrayView1<bool>) -> Self {
-        let rhs_reduction: Array1<T> = self.coeffs.dot(&x);
-        let new_rhs = &self.rhs - rhs_reduction;
+    pub fn reduce_with_values(
+        &self,
+        x: ArrayView1<T>,
+        fixed_idxs: ArrayView1<bool>,
+    ) -> Option<Self> {
+        if fixed_idxs.iter().all(|y| *y) {
+            return None;
+        }
+        // Reduce the rhs of each constraint
+        let lhs_values: Array1<T> = self.coeffs.dot(&x);
+        let reduced_rhs = &self.rhs - lhs_values;
 
-        let vars = self.coeffs.columns();
-        let new_coeffs: Vec<ArrayView2<T>> = vars
+        // Remove the variables that are fixed
+        let new_coeffs: Vec<ArrayView2<T>> = self
+            .coeffs
+            .columns()
             .into_iter()
-            .zip(&idxs)
-            .filter(|x| *x.1)
+            .zip(&fixed_idxs)
+            .filter(|x| !*x.1)
             .map(|x| x.0.insert_axis(Axis(1)))
             .collect();
         let new_eqns = concatenate(Axis(1), new_coeffs.as_slice()).unwrap();
-        Self::new(new_eqns, new_rhs)
+        Some(Self::new(new_eqns, reduced_rhs))
     }
 }
 

@@ -5,11 +5,12 @@ use crate::inequality::Inequality;
 use crate::rand::distributions::Distribution;
 use rand::Rng;
 
-use crate::ndarray_linalg::Inverse;
+use crate::ndarray_linalg::{Eigh, Inverse, UPLO};
 use crate::util::embed_identity;
 use crate::util::l2_norm;
 use crate::util::solve;
 use crate::util::LinearExpression;
+use crate::NNVFloat;
 use good_lp::solvers::highs::highs;
 use log::debug;
 use ndarray::Slice;
@@ -31,7 +32,6 @@ use ndarray::Ix1;
 use ndarray::Zip;
 use ndarray::{array, Array1, Axis};
 
-use crate::NNVFloat;
 use std::collections::HashMap;
 use std::fmt::Debug;
 
@@ -100,7 +100,16 @@ impl<T: NNVFloat> Polytope<T> {
     ) -> (f64, f64, f64) {
         let (sq_constr_lb, sq_constr_ub, sq_constr_sigma, _sq_coeffs) = self.prepare(mu, sigma);
         debug!("Gaussian CDF with mu {:?} sigma {:?}", mu, sq_constr_sigma);
-        mv_truncnormal_cdf(sq_constr_lb, sq_constr_ub, sq_constr_sigma, n, max_iters)
+        if cfg!(test) || cfg!(debug) {
+            let (eigvals, _) = sq_constr_sigma.eigh(UPLO::Lower).unwrap();
+            debug_assert!(eigvals.into_iter().all(|x| !x.is_sign_negative()));
+        }
+
+        // println!("Gaussian CDF with mu {:?} sigma {:?} lb {:?} ub {:?}", mu, sq_constr_sigma, sq_constr_lb, sq_constr_ub);
+        let (est, est_err, ub) =
+            mv_truncnormal_cdf(sq_constr_lb, sq_constr_ub, sq_constr_sigma, n, max_iters);
+        debug_assert!(est >= 0.);
+        (est, est_err, ub)
     }
 
     fn prepare(
@@ -236,35 +245,36 @@ impl<T: NNVFloat> Polytope<T> {
         &self,
         lbs: &ArrayView1<T>,
         ubs: &ArrayView1<T>,
-    ) -> (Self, (Array1<T>, Array1<T>)) {
-        let fixed_idxs = Zip::from(lbs).and(ubs).map_collect(|&lb, &ub| !(lb == ub));
+    ) -> Option<(Self, (Array1<T>, Array1<T>))> {
+        let fixed_idxs = Zip::from(lbs).and(ubs).map_collect(|&lb, &ub| lb == ub);
         let fixed_vals = Zip::from(lbs)
             .and(ubs)
             .map_collect(|&lb, &ub| if lb == ub { lb } else { T::zero() });
 
         // update eqns
-        let new_halfspaces = self
+        if let Some(halfspaces) = self
             .halfspaces
-            .reduce_with_values(fixed_vals.view(), fixed_idxs.view());
+            .reduce_with_values(fixed_vals.view(), fixed_idxs.view())
+        {
+            let reduced_poly = Self { halfspaces };
 
-        // update bounds
-        let new_lbs: Array1<T> = lbs
-            .into_iter()
-            .zip(&fixed_idxs)
-            .filter(|(_lb, &is_fix)| is_fix)
-            .map(|(&lb, _is_fix)| lb)
-            .collect();
-        let new_ubs: Array1<T> = ubs
-            .into_iter()
-            .zip(&fixed_idxs)
-            .filter(|(_ub, &is_fix)| is_fix)
-            .map(|(&ub, _is_fix)| ub)
-            .collect();
-
-        let reduced_poly = Self {
-            halfspaces: new_halfspaces,
-        };
-        (reduced_poly, (new_lbs, new_ubs))
+            // update bounds
+            let new_lbs: Array1<T> = lbs
+                .into_iter()
+                .zip(&fixed_idxs)
+                .filter(|(_lb, &is_fix)| !is_fix)
+                .map(|(&lb, _is_fix)| lb)
+                .collect();
+            let new_ubs: Array1<T> = ubs
+                .into_iter()
+                .zip(&fixed_idxs)
+                .filter(|(_ub, &is_fix)| !is_fix)
+                .map(|(&ub, _is_fix)| ub)
+                .collect();
+            Some((reduced_poly, (new_lbs, new_ubs)))
+        } else {
+            None
+        }
     }
 }
 

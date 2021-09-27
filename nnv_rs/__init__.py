@@ -74,12 +74,14 @@ class DNN:
 
 
 class Constellation:
-    def __init__(self, dnn, input_bounds=None, safe_value=np.inf):
+    def __init__(self, dnn, loc, scale, input_bounds=None, safe_value=np.inf):
         if dnn is None:
             self.constellation = None
         else:
             self.constellation = PyConstellation(dnn.dnn, input_bounds)
         self.safe_value = safe_value
+        self.loc = np.squeeze(loc).astype(np.float64)
+        self.scale = np.squeeze(scale).astype(np.float64)
 
     def set_dnn(self, dnn):
         if self.constellation is None:
@@ -93,34 +95,25 @@ class Constellation:
                         loc + SAMPLE_STD_DEVS * scale)
         self.constellation.set_input_bounds(fixed_part, unfixed_part)
 
-    def importance_sample(self, loc, scale):
+    def importance_sample(self):
         pass
 
-    def bounded_sample_with_input_bounds(self, loc, scale, fixed_part):
-        loc = np.squeeze(loc).astype(np.float64)
-        scale = np.squeeze(scale).astype(np.float64)
+    def bounded_sample_with_input_bounds(self, fixed_part):
         fixed_part = np.squeeze(fixed_part).astype(np.float64)
-        self.set_input_bounds(fixed_part, loc, scale)
-        return self.bounded_sample(loc, scale)
+        self.set_input_bounds(fixed_part, self.loc, self.scale)
+        return self.bounded_sample(self.loc, self.scale)
 
-    def bounded_sample(self, loc, scale):
-        loc = np.squeeze(loc).astype(np.float64)
-        scale = np.squeeze(scale).astype(np.float64)
+    def bounded_sample(self):
         if self.safe_value == np.inf:
-            sample = np.random.normal(loc[-len(scale):], scale)
+            sample = np.random.normal(self.loc[-len(self.scale):], self.scale)
             prob = 1.
-            for (samp, l, s) in zip(sample, loc, scale):
+            for (samp, l, s) in zip(sample, self.loc, self.scale):
                 prob *= norm.pdf(samp, l, s)
             return sample, np.log(prob + 1e-12)
         sample, sample_logp, branch_logp = self.constellation.bounded_sample_multivariate_gaussian(
-            loc,
-            np.diag(scale),
-            self.safe_value,
-            cdf_samples=100,
-            num_samples=20,
-            max_iters=10)
+            self.safe_value, cdf_samples=100, num_samples=20, max_iters=10)
         prob = 1.
-        for (samp, l, s) in zip(sample, loc, scale):
+        for (samp, l, s) in zip(sample, self.loc, self.scale):
             prob *= norm.pdf(samp, l, s)
         normal_logp = np.log(prob)
         truncnorm_prob = np.exp(sample_logp)

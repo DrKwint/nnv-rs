@@ -10,7 +10,7 @@ use ndarray::ShapeError;
 use ndarray::Zip;
 use ndarray::{Array, Array1, Array2, Array4};
 use ndarray::{ArrayView1, ArrayView2};
-use ndarray::{ArrayViewMut0, ArrayViewMut1};
+use ndarray::{ArrayViewMut0, ArrayViewMut1, ArrayViewMut2};
 use ndarray::{Axis, Dimension};
 use ndarray::{Ix1, Ix2, Ix4, IxDyn};
 use std::convert::TryFrom;
@@ -109,6 +109,10 @@ impl<T: NNVFloat> Affine2<T> {
         self.basis.view()
     }
 
+    pub fn basis_mut(&mut self) -> ArrayViewMut2<T> {
+        self.basis.view_mut()
+    }
+
     pub fn input_dim(&self) -> usize {
         self.basis.shape()[1]
     }
@@ -123,6 +127,7 @@ impl<T: NNVFloat> Affine2<T> {
 
     pub fn zero_eqn(&mut self, idx: usize) {
         self.basis.index_axis_mut(Axis(0), idx).fill(num::zero());
+        self.shift.index_axis_mut(Axis(0), idx).fill(num::zero());
     }
 
     pub fn get_raw_augmented(&self) -> Array2<T> {

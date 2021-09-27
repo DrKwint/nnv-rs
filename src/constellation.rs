@@ -12,28 +12,41 @@ use log::debug;
 use ndarray::Dimension;
 use ndarray::Ix2;
 use ndarray::{Array1, Array2};
-use num::Float;
 use rand::distributions::{Bernoulli, Distribution};
 use rand::Rng;
-use std::iter::Sum;
+use std::fmt;
 
 /// Data structure representing the paths through a deep neural network (DNN)
+#[derive(Debug)]
 pub struct Constellation<T: NNVFloat, D: Dimension> {
     arena: Vec<StarNode<T, D>>,
     children: Vec<Option<StarNodeType<T>>>,
+    cdf: Vec<Option<T>>,
+    loc: Array1<T>,
+    scale: Array2<T>,
     dnn: DNN<T>,
     input_bounds: Option<Bounds<T, D>>,
 }
 
 impl<T: NNVFloat, D: Dimension> Constellation<T, D> {
     /// Instantiate a Constellation with given input set and network
-    pub fn new(input_star: Star<T, D>, dnn: DNN<T>, input_bounds: Option<Bounds<T, D>>) -> Self {
+    pub fn new(
+        input_star: Star<T, D>,
+        dnn: DNN<T>,
+        input_bounds: Option<Bounds<T, D>>,
+        loc: Array1<T>,
+        scale: Array2<T>,
+    ) -> Self {
         let star_node = StarNode::default(input_star, None);
         let children = vec![None];
         let arena = vec![star_node];
+        let cdf = vec![None];
         Self {
             arena,
             children,
+            cdf,
+            loc,
+            scale,
             dnn,
             input_bounds,
         }
@@ -54,6 +67,12 @@ impl<T: NNVFloat, D: Dimension> Constellation<T, D> {
         child_idx
     }
 
+    pub fn reset_input_distribution(&mut self, loc: Array1<T>, scale: Array2<T>) {
+        self.loc = loc;
+        self.scale = scale;
+        self.cdf.iter_mut().for_each(|x| *x = None);
+    }
+
     pub fn reset_with_star(&mut self, input_star: Star<T, D>, input_bounds: Option<Bounds<T, D>>) {
         let star_node = StarNode::default(input_star, None);
         self.arena = vec![star_node];
@@ -66,7 +85,7 @@ impl<T: NNVFloat, D: Dimension> Constellation<T, D> {
             Some(StarNodeType::Leaf) => Some(vec![]),
             Some(StarNodeType::Affine { child_idx }) => Some(vec![child_idx]),
             Some(StarNodeType::StepRelu {
-                dim,
+                dim: _,
                 fst_child_idx,
                 snd_child_idx,
             }) => {
@@ -125,8 +144,6 @@ where
     pub fn bounded_sample_multivariate_gaussian<R: Rng>(
         &mut self,
         rng: &mut R,
-        loc: &Array1<T>,
-        scale: &Array2<T>,
         safe_value: T,
         cdf_samples: usize,
         num_samples: usize,
@@ -134,10 +151,17 @@ where
     ) -> (Vec<(Array1<T>, T)>, T) {
         let input_bounds = self.input_bounds.clone();
         if let Some((safe_star, path_logp)) =
-            self.sample_safe_star(loc, scale, safe_value, cdf_samples, max_iters)
+            self.sample_safe_star(safe_value, cdf_samples, max_iters)
         {
             (
-                safe_star.gaussian_sample(rng, loc, scale, num_samples, max_iters, &input_bounds),
+                safe_star.gaussian_sample(
+                    rng,
+                    &self.loc,
+                    &self.scale,
+                    num_samples,
+                    max_iters,
+                    &input_bounds,
+                ),
                 path_logp,
             )
         } else {
@@ -148,19 +172,17 @@ where
 
 impl<T: crate::NNVFloat> Constellation<T, Ix2> {
     /// # Panics
+    ///
+    /// loc, scale: Input Gaussian
+    /// safe_value
     #[allow(clippy::too_many_lines)]
     pub fn sample_safe_star(
         &mut self,
-        loc: &Array1<T>,
-        scale: &Array2<T>,
         safe_value: T,
         cdf_samples: usize,
         max_iters: usize,
     ) -> Option<(StarNode<T, Ix2>, T)> {
-        debug!(
-            "Running sample_safe_star with loc: {} scale {} safe_value {}",
-            loc, scale, safe_value
-        );
+        debug!("Running sample_safe_star with: safe_value {}", safe_value);
         let mut rng = rand::thread_rng();
         let mut current_node = 0;
         let mut path = vec![];
@@ -174,7 +196,7 @@ impl<T: crate::NNVFloat> Constellation<T, Ix2> {
             debug!("Infeasible reset!");
             me.arena[x].set_feasible(false);
             let mut infeas_cdf =
-                me.arena[x].gaussian_cdf(loc, scale, cdf_samples, max_iters, &input_bounds);
+                me.arena[x].gaussian_cdf(&me.loc, &me.scale, cdf_samples, max_iters, &input_bounds);
             path.drain(..).rev().for_each(|x| {
                 // check if all chilren are infeasible
                 if me
@@ -187,8 +209,13 @@ impl<T: crate::NNVFloat> Constellation<T, Ix2> {
                     me.arena[x].add_cdf(T::neg(T::one()) * infeas_cdf);
                 } else {
                     me.arena[x].set_feasible(false);
-                    infeas_cdf =
-                        me.arena[x].gaussian_cdf(loc, scale, cdf_samples, max_iters, &input_bounds)
+                    infeas_cdf = me.arena[x].gaussian_cdf(
+                        &me.loc,
+                        &me.scale,
+                        cdf_samples,
+                        max_iters,
+                        &input_bounds,
+                    )
                 }
             });
             *path_logp = T::zero();
@@ -231,15 +258,8 @@ impl<T: crate::NNVFloat> Constellation<T, Ix2> {
                 //     let safe_star = self.arena[current_node].clone();
                 //     return Some((safe_star, path_logp));
                 // }
-                let result = self.select_child(
-                    current_node,
-                    path_logp,
-                    loc,
-                    scale,
-                    cdf_samples,
-                    max_iters,
-                    &mut rng,
-                );
+                let result =
+                    self.select_child(current_node, path_logp, cdf_samples, max_iters, &mut rng);
                 match result {
                     Some((node, logp)) => {
                         current_node = node;
@@ -318,6 +338,7 @@ impl<T: crate::NNVFloat> Constellation<T, Ix2> {
 
                 if let Some(lower_star) = child_stars.0 {
                     let mut bounds = self.arena[node_id].get_local_bounds().clone();
+                    bounds.index_mut(dim)[0] = T::zero();
                     bounds.index_mut(dim)[1] = T::zero();
                     let lower_node =
                         StarNode::default(lower_star, Some(bounds)).with_dnn_index(dnn_idx);
@@ -325,12 +346,15 @@ impl<T: crate::NNVFloat> Constellation<T, Ix2> {
                     ids.push(id);
                 }
 
-                if let Some(lower_star) = child_stars.1 {
+                if let Some(upper_star) = child_stars.1 {
                     let mut bounds = self.arena[node_id].get_local_bounds().clone();
-                    bounds.index_mut(dim)[0] = T::zero();
-                    let lower_node =
-                        StarNode::default(lower_star, Some(bounds)).with_dnn_index(dnn_idx);
-                    let id = self.add_node(lower_node);
+                    let mut lb = bounds.index_mut(dim);
+                    if lb[0].is_sign_negative() {
+                        lb[0] = T::zero();
+                    }
+                    let upper_node =
+                        StarNode::default(upper_star, Some(bounds)).with_dnn_index(dnn_idx);
+                    let id = self.add_node(upper_node);
                     ids.push(id);
                 }
 
@@ -357,6 +381,7 @@ impl<T: crate::NNVFloat> Constellation<T, Ix2> {
 
                 if let Some(lower_star) = child_stars.1 {
                     let mut bounds = self.arena[node_id].get_local_bounds().clone();
+                    bounds.index_mut(dim)[0] = T::zero();
                     bounds.index_mut(dim)[1] = T::zero();
                     let lower_node =
                         StarNode::default(lower_star, Some(bounds)).with_dnn_index(dnn_idx);
@@ -366,7 +391,10 @@ impl<T: crate::NNVFloat> Constellation<T, Ix2> {
 
                 if let Some(upper_star) = child_stars.2 {
                     let mut bounds = self.arena[node_id].get_local_bounds().clone();
-                    bounds.index_mut(dim)[0] = T::zero();
+                    let mut lb = bounds.index_mut(dim);
+                    if lb[0].is_sign_negative() {
+                        lb[0] = T::zero();
+                    }
                     let upper_node =
                         StarNode::default(upper_star, Some(bounds)).with_dnn_index(dnn_idx);
                     let id = self.add_node(upper_node);
@@ -395,8 +423,6 @@ impl<T: crate::NNVFloat> Constellation<T, Ix2> {
         &mut self,
         current_node: usize,
         mut path_logp: T,
-        loc: &Array1<T>,
-        scale: &Array2<T>,
         cdf_samples: usize,
         max_iters: usize,
         rng: &mut rand::rngs::ThreadRng,
@@ -428,8 +454,8 @@ impl<T: crate::NNVFloat> Constellation<T, Ix2> {
                         debug!(
                             "One child with cdf: {}",
                             self.arena[children[0]].gaussian_cdf(
-                                loc,
-                                scale,
+                                &self.loc,
+                                &self.scale,
                                 cdf_samples,
                                 max_iters,
                                 &input_bounds
@@ -439,15 +465,15 @@ impl<T: crate::NNVFloat> Constellation<T, Ix2> {
                     }
                     2 => {
                         let fst_cdf = self.arena[children[0]].gaussian_cdf(
-                            loc,
-                            scale,
+                            &self.loc,
+                            &self.scale,
                             cdf_samples,
                             max_iters,
                             &input_bounds,
                         );
                         let snd_cdf = self.arena[children[1]].gaussian_cdf(
-                            loc,
-                            scale,
+                            &self.loc,
+                            &self.scale,
                             cdf_samples,
                             max_iters,
                             &input_bounds,
@@ -462,29 +488,41 @@ impl<T: crate::NNVFloat> Constellation<T, Ix2> {
                         );
 
                         // Handle the case where a CDF gives a non-normal value
+                        debug_assert!(fst_cdf.is_sign_positive());
+                        debug_assert!(snd_cdf.is_sign_positive());
                         let fst_prob = match (fst_cdf.is_normal(), snd_cdf.is_normal()) {
                             (true, true) => fst_cdf / (fst_cdf + snd_cdf),
                             (false, true) => {
                                 let parent_cdf = self.arena[current_node].gaussian_cdf(
-                                    loc,
-                                    scale,
+                                    &self.loc,
+                                    &self.scale,
                                     cdf_samples,
                                     max_iters,
                                     &input_bounds,
                                 );
-                                let derived_fst_cdf = parent_cdf - snd_cdf;
+                                let mut derived_fst_cdf = parent_cdf - snd_cdf;
+
+                                // CDFs are estimates and it is
+                                // possible for the parent to have
+                                // smaller CDF than the child.
+                                if derived_fst_cdf.is_sign_negative() {
+                                    derived_fst_cdf = T::epsilon();
+                                }
                                 self.arena[children[0]].set_cdf(derived_fst_cdf);
                                 derived_fst_cdf / (derived_fst_cdf + snd_cdf)
                             }
                             (true, false) => {
                                 let parent_cdf = self.arena[current_node].gaussian_cdf(
-                                    loc,
-                                    scale,
+                                    &self.loc,
+                                    &self.scale,
                                     cdf_samples,
                                     max_iters,
                                     &input_bounds,
                                 );
-                                let derived_snd_cdf = parent_cdf - fst_cdf;
+                                let mut derived_snd_cdf = parent_cdf - fst_cdf;
+                                if derived_snd_cdf.is_sign_negative() {
+                                    derived_snd_cdf = T::epsilon();
+                                }
                                 self.arena[children[1]].set_cdf(derived_snd_cdf);
                                 fst_cdf / (fst_cdf + derived_snd_cdf)
                             }
@@ -494,7 +532,7 @@ impl<T: crate::NNVFloat> Constellation<T, Ix2> {
                             }
                         };
                         // Safe unwrap due to above handling
-                        let dist = Bernoulli::new(fst_prob.into()).unwrap();
+                        let dist = Bernoulli::new(fst_prob.clone().into()).expect(&format!("Bad fst_prob: {:?} fst_cdf: {:?} snd_cdf: {:?}, fst_n {:?}, snd_n {:?}", fst_prob, fst_cdf, snd_cdf, fst_cdf.is_normal(), snd_cdf.is_normal()));
                         if dist.sample(rng) {
                             path_logp += fst_prob.ln();
                             Some((children[0], path_logp))
@@ -539,15 +577,15 @@ impl<T: crate::NNVFloat> Constellation<T, Ix2> {
                         1 => Some((children[0], path_logp)),
                         _ => {
                             let fst_cdf = self.arena[children[0]].gaussian_cdf(
-                                loc,
-                                scale,
+                                &self.loc,
+                                &self.scale,
                                 cdf_samples,
                                 max_iters,
                                 &input_bounds,
                             );
                             let snd_cdf = self.arena[children[1]].gaussian_cdf(
-                                loc,
-                                scale,
+                                &self.loc,
+                                &self.scale,
                                 cdf_samples,
                                 max_iters,
                                 &input_bounds,
@@ -558,8 +596,8 @@ impl<T: crate::NNVFloat> Constellation<T, Ix2> {
                                 (true, true) => fst_cdf / (fst_cdf + snd_cdf),
                                 (false, true) => {
                                     let parent_cdf = self.arena[current_node].gaussian_cdf(
-                                        loc,
-                                        scale,
+                                        &self.loc,
+                                        &self.scale,
                                         cdf_samples,
                                         max_iters,
                                         &input_bounds,
@@ -570,8 +608,8 @@ impl<T: crate::NNVFloat> Constellation<T, Ix2> {
                                 }
                                 (true, false) => {
                                     let parent_cdf = self.arena[current_node].gaussian_cdf(
-                                        loc,
-                                        scale,
+                                        &self.loc,
+                                        &self.scale,
                                         cdf_samples,
                                         max_iters,
                                         &input_bounds,
@@ -605,12 +643,32 @@ impl<T: crate::NNVFloat> Constellation<T, Ix2> {
 #[cfg(test)]
 mod test {
     use crate::test_util::*;
-    use proptest::proptest;
+    use proptest::*;
 
     proptest! {
         #[test]
-        fn test_cache_equivalence() {
+        fn test_cache_bounds_equivalence(mut constellation in generic_constellation(2, 2, 2, 2)) {
+            constellation.sample_safe_star(1.0, 1, 1);
 
+            for (i, node) in constellation.arena.iter_mut().enumerate() {
+                if let Some(local_bounds) = node.get_local_bounds_direct() {
+                    let bounds = local_bounds.clone();
+                    node.set_local_bounds_direct(None);
+                    let expected_local_bounds = node.get_local_bounds();
+
+                    prop_assert!(bounds.bounds_iter().into_iter()
+                        .zip(expected_local_bounds.bounds_iter().into_iter())
+                        .all(|(b1, b2)| b1.abs_diff_eq(&b2, 1e-8)),
+                        "\nBounds: {:?}\nExpected: {:?}", &bounds, expected_local_bounds);
+                }
+            }
+        }
+    }
+
+    proptest! {
+        #[test]
+        fn test_sample_safe_star(mut constellation in generic_constellation(2, 2, 2, 2)) {
+            constellation.sample_safe_star(1.0, 1, 1);
         }
     }
 }
