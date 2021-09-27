@@ -337,6 +337,8 @@ proptest! {
     }
 
     #[test]
-    fn test_generic_fc_dnn(dnn in generic_fc_dnn(5, 5, 5, 5)) {
+    fn test_generic_fc_dnn(_dnn in generic_fc_dnn(5, 5, 5, 5)) {
+        // Yes, this is the full test. The test is that we can
+        // construct varying sizes of dnns.
     }
 }

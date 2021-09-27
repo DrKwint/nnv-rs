@@ -137,6 +137,7 @@ where
     pub fn add_cdf(&mut self, add: T) {
         if let Some(ref mut cdf) = self.star_cdf {
             *cdf += add;
+            // Do this test due to cdfs being approximations
             if cdf.is_sign_negative() {
                 *cdf = T::epsilon();
             }

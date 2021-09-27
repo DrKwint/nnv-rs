@@ -91,6 +91,8 @@ impl<T: NNVFloat> Inequality<T> {
 
     /// Assumes that the zero valued
     ///
+    /// TODO: Test this function
+    ///
     /// # Panics
     pub fn reduce_with_values(
         &self,

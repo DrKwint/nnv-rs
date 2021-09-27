@@ -12,7 +12,6 @@ use log::debug;
 use ndarray::Dimension;
 use ndarray::Ix2;
 use ndarray::{Array1, Array2};
-use num::Float;
 use rand::distributions::{Bernoulli, Distribution};
 use rand::Rng;
 use std::iter::Sum;
@@ -52,7 +51,7 @@ where
         let star_node = StarNode::default(input_star);
         let children = vec![None];
         let arena = vec![star_node];
-        let cdf = vec![];
+        let cdf = vec![None];
         Self {
             arena,
             children,
@@ -82,7 +81,7 @@ where
     pub fn reset_input_distribution(&mut self, loc: Array1<T>, scale: Array2<T>) {
         self.loc = loc;
         self.scale = scale;
-        self.cdf.clear();
+        self.cdf.iter_mut().for_each(|x| *x = None);
     }
 
     pub fn reset_with_star(&mut self, input_star: Star<T, D>, input_bounds: Option<Bounds<T, D>>) {
@@ -475,6 +474,10 @@ where
                                     &input_bounds,
                                 );
                                 let mut derived_fst_cdf = parent_cdf - snd_cdf;
+
+                                // CDFs are estimates and it is
+                                // possible for the parent to have
+                                // smaller CDF than the child.
                                 if derived_fst_cdf.is_sign_negative() {
                                     derived_fst_cdf = T::epsilon();
                                 }
