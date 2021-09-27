@@ -18,28 +18,17 @@ use rand::Rng;
 use std::iter::Sum;
 
 /// Data structure representing the paths through a deep neural network (DNN)
-pub struct Constellation<T: Float, D: Dimension> {
+pub struct Constellation<T: NNVFloat, D: Dimension> {
     arena: Vec<StarNode<T, D>>,
     children: Vec<Option<StarNodeType<T>>>,
     dnn: DNN<T>,
     input_bounds: Option<Bounds<T, D>>,
 }
 
-impl<T: Float, D: Dimension> Constellation<T, D>
-where
-    T: std::convert::From<f64>
-        + std::convert::Into<f64>
-        + ndarray::ScalarOperand
-        + std::ops::AddAssign
-        + std::ops::MulAssign
-        + std::fmt::Display
-        + std::fmt::Debug
-        + std::ops::AddAssign,
-    f64: std::convert::From<T>,
-{
+impl<T: NNVFloat, D: Dimension> Constellation<T, D> {
     /// Instantiate a Constellation with given input set and network
     pub fn new(input_star: Star<T, D>, dnn: DNN<T>, input_bounds: Option<Bounds<T, D>>) -> Self {
-        let star_node = StarNode::default(input_star);
+        let star_node = StarNode::default(input_star, None);
         let children = vec![None];
         let arena = vec![star_node];
         Self {
@@ -66,7 +55,7 @@ where
     }
 
     pub fn reset_with_star(&mut self, input_star: Star<T, D>, input_bounds: Option<Bounds<T, D>>) {
-        let star_node = StarNode::default(input_star);
+        let star_node = StarNode::default(input_star, None);
         self.arena = vec![star_node];
         self.children = vec![None];
         self.input_bounds = input_bounds;
@@ -157,20 +146,7 @@ where
     }
 }
 
-impl<T: crate::NNVFloat> Constellation<T, Ix2>
-where
-    T: std::convert::From<f64>
-        + std::convert::Into<f64>
-        + ndarray::ScalarOperand
-        + std::ops::AddAssign
-        + std::ops::MulAssign
-        + std::fmt::Display
-        + std::fmt::Debug
-        + std::ops::AddAssign
-        + Default
-        + Sum,
-    f64: std::convert::From<T>,
-{
+impl<T: crate::NNVFloat> Constellation<T, Ix2> {
     /// # Panics
     #[allow(clippy::too_many_lines)]
     pub fn sample_safe_star(
@@ -329,7 +305,7 @@ where
             Some(StarNodeOp::Leaf) => StarNodeType::Leaf,
             Some(StarNodeOp::Affine(aff)) => {
                 let child_idx = self.add_node(
-                    StarNode::default(self.arena[node_id].get_star().affine_map2(&aff))
+                    StarNode::default(self.arena[node_id].get_star().affine_map2(&aff), None)
                         .with_dnn_index(dnn_iter.get_idx()),
                 );
                 StarNodeType::Affine { child_idx }
@@ -337,10 +313,27 @@ where
             Some(StarNodeOp::StepRelu(dim)) => {
                 let child_stars = self.arena[node_id].get_star().step_relu2(dim);
                 let dnn_idx = dnn_iter.get_idx();
-                let ids: Vec<usize> = child_stars
-                    .into_iter()
-                    .map(|star| self.add_node(StarNode::default(star).with_dnn_index(dnn_idx)))
-                    .collect();
+
+                let mut ids = vec![];
+
+                if let Some(lower_star) = child_stars.0 {
+                    let mut bounds = self.arena[node_id].get_local_bounds().clone();
+                    bounds.index_mut(dim)[1] = T::zero();
+                    let lower_node =
+                        StarNode::default(lower_star, Some(bounds)).with_dnn_index(dnn_idx);
+                    let id = self.add_node(lower_node);
+                    ids.push(id);
+                }
+
+                if let Some(lower_star) = child_stars.1 {
+                    let mut bounds = self.arena[node_id].get_local_bounds().clone();
+                    bounds.index_mut(dim)[0] = T::zero();
+                    let lower_node =
+                        StarNode::default(lower_star, Some(bounds)).with_dnn_index(dnn_idx);
+                    let id = self.add_node(lower_node);
+                    ids.push(id);
+                }
+
                 StarNodeType::StepRelu {
                     dim,
                     fst_child_idx: ids[0],
@@ -350,10 +343,36 @@ where
             Some(StarNodeOp::StepReluDropout((dropout_prob, dim))) => {
                 let child_stars = self.arena[node_id].get_star().step_relu2_dropout(dim);
                 let dnn_idx = dnn_iter.get_idx();
-                let ids: Vec<usize> = child_stars
-                    .into_iter()
-                    .map(|star| self.add_node(StarNode::default(star).with_dnn_index(dnn_idx)))
-                    .collect();
+                let mut ids = vec![];
+
+                if let Some(dropout_star) = child_stars.0 {
+                    let mut bounds = self.arena[node_id].get_local_bounds().clone();
+                    bounds.index_mut(dim)[0] = T::zero();
+                    bounds.index_mut(dim)[1] = T::zero();
+                    let dropout_node =
+                        StarNode::default(dropout_star, Some(bounds)).with_dnn_index(dnn_idx);
+                    let id = self.add_node(dropout_node);
+                    ids.push(id);
+                }
+
+                if let Some(lower_star) = child_stars.1 {
+                    let mut bounds = self.arena[node_id].get_local_bounds().clone();
+                    bounds.index_mut(dim)[1] = T::zero();
+                    let lower_node =
+                        StarNode::default(lower_star, Some(bounds)).with_dnn_index(dnn_idx);
+                    let id = self.add_node(lower_node);
+                    ids.push(id);
+                }
+
+                if let Some(upper_star) = child_stars.2 {
+                    let mut bounds = self.arena[node_id].get_local_bounds().clone();
+                    bounds.index_mut(dim)[0] = T::zero();
+                    let upper_node =
+                        StarNode::default(upper_star, Some(bounds)).with_dnn_index(dnn_idx);
+                    let id = self.add_node(upper_node);
+                    ids.push(id);
+                }
+
                 StarNodeType::StepReluDropOut {
                     dim,
                     dropout_prob,
@@ -371,6 +390,7 @@ where
             .unwrap()
     }
 
+    /// # Panics
     fn select_child(
         &mut self,
         current_node: usize,
@@ -578,6 +598,19 @@ where
                     }
                 }
             }
+        }
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use crate::test_util::*;
+    use proptest::proptest;
+
+    proptest! {
+        #[test]
+        fn test_cache_equivalence() {
+
         }
     }
 }

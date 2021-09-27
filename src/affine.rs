@@ -2,6 +2,7 @@
 //! Representation of affine transformations
 use crate::bounds::Bounds1;
 use crate::tensorshape::TensorShape;
+use crate::NNVFloat;
 use ndarray::concatenate;
 use ndarray::iter::Lanes;
 use ndarray::ScalarOperand;
@@ -12,7 +13,6 @@ use ndarray::{ArrayView1, ArrayView2};
 use ndarray::{ArrayViewMut0, ArrayViewMut1};
 use ndarray::{Axis, Dimension};
 use ndarray::{Ix1, Ix2, Ix4, IxDyn};
-use num::Float;
 use std::convert::TryFrom;
 use std::fmt::{Debug, Display};
 use std::iter::Sum;
@@ -23,12 +23,12 @@ pub type Affine4<A> = Affine<A, Ix4>;
 
 /// Affine map data structure
 #[derive(Clone, Debug, PartialEq)]
-pub struct Affine<T: Float, D: Dimension> {
+pub struct Affine<T: NNVFloat, D: Dimension> {
     basis: Array<T, D>,
     shift: Array1<T>,
 }
 
-impl<T: Float, D: Dimension> Display for Affine<T, D> {
+impl<T: NNVFloat, D: Dimension> Display for Affine<T, D> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::result::Result<(), std::fmt::Error> {
         write!(
             f,
@@ -39,7 +39,7 @@ impl<T: Float, D: Dimension> Display for Affine<T, D> {
     }
 }
 
-impl<T: Float, D: Dimension> Affine<T, D> {
+impl<T: NNVFloat, D: Dimension> Affine<T, D> {
     pub fn ndim(&self) -> usize {
         self.basis.ndim()
     }
@@ -60,7 +60,7 @@ impl<T: Float, D: Dimension> Affine<T, D> {
     }
 }
 
-impl<T: Float, D: Dimension + ndarray::RemoveAxis> Affine<T, D> {
+impl<T: NNVFloat, D: Dimension + ndarray::RemoveAxis> Affine<T, D> {
     /// Get a single equation (i.e., a set of coefficients and a shift/RHS)
     ///
     /// # Panics
@@ -79,7 +79,7 @@ impl<T: Float, D: Dimension + ndarray::RemoveAxis> Affine<T, D> {
     }
 }
 
-impl<T: Float> Affine<T, IxDyn> {
+impl<T: NNVFloat> Affine<T, IxDyn> {
     /// # Errors
     pub fn into_dimensionality<D: Dimension>(self) -> Result<Affine<T, D>, ShapeError> {
         let shift = self.shift;
@@ -90,7 +90,7 @@ impl<T: Float> Affine<T, IxDyn> {
 }
 
 /// Assumes that the affine is f(x) = Ax + b
-impl<T: 'static + Float> Affine2<T> {
+impl<T: NNVFloat> Affine2<T> {
     /// # Panics
     /// If improper shapes are passed in
     pub fn new(basis: Array2<T>, shift: Array1<T>) -> Self {
@@ -165,7 +165,7 @@ impl<T: 'static + Float> Affine2<T> {
     }
 }
 
-impl<T: 'static + Float + Sum + Debug> Affine2<T> {
+impl<T: NNVFloat> Affine2<T> {
     pub fn signed_apply(&self, bounds: &Bounds1<T>) -> Bounds1<T> {
         let lower = crate::util::signed_dot(
             &self.basis.view(),
@@ -205,7 +205,7 @@ impl<T: 'static + Float + Sum + Debug> Affine2<T> {
     }
 }
 
-impl<T: 'static + Float + Mul + ScalarOperand + std::ops::MulAssign> Affine2<T> {
+impl<T: NNVFloat> Affine2<T> {
     pub fn scale_eqns(&mut self, x: ArrayView1<T>) {
         assert_eq!(self.basis.nrows(), x.len());
         Zip::from(self.basis.rows_mut())
@@ -219,7 +219,7 @@ impl<T: 'static + Float + Mul + ScalarOperand + std::ops::MulAssign> Affine2<T> 
 }
 
 /// Add scalar
-impl<T: Float + ScalarOperand + Add, D: Dimension> Add<T> for Affine<T, D> {
+impl<T: NNVFloat, D: Dimension> Add<T> for Affine<T, D> {
     type Output = Self;
 
     fn add(self, rhs: T) -> Self {
@@ -231,7 +231,7 @@ impl<T: Float + ScalarOperand + Add, D: Dimension> Add<T> for Affine<T, D> {
 }
 
 /// Add vec
-impl<T: Float + ScalarOperand + Add, D: Dimension> Add<Array1<T>> for Affine<T, D> {
+impl<T: NNVFloat, D: Dimension> Add<Array1<T>> for Affine<T, D> {
     type Output = Self;
 
     fn add(self, rhs: Array1<T>) -> Self {
@@ -242,14 +242,14 @@ impl<T: Float + ScalarOperand + Add, D: Dimension> Add<Array1<T>> for Affine<T, 
     }
 }
 
-impl<T: Float + ScalarOperand + AddAssign, D: Dimension> AddAssign<T> for Affine<T, D> {
+impl<T: NNVFloat, D: Dimension> AddAssign<T> for Affine<T, D> {
     fn add_assign(&mut self, rhs: T) {
         self.shift += rhs;
     }
 }
 
 /// Scale Affine by scalar
-impl<T: Float + ScalarOperand + Mul, D: Dimension> Mul<T> for Affine<T, D> {
+impl<T: NNVFloat, D: Dimension> Mul<T> for Affine<T, D> {
     type Output = Self;
 
     fn mul(self, rhs: T) -> Self {
@@ -261,7 +261,7 @@ impl<T: Float + ScalarOperand + Mul, D: Dimension> Mul<T> for Affine<T, D> {
 }
 
 /// Scale Affine by vector
-impl<T: Float + ScalarOperand + Mul> Mul<Array1<T>> for Affine2<T> {
+impl<T: NNVFloat> Mul<Array1<T>> for Affine2<T> {
     type Output = Self;
 
     fn mul(self, rhs: Array1<T>) -> Self {
@@ -273,7 +273,7 @@ impl<T: Float + ScalarOperand + Mul> Mul<Array1<T>> for Affine2<T> {
 }
 
 /// Scale Affine by vector
-impl<T: Float + ScalarOperand + MulAssign> MulAssign<Array1<T>> for Affine2<T> {
+impl<T: NNVFloat> MulAssign<Array1<T>> for Affine2<T> {
     fn mul_assign(&mut self, rhs: Array1<T>) {
         self.basis *= &rhs;
         self.shift *= &rhs;
@@ -281,14 +281,14 @@ impl<T: Float + ScalarOperand + MulAssign> MulAssign<Array1<T>> for Affine2<T> {
 }
 
 /// Scale Affine by scalar
-impl<T: Float + ScalarOperand + MulAssign, D: Dimension> MulAssign<T> for Affine<T, D> {
+impl<T: NNVFloat, D: Dimension> MulAssign<T> for Affine<T, D> {
     fn mul_assign(&mut self, scalar: T) {
         self.basis *= scalar;
         self.shift *= scalar;
     }
 }
 
-impl<'a, 'b, T: 'static + Float> Mul<&'b Affine2<T>> for &'a Affine2<T> {
+impl<'a, 'b, T: NNVFloat> Mul<&'b Affine2<T>> for &'a Affine2<T> {
     type Output = Affine2<T>;
 
     #[allow(clippy::suspicious_arithmetic_impl)]
@@ -300,7 +300,7 @@ impl<'a, 'b, T: 'static + Float> Mul<&'b Affine2<T>> for &'a Affine2<T> {
 }
 
 /// Apply Affine to Affine
-impl<T: Float + ndarray::ScalarOperand + std::ops::Mul> Mul<&Self> for Affine2<T> {
+impl<T: NNVFloat> Mul<&Self> for Affine2<T> {
     type Output = Self;
 
     #[allow(clippy::suspicious_arithmetic_impl)]
@@ -311,7 +311,7 @@ impl<T: Float + ndarray::ScalarOperand + std::ops::Mul> Mul<&Self> for Affine2<T
     }
 }
 
-impl<T: 'static + Float> Affine<T, Ix4> {
+impl<T: NNVFloat> Affine<T, Ix4> {
     pub fn new(basis: Array4<T>, shift: Array1<T>) -> Self {
         Self { basis, shift }
     }

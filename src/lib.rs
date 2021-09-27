@@ -1,4 +1,4 @@
-#![warn(clippy::all, clippy::pedantic, clippy::nursery, clippy::cargo)]
+// #![warn(clippy::all, clippy::pedantic, clippy::nursery, clippy::cargo)]
 #![allow(clippy::must_use_candidate)]
 #![feature(fn_traits)]
 #![feature(destructuring_assignment)]
@@ -63,7 +63,8 @@ pub trait NNVFloat = 'static
     + std::ops::AddAssign
     + std::default::Default
     + std::iter::Sum
-    + approx::AbsDiffEq;
+    + approx::AbsDiffEq
+    + rand::distributions::uniform::SampleUniform;
 
 #[pyclass]
 #[derive(Clone, Debug)]

@@ -17,6 +17,14 @@ Build Python package
 6. Switch to nightly Rust with `rustup default nightly`
 7. Build and install the Rust-backed Python package with `python ./setup.py install`
 
+## Benchmarking
+
+When benchmarking, if you want to generate a flamegraph, use the following syntax:
+
+```
+cargo bench --bench my_benchmark -- --profile-time 5
+```
+
 To do
 -----
 1. Implement proper bounds checking with DeepPoly

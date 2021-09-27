@@ -28,25 +28,20 @@ use ndarray::Array2;
 use ndarray::ArrayView1;
 use ndarray::ArrayView2;
 use ndarray::Ix1;
-use ndarray::ScalarOperand;
 use ndarray::Zip;
 use ndarray::{array, Array1, Axis};
 
-use num::Float;
+use crate::NNVFloat;
 use std::collections::HashMap;
 use std::fmt::Debug;
 
 /// H-representation polytope
 #[derive(Clone, Debug)]
-pub struct Polytope<T: Float> {
+pub struct Polytope<T: NNVFloat> {
     halfspaces: Inequality<T>,
 }
 
-impl<T: 'static> Polytope<T>
-where
-    T: Float + ScalarOperand + From<f64> + Debug,
-    f64: From<T>,
-{
+impl<T: NNVFloat> Polytope<T> {
     pub fn new(constraint_coeffs: Array2<T>, upper_bounds: Array1<T>) -> Self {
         Self {
             halfspaces: Inequality::new(constraint_coeffs, upper_bounds),
@@ -217,7 +212,7 @@ where
             .zip(b.into_iter())
             .for_each(|pair: (ArrayView1<T>, &T)| {
                 let (coeffs, ub) = pair;
-                let coeffs = coeffs.map(|x| f64::from(*x));
+                let coeffs = coeffs.map(|x| (*x).into());
                 let l2_norm_val = l2_norm(coeffs.view());
                 let mut expr_map: HashMap<Variable, f64> =
                     x_c.iter().copied().zip(coeffs).collect();
@@ -226,7 +221,7 @@ where
                     coefficients: expr_map,
                 };
                 let constr =
-                    good_lp::constraint::leq(Expression::from_other_affine(expr), f64::from(*ub));
+                    good_lp::constraint::leq(Expression::from_other_affine(expr), (*ub).into());
                 unsolved.add_constraint(constr);
             });
         if let Ok(soln) = unsolved.solve() {
@@ -273,11 +268,7 @@ where
     }
 }
 
-impl<T: 'static> Polytope<T>
-where
-    T: Float + ScalarOperand + From<f64> + Debug,
-    f64: From<T>,
-{
+impl<T: NNVFloat> Polytope<T> {
     /// Check whether the Star set is empty.
     ///
     /// This method assumes that the constraints bound each dimension,
@@ -300,7 +291,7 @@ where
 
 // Allow a technically fallible from because we're matching array shapes in the fn body
 #[allow(clippy::fallible_impl_from)]
-impl<T: Float + ScalarOperand> From<Bounds1<T>> for Polytope<T> {
+impl<T: NNVFloat> From<Bounds1<T>> for Polytope<T> {
     fn from(item: Bounds1<T>) -> Self {
         let coeffs = concatenate(
             Axis(0),

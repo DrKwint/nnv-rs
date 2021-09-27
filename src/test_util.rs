@@ -72,7 +72,7 @@ prop_compose! {
             for aff in affines {
                     let output_dim = aff.output_dim();
                     dnn.add_layer(Layer::new_dense(aff));
-                    dnn.add_layer(Layer::new_relu(output_dim))
+                    dnn.add_layer(Layer::new_relu(output_dim));
                 }
             dnn
         }

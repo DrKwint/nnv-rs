@@ -13,16 +13,14 @@ use ndarray::ArrayD;
 use ndarray::Ix1;
 use ndarray::Ix2;
 use ndarray::Ix4;
-use num::Float;
 use std::fmt;
-use std::iter::Sum;
 
 #[derive(Default, Clone, Debug)]
-pub struct DNN<T: num::Float> {
+pub struct DNN<T: NNVFloat> {
     layers: Vec<Layer<T>>,
 }
 
-impl<T: Float> DNN<T> {
+impl<T: NNVFloat> DNN<T> {
     pub fn new(layers: Vec<Layer<T>>) -> Self {
         Self { layers }
     }
@@ -68,7 +66,7 @@ where
 }
 
 #[derive(Clone, Debug)]
-pub enum Layer<T: num::Float> {
+pub enum Layer<T: NNVFloat> {
     Dense(Affine<T, Ix2>),
     Conv(Affine<T, Ix4>),
     BatchNorm(Affine<T, Ix2>),
@@ -78,7 +76,7 @@ pub enum Layer<T: num::Float> {
     Dropout(T),
 }
 
-impl<T: Float> Layer<T> {
+impl<T: NNVFloat> Layer<T> {
     pub fn new_dense(aff: Affine2<T>) -> Self {
         Self::Dense(aff)
     }
@@ -153,17 +151,7 @@ where
     }
 }
 
-impl<T> Layer<T>
-where
-    T: 'static
-        + Float
-        + ndarray::ScalarOperand
-        + std::fmt::Display
-        + std::fmt::Debug
-        + std::ops::MulAssign
-        + Default
-        + Sum,
-{
+impl<T: NNVFloat> Layer<T> {
     /// # Panics
     pub fn apply_bounds(
         &self,
@@ -200,7 +188,7 @@ where
     }
 }
 
-impl<T: 'static + num::Float> fmt::Display for Layer<T> {
+impl<T: NNVFloat> fmt::Display for Layer<T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             Layer::Dense(aff) => write!(f, "Dense {}", aff.output_dim()),
@@ -220,7 +208,7 @@ pub struct DNNIndex {
 }
 
 impl DNNIndex {
-    fn increment<T: 'static + Float>(&mut self, dnn: &DNN<T>) {
+    fn increment<T: NNVFloat>(&mut self, dnn: &DNN<T>) {
         // Decrement active relu
         let mut advance_layer_flag = false;
         if let Some(ref mut step) = self.remaining_steps {
@@ -250,13 +238,13 @@ impl DNNIndex {
 }
 
 #[derive(Debug, Clone)]
-pub struct DNNIterator<'a, T: num::Float> {
+pub struct DNNIterator<'a, T: NNVFloat> {
     dnn: &'a DNN<T>,
     idx: DNNIndex,
     finished: bool,
 }
 
-impl<'a, T: Float> fmt::Display for DNNIterator<'a, T> {
+impl<'a, T: NNVFloat> fmt::Display for DNNIterator<'a, T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(
             f,
@@ -266,7 +254,7 @@ impl<'a, T: Float> fmt::Display for DNNIterator<'a, T> {
     }
 }
 
-impl<'a, T: Float> DNNIterator<'a, T> {
+impl<'a, T: NNVFloat> DNNIterator<'a, T> {
     pub fn new(dnn: &'a DNN<T>, idx: DNNIndex) -> Self {
         Self {
             dnn,
@@ -280,7 +268,7 @@ impl<'a, T: Float> DNNIterator<'a, T> {
     }
 }
 
-impl<T: 'static + num::Float + std::fmt::Debug> Iterator for DNNIterator<'_, T> {
+impl<T: NNVFloat> Iterator for DNNIterator<'_, T> {
     type Item = StarNodeOp<T>;
 
     fn next(&mut self) -> Option<Self::Item> {

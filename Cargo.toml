@@ -41,7 +41,7 @@ ndarray-rand = "^0.14.0"
 proptest = "1.0.0"
 proptest-derive = "0.2.0"
 criterion = "0.3"
-pprof = { version = "0.5", features = ["flamegraph", "criterion", "protobuf"] }
+pprof = { version = "0.5", features = ["flamegraph", "criterion" ] }
 
 [[bench]]
 name = "my_benchmark"

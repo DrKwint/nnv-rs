@@ -1,22 +1,22 @@
 use crate::affine::Affine2;
+use crate::NNVFloat;
 use ndarray::concatenate;
 use ndarray::Axis;
 use ndarray::Slice;
 use ndarray::Zip;
 use ndarray::{Array1, Array2};
 use ndarray::{ArrayView1, ArrayView2, ArrayViewMut1};
-use num::Float;
 use std::convert::TryFrom;
 use std::ops::Mul;
 use std::ops::MulAssign;
 
 #[derive(Clone, Debug)]
-pub struct Inequality<T: Float> {
+pub struct Inequality<T: NNVFloat> {
     coeffs: Array2<T>, // Assume rows correspond to equations and cols are vars, i.e. Ax < b
     rhs: Array1<T>,
 }
 
-impl<T: 'static + Float> Inequality<T> {
+impl<T: NNVFloat> Inequality<T> {
     pub fn new(coeffs: Array2<T>, rhs: Array1<T>) -> Self {
         Self { coeffs, rhs }
     }
@@ -106,7 +106,7 @@ impl<T: 'static + Float> Inequality<T> {
 }
 
 /// Scale by scalar
-impl<T: Float + ndarray::ScalarOperand + std::ops::Mul> Mul<T> for Inequality<T> {
+impl<T: NNVFloat> Mul<T> for Inequality<T> {
     type Output = Self;
 
     fn mul(self, rhs: T) -> Self {
@@ -118,14 +118,14 @@ impl<T: Float + ndarray::ScalarOperand + std::ops::Mul> Mul<T> for Inequality<T>
 }
 
 /// Scale by scalar
-impl<T: Float + ndarray::ScalarOperand + std::ops::MulAssign> MulAssign<T> for Inequality<T> {
+impl<T: NNVFloat> MulAssign<T> for Inequality<T> {
     fn mul_assign(&mut self, rhs: T) {
         self.coeffs *= rhs;
         self.rhs *= rhs;
     }
 }
 
-impl<T: 'static + Float> From<Affine2<T>> for Inequality<T> {
+impl<T: NNVFloat> From<Affine2<T>> for Inequality<T> {
     fn from(aff: Affine2<T>) -> Self {
         Self {
             coeffs: aff.basis().to_owned(),

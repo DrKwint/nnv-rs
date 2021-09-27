@@ -7,6 +7,7 @@ use crate::inequality::Inequality;
 use crate::polytope::Polytope;
 use crate::tensorshape::TensorShape;
 use crate::util::solve;
+use crate::NNVFloat;
 use good_lp::ResolutionError;
 use log::debug;
 use ndarray::Array4;
@@ -16,7 +17,6 @@ use ndarray::Ix4;
 use ndarray::ScalarOperand;
 use ndarray::{Array1, Array2};
 use ndarray::{Axis, Ix2};
-use num::Float;
 use rand::Rng;
 use std::fmt::Debug;
 
@@ -42,7 +42,7 @@ pub type Star4<A> = Star<A, Ix4>;
 /// deep neural networks." International Symposium on Formal Methods. Springer,
 /// Cham, 2019.
 #[derive(Clone, Debug)]
-pub struct Star<T: Float, D: Dimension> {
+pub struct Star<T: NNVFloat, D: Dimension> {
     /// `representation` is the concatenation of [basis center] (where
     /// center is a column vector) and captures information about the
     /// transformed set
@@ -52,7 +52,7 @@ pub struct Star<T: Float, D: Dimension> {
     constraints: Option<Polytope<T>>,
 }
 
-impl<T: Float, D: Dimension> Star<T, D> {
+impl<T: NNVFloat, D: Dimension> Star<T, D> {
     pub fn ndim(&self) -> usize {
         self.representation.ndim()
     }
@@ -66,11 +66,7 @@ impl<T: Float, D: Dimension> Star<T, D> {
     }
 }
 
-impl<T: Float, D: Dimension> Star<T, D>
-where
-    T: ScalarOperand + From<f64> + Debug,
-    f64: From<T>,
-{
+impl<T: NNVFloat, D: Dimension> Star<T, D> {
     pub fn num_constraints(&self) -> usize {
         match &self.constraints {
             Some(polytope) => polytope.num_constraints(),
@@ -91,11 +87,7 @@ where
     }
 }
 
-impl<T: Float> Star2<T>
-where
-    T: ScalarOperand + From<f64> + Debug + std::ops::MulAssign + std::ops::AddAssign,
-    f64: From<T>,
-{
+impl<T: NNVFloat> Star2<T> {
     pub fn get_safe_subset(&self, safe_value: T) -> Self {
         let subset = self.clone();
         let mut new_constr: Inequality<T> = self.representation.clone().into();
@@ -106,7 +98,7 @@ where
     }
 }
 
-impl<T: 'static + Float> Star2<T> {
+impl<T: NNVFloat> Star2<T> {
     /// Create a new Star with given dimension.
     ///
     /// By default this Star covers the space because it has no constraints. To add constraints call `.add_constraints`.
@@ -152,11 +144,7 @@ impl<T: 'static + Float> Star2<T> {
     }
 }
 
-impl<T: Float> Star2<T>
-where
-    T: ScalarOperand + From<f64> + Debug,
-    f64: From<T>,
-{
+impl<T: NNVFloat> Star2<T> {
     pub fn with_input_bounds(mut self, input_bounds: Bounds1<T>) -> Self {
         if self.constraints.is_some() {
             self.constraints = self.constraints.map(|x| x.with_input_bounds(input_bounds));
@@ -167,10 +155,7 @@ where
     }
 }
 
-impl<T: Float> Star2<T>
-where
-    T: ndarray::ScalarOperand,
-{
+impl<T: NNVFloat> Star2<T> {
     /// Apply an affine transformation to the representation
     pub fn affine_map2(&self, affine: &Affine<T, Ix2>) -> Self {
         Self {
@@ -180,17 +165,8 @@ where
     }
 }
 
-impl<T: Float> Star2<T>
-where
-    T: std::convert::From<f64>
-        + std::convert::Into<f64>
-        + ndarray::ScalarOperand
-        + std::fmt::Display
-        + std::fmt::Debug
-        + std::ops::MulAssign,
-    f64: std::convert::From<T>,
-{
-    pub fn step_relu2(&self, index: usize) -> Vec<Self> {
+impl<T: NNVFloat> Star2<T> {
+    pub fn step_relu2(&self, index: usize) -> (Option<Self>, Option<Self>) {
         let neg_one: T = std::convert::From::from(-1.);
 
         let mut new_constr: Inequality<T> = {
@@ -204,19 +180,31 @@ where
         new_constr *= neg_one;
         let mut lower_star = self.clone().add_constraints(&new_constr);
         lower_star.representation.zero_eqn(index);
-        vec![lower_star, upper_star]
-            .into_iter()
-            .filter(|x| !x.is_empty())
-            .collect()
+
+        let lower_star_opt = if lower_star.is_empty() {
+            None
+        } else {
+            Some(lower_star)
+        };
+        let upper_star_opt = if upper_star.is_empty() {
+            None
+        } else {
+            Some(upper_star)
+        };
+        (lower_star_opt, upper_star_opt)
     }
 
-    pub fn step_relu2_dropout(&self, index: usize) -> Vec<Self> {
+    pub fn step_relu2_dropout(&self, index: usize) -> (Option<Self>, Option<Self>, Option<Self>) {
         let mut dropout_star = self.clone();
         dropout_star.representation.zero_eqn(index);
 
         let mut stars = self.step_relu2(index);
-        stars.insert(0, dropout_star);
-        stars.into_iter().filter(|x| !x.is_empty()).collect()
+        let dropout_star_opt = if dropout_star.is_empty() {
+            None
+        } else {
+            Some(dropout_star)
+        };
+        (dropout_star_opt, stars.0, stars.1)
     }
 
     /// Calculates the minimum value of the equation at index `idx`
@@ -364,7 +352,7 @@ where
     }
 }
 
-impl<T: 'static + Float> Star4<T> {
+impl<T: NNVFloat> Star4<T> {
     /// Create a new Star with given dimension.
     ///
     /// By default this Star covers the space because it has no constraints. To add constraints call `.add_constraints`.
