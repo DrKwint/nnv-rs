@@ -13,8 +13,9 @@ use nnv_rs_py::Bounds;
 use nnv_rs_py::Layer;
 use nnv_rs_py::StarNode;
 use nnv_rs_py::DNN;
+use pprof::criterion::{Output, PProfProfiler};
 
-fn criterion_benchmark(c: &mut Criterion) {
+fn bench(c: &mut Criterion) {
     let input_size = 68;
     let dense1 = Layer::new_dense(Affine2::new(
         Array::random((64, input_size), Normal::new(0., 1.).unwrap()),
@@ -37,20 +38,32 @@ fn criterion_benchmark(c: &mut Criterion) {
         (Array1::ones(input_size) * 3.5).view(),
     );
     let root_star = Star2::default(&dnn.input_shape()).with_input_bounds(bounds.clone());
-    let mut root_node = StarNode::default(root_star.clone());
+    let mut root_node = StarNode::default(root_star.clone(), None);
     let loc = Array1::zeros(input_size);
     let scale = Array2::from_diag(&Array1::ones(input_size));
     c.bench_function("starnode::get_output_bounds from root", |b| {
         b.iter(|| root_node.get_output_bounds(&dnn, &|x| (x.lower()[[0]], x.upper()[[0]])))
     });
-    c.bench_function("constellation::sample_safe_star", |b| {
+    let mut group = c.benchmark_group("constellation");
+    group.sample_size(10);
+    group.bench_function("constellation::sample_safe_star", |b| {
         b.iter(|| {
-            let mut constellation =
-                Constellation::new(root_star.clone(), dnn.clone(), Some(bounds.clone()));
-            constellation.sample_safe_star(&loc, &scale, 1., 100, 20)
+            let mut constellation = Constellation::new(
+                root_star.clone(),
+                dnn.clone(),
+                Some(bounds.clone()),
+                loc.clone(),
+                scale.clone(),
+            );
+            constellation.sample_safe_star(1., 100, 20)
         })
     });
+    group.finish();
 }
 
-criterion_group!(benches, criterion_benchmark);
+criterion_group! {
+    name = benches;
+    config = Criterion::default().with_profiler(PProfProfiler::new(100, Output::Flamegraph(None)));
+    targets = bench
+}
 criterion_main!(benches);

@@ -2,6 +2,7 @@
 use crate::affine::Affine2;
 use crate::rand::distributions::Distribution;
 use crate::rand::SeedableRng;
+use crate::NNVFloat;
 use ndarray::iter::{Lanes, LanesMut};
 use ndarray::Array2;
 use ndarray::Axis;
@@ -18,11 +19,11 @@ use std::fmt::Display;
 pub type Bounds1<T> = Bounds<T, Ix2>;
 
 #[derive(Clone, Debug, PartialEq)]
-pub struct Bounds<T: Float, D: Dimension> {
+pub struct Bounds<T: NNVFloat, D: Dimension> {
     data: Array<T, D>,
 }
 
-impl<T: Float, D: Dimension + ndarray::RemoveAxis> Bounds<T, D> {
+impl<T: NNVFloat, D: Dimension + ndarray::RemoveAxis> Bounds<T, D> {
     /// # Panics
     pub fn new<'a, S: Dimension + Dimension<Larger = D>>(
         lower: ArrayView<'a, T, S>,
@@ -69,7 +70,7 @@ impl<T: Float, D: Dimension + ndarray::RemoveAxis> Bounds<T, D> {
     }
 
     pub fn is_member(&self, x: &ArrayView<T, D::Smaller>) -> bool {
-        let eps = T::from(1e-5).unwrap();
+        let eps = (1e-5).into();
         Zip::from(x)
             .and(self.bounds_iter())
             .all(|&x, bounds| bounds[0] - eps <= x && x <= bounds[1] + eps)
@@ -89,11 +90,7 @@ impl<T: crate::NNVFloat, D: Dimension + ndarray::RemoveAxis> Bounds<T, D> {
     }
 }
 
-impl<
-        T: Float + rand::distributions::uniform::SampleUniform,
-        D: Dimension + ndarray::RemoveAxis,
-    > Bounds<T, D>
-{
+impl<T: NNVFloat, D: Dimension + ndarray::RemoveAxis> Bounds<T, D> {
     pub fn sample_uniform(&self, seed: u64) -> Array<T, D::Smaller> {
         let mut rng = StdRng::seed_from_u64(seed);
         Zip::from(self.bounds_iter())
@@ -101,7 +98,7 @@ impl<
     }
 }
 
-impl<T: 'static + Float + Default> Bounds1<T> {
+impl<T: NNVFloat> Bounds1<T> {
     pub fn default(dim: usize) -> Self {
         Self {
             data: Array2::default([2, dim]),
@@ -136,7 +133,7 @@ impl<T: 'static + Float + Default> Bounds1<T> {
     }
 }
 
-impl<T: Float + Display, D: Dimension + RemoveAxis> Display for Bounds<T, D> {
+impl<T: NNVFloat, D: Dimension + RemoveAxis> Display for Bounds<T, D> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::result::Result<(), std::fmt::Error> {
         write!(f, "Lower: {}\nUpper: {}", self.lower(), self.upper())
     }

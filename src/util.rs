@@ -1,5 +1,6 @@
 //! Utility functions
 #![allow(non_snake_case)]
+use crate::NNVFloat;
 use good_lp::solvers::highs::{highs, HighsSolution};
 use good_lp::{variable, ResolutionError, Solution, SolverModel};
 use good_lp::{Expression, IntoAffineExpression, ProblemVariables, Variable};
@@ -74,15 +75,13 @@ impl IntoAffineExpression for LinearExpression {
 
 /// Minimizes the expression `c` given the constraint `Ax < b`.
 /// # Panics
-pub fn solve<'a, I, T: 'a>(
+pub fn solve<'a, I, T: 'a + NNVFloat>(
     A: I,
     b: ArrayView1<T>,
     c: ArrayView1<T>,
 ) -> (Result<HighsSolution, ResolutionError>, Option<f64>)
 where
-    T: std::convert::Into<f64> + std::clone::Clone + std::marker::Copy + Debug,
     I: IntoIterator<Item = ArrayView1<'a, T>>,
-    f64: std::convert::From<T>,
 {
     let mut _shh_out;
     let mut _shh_err;
@@ -96,7 +95,7 @@ where
         coefficients: vars
             .iter()
             .copied()
-            .zip(c.iter().map(|x| f64::from(*x)))
+            .zip(c.iter().map(|x| (*x).into()))
             .collect(),
     };
     let mut unsolved = problem.minimise(c_expression.clone()).using(highs);
@@ -109,11 +108,11 @@ where
                 coefficients: vars
                     .iter()
                     .copied()
-                    .zip(coeffs.iter().map(|x| f64::from(*x)))
+                    .zip(coeffs.iter().map(|x| (*x).into()))
                     .collect(),
             };
             let constr =
-                good_lp::constraint::leq(Expression::from_other_affine(expr), f64::from(*ub));
+                good_lp::constraint::leq(Expression::from_other_affine(expr), (*ub).into());
             unsolved.add_constraint(constr);
         });
 

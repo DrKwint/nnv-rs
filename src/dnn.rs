@@ -13,9 +13,7 @@ use ndarray::ArrayD;
 use ndarray::Ix1;
 use ndarray::Ix2;
 use ndarray::Ix4;
-use num::Float;
 use std::fmt;
-use std::iter::Sum;
 
 #[derive(Default, Clone, Debug)]
 pub struct DNN<T: NNVFloat> {

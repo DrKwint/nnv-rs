@@ -1,13 +1,11 @@
 use crate::affine::Affine2;
 use crate::NNVFloat;
-use log::debug;
 use ndarray::concatenate;
 use ndarray::Axis;
 use ndarray::Slice;
 use ndarray::Zip;
 use ndarray::{Array1, Array2};
 use ndarray::{ArrayView1, ArrayView2, ArrayViewMut1};
-use num::Float;
 use std::convert::TryFrom;
 use std::ops::Mul;
 use std::ops::MulAssign;

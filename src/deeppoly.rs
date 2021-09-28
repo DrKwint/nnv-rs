@@ -6,13 +6,10 @@ use log::{debug, trace};
 use ndarray::Array1;
 use ndarray::ArrayView1;
 use ndarray::ArrayViewMut1;
-use ndarray::ScalarOperand;
 use ndarray::Zip;
-use num::Float;
-use std::fmt::Debug;
 
 /// # Panics
-pub fn deep_poly_steprelu<T: 'static + Float + Default + Debug>(
+pub fn deep_poly_steprelu<T: NNVFloat>(
     dim: usize,
     mut bounds: Bounds1<T>,
     mut lower_aff: Affine2<T>,
@@ -52,9 +49,7 @@ pub fn deep_poly_steprelu<T: 'static + Float + Default + Debug>(
     (bounds, (lower_aff, upper_aff))
 }
 
-pub fn deep_poly_relu<
-    T: Float + Default + std::ops::MulAssign + ScalarOperand + std::ops::Mul + std::fmt::Debug,
->(
+pub fn deep_poly_relu<T: NNVFloat>(
     bounds: &Bounds1<T>,
     lower_aff: &Affine2<T>,
     upper_aff: &Affine2<T>,
@@ -109,10 +104,7 @@ pub fn deep_poly_relu<
 }
 
 /// # Panics
-pub fn deep_poly<T: NNVFloat>(input_bounds: &Bounds1<T>, dnn_iter: DNNIterator<T>) -> Bounds1<T>
-where
-    f64: std::convert::From<T>,
-{
+pub fn deep_poly<T: NNVFloat>(input_bounds: &Bounds1<T>, dnn_iter: DNNIterator<T>) -> Bounds1<T> {
     debug!("Starting Deeppoly at {:?}", dnn_iter.get_idx());
     trace!("with input bounds {:?}", input_bounds);
     let ndim = input_bounds.ndim();

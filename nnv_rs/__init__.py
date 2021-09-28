@@ -1,4 +1,4 @@
-from .nnv_rs import PyConstellation, PyDNN
+from nnv_rs.nnv_rs import PyConstellation, PyDNN
 import numpy as np
 import tree
 from scipy.stats import norm
@@ -39,7 +39,7 @@ class DNN:
 
     def build_from_tensorflow_module(self, network):
         import tensorflow as tf
-        from tensorflow.keras.layers import InputLayer, Dense, Conv2D, MaxPooling2D, Flatten
+        from tensorflow.keras.layers import InputLayer, Dense, Conv2D, MaxPooling2D, Flatten, ReLU
 
         submodules = network.layers
         submodules = tree.flatten(submodules)
@@ -67,6 +67,7 @@ class DNN:
             elif isinstance(layer, Flatten):
                 self.dnn.add_flatten()
             else:
+                print('Unknown layer', layer)
                 raise NotImplementedError()
 
     def __str__(self):
@@ -75,20 +76,23 @@ class DNN:
 
 class Constellation:
     def __init__(self, dnn, loc, scale, input_bounds=None, safe_value=np.inf):
+        self.loc = np.squeeze(loc).astype(np.float64)
+        self.scale = np.squeeze(scale).astype(np.float64)
         if dnn is None:
             self.constellation = None
         else:
-            self.constellation = PyConstellation(dnn.dnn, input_bounds)
+            self.constellation = PyConstellation(dnn.dnn, input_bounds,
+                                                 self.loc, self.scale)
         self.safe_value = safe_value
+
+    def set_dnn(self, dnn, loc, scale):
         self.loc = np.squeeze(loc).astype(np.float64)
         self.scale = np.squeeze(scale).astype(np.float64)
-
-    def set_dnn(self, dnn):
         if self.constellation is None:
             bounds = None
         else:
             bounds = self.constellation.get_input_bounds()
-        self.constellation = PyConstellation(dnn.dnn, bounds)
+        self.constellation = PyConstellation(dnn.dnn, bounds, loc, scale)
 
     def set_input_bounds(self, fixed_part, loc, scale):
         unfixed_part = (loc - SAMPLE_STD_DEVS * scale,
