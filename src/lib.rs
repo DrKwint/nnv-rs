@@ -257,8 +257,8 @@ impl PyConstellation {
 /// # Errors
 #[pymodule]
 pub fn nnv_rs(_py: Python, m: &PyModule) -> PyResult<()> {
-    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("trace")).init();
     #[cfg(debug_assertions)]
+    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("trace")).init();
     m.add_class::<PyConstellation>()?;
     m.add_class::<PyDNN>()?;
     Ok(())
