@@ -82,7 +82,7 @@ class Constellation:
             self.constellation = None
         else:
             self.constellation = PyConstellation(dnn.dnn, input_bounds,
-                                                 self.loc, self.scale)
+                                                 self.loc, np.diag(self.scale))
         self.safe_value = safe_value
 
     def set_dnn(self, dnn, loc, scale):
@@ -105,7 +105,7 @@ class Constellation:
     def bounded_sample_with_input_bounds(self, fixed_part):
         fixed_part = np.squeeze(fixed_part).astype(np.float64)
         self.set_input_bounds(fixed_part, self.loc, self.scale)
-        return self.bounded_sample(self.loc, self.scale)
+        return self.bounded_sample()
 
     def bounded_sample(self):
         if self.safe_value == np.inf:
