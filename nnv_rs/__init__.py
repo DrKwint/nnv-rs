@@ -16,6 +16,8 @@ class DNN:
             self.build_from_tensorflow_module(network)
         elif type_ == list:  # TF1
             # Assume that inputs are tuples (weights, bias) and that each laye
+            if type(network[0]) != tuple:
+                network = list(zip(network[::2], network[1::2]))
             assert (type(network[0]) == tuple)
             assert (type(network[0][0]) == np.ndarray)
             self.build_from_tensorflow_params(network)
@@ -32,6 +34,7 @@ class DNN:
         nlayers = len(affine_list)
         for i, aff in enumerate(affine_list):
             # Add dense
+            assert (len(aff[0].shape) == 2, aff)
             self.dnn.add_dense(aff[0].T, aff[1])
             # Add relu
             if i != nlayers - 1:
@@ -85,34 +88,60 @@ class Constellation:
                                                  self.loc, np.diag(self.scale))
         self.safe_value = safe_value
 
-    def set_dnn(self, dnn, loc, scale):
+    def _set_loc(self, loc):
+        if loc.ndim == 2:
+            assert len(loc) == 1
+            loc = loc[0]
         self.loc = np.squeeze(loc).astype(np.float64)
-        self.scale = np.squeeze(scale).astype(np.float64)
+
+    def set_dnn(self, dnn, loc=None, scale=None):
+        if loc is not None:
+            self.loc = np.squeeze(loc).astype(np.float64)
+        if scale is not None:
+            self.scale = np.squeeze(scale).astype(np.float64)
         if self.constellation is None:
             bounds = None
         else:
             bounds = self.constellation.get_input_bounds()
-        self.constellation = PyConstellation(dnn.dnn, bounds, loc, scale)
+        self.constellation = PyConstellation(dnn.dnn, bounds, self.loc,
+                                             self.scale)
 
     def set_input_bounds(self, fixed_part, loc, scale):
-        unfixed_part = (loc - SAMPLE_STD_DEVS * scale,
-                        loc + SAMPLE_STD_DEVS * scale)
+        self._set_loc(loc)
+        self.scale = np.squeeze(scale).astype(np.float64)
+        unfixed_part = (self.loc - SAMPLE_STD_DEVS * scale,
+                        self.loc + SAMPLE_STD_DEVS * scale)
         self.constellation.set_input_bounds(fixed_part, unfixed_part)
 
     def importance_sample(self):
         pass
 
-    def bounded_sample_with_input_bounds(self, fixed_part):
+    def bounded_sample_with_input_bounds(self,
+                                         fixed_part,
+                                         loc=None,
+                                         scale=None):
         fixed_part = np.squeeze(fixed_part).astype(np.float64)
-        self.set_input_bounds(fixed_part, self.loc, self.scale)
+        if loc is None:
+            loc = self.loc
+        if scale is None:
+            scale = self.scale
+        self.set_input_bounds(fixed_part, loc, scale)
         return self.bounded_sample()
 
     def bounded_sample(self):
         if self.safe_value == np.inf:
-            sample = np.random.normal(self.loc[-len(self.scale):], self.scale)
+            sample = np.random.normal(self.loc, self.scale)
+            if not np.all(np.isfinite(sample)):
+                raise ValueError()
             prob = 1.
             for (samp, l, s) in zip(sample, self.loc, self.scale):
-                prob *= norm.pdf(samp, l, s)
+                dim_prob = norm.pdf(samp, l, s)
+                if not np.all(np.isfinite(dim_prob)):
+                    raise ValueError("Bad dim_prob {} from {} {} {}", dim_prob,
+                                     samp, l, s)
+                prob *= dim_prob
+            if not np.all(np.isfinite(np.log(prob + 1e-12))):
+                raise ValueError("Bad logprob from prob {}".format(prob))
             return sample, np.log(prob + 1e-12)
         sample, sample_logp, branch_logp = self.constellation.bounded_sample_multivariate_gaussian(
             self.safe_value, cdf_samples=100, num_samples=20, max_iters=10)
@@ -123,5 +152,11 @@ class Constellation:
         truncnorm_prob = np.exp(sample_logp)
         branch_prob = np.exp(branch_logp)
         if not np.all(np.isfinite(sample)):
+            raise ValueError()
+        if not np.all(np.isfinite(normal_logp)):
+            raise ValueError()
+        if not np.all(np.isfinite(sample_logp)):
+            raise ValueError()
+        if not np.all(np.isfinite(branch_logp)):
             raise ValueError()
         return sample, (normal_logp - sample_logp) + branch_logp
