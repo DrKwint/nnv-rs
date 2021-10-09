@@ -17,23 +17,23 @@ pub fn deep_poly_steprelu<T: NNVFloat>(
 ) -> (Bounds1<T>, (Affine2<T>, Affine2<T>)) {
     let mut bounds_slice = bounds.index_mut(dim);
     let (mut lbasis, mut lshift) = lower_aff.get_eqn_mut(dim);
-    let (mut ubasis, mut ushift) = upper_aff.get_eqn_mut(dim);
+    let (mut u_basis, mut u_shift) = upper_aff.get_eqn_mut(dim);
     let l = bounds_slice[[0]];
     let u = bounds_slice[[1]];
     if u <= T::zero() {
         bounds_slice.fill(T::zero());
         lbasis.fill(T::zero());
-        ubasis.fill(T::zero());
+        u_basis.fill(T::zero());
         lshift.fill(T::zero());
-        ushift.fill(T::zero());
+        u_shift.fill(T::zero());
     // gt branch
     } else if l >= T::zero() {
         // here, leave mul and shift at defaults
         // then, spanning branch
     } else {
         // Using y = ax + b:
-        ubasis.mapv_inplace(|a| a * (u / (u - l)));
-        ushift.mapv_inplace(|b| u * (b - l) / (u - l));
+        u_basis.mapv_inplace(|a| a * (u / (u - l)));
+        u_shift.mapv_inplace(|b| u * (b - l) / (u - l));
 
         // use approximation with least area
         if u < T::neg(l) {

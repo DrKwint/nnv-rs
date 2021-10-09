@@ -14,7 +14,6 @@ use ndarray::Array4;
 use ndarray::ArrayView1;
 use ndarray::Dimension;
 use ndarray::Ix4;
-use ndarray::ScalarOperand;
 use ndarray::{Array1, Array2};
 use ndarray::{Axis, Ix2};
 use rand::Rng;
@@ -202,7 +201,7 @@ impl<T: NNVFloat> Star2<T> {
         let mut dropout_star = self.clone();
         dropout_star.representation.zero_eqn(index);
 
-        let mut stars = self.step_relu2(index);
+        let stars = self.step_relu2(index);
         let dropout_star_opt = if dropout_star.is_empty() {
             None
         } else {
@@ -319,7 +318,7 @@ impl<T: NNVFloat> Star2<T> {
                 {
                     reduced_poly.filter_trivial();
                     debug_assert!(!reduced_poly.any_nan());
-                    reduced_poly.gaussian_cdf(&mu, &sigma, n, max_iters)
+                    reduced_poly.gaussian_cdf(mu, sigma, n, max_iters)
                 } else {
                     (1., 0., 1.)
                 }
@@ -357,7 +356,7 @@ impl<T: NNVFloat> Star2<T> {
                 if let Some((reduced_poly, (_reduced_lbs, _reduced_ubs))) =
                     poly.reduce_fixed_inputs(&lbs, &ubs)
                 {
-                    reduced_poly.gaussian_sample(rng, &mu, &sigma, n, max_iters)
+                    reduced_poly.gaussian_sample(rng, mu, sigma, n, max_iters)
                 } else {
                     vec![]
                 }

@@ -11,7 +11,6 @@ use ndarray::RemoveAxis;
 use ndarray::Zip;
 use ndarray::{stack, Array, Dimension};
 use ndarray::{ArrayView, ArrayViewMut, ArrayViewMut1};
-use num::Float;
 use rand::distributions::Uniform;
 use rand::rngs::StdRng;
 use std::fmt::Display;
@@ -28,7 +27,7 @@ impl<T: NNVFloat, D: Dimension + ndarray::RemoveAxis> Bounds<T, D> {
     pub fn new<'a, S: Dimension + Dimension<Larger = D>>(
         lower: ArrayView<'a, T, S>,
         upper: ArrayView<'a, T, S>,
-    ) -> Bounds<T, D> {
+    ) -> Self {
         let data: Array<T, D> = stack(Axis(0), &[lower, upper]).unwrap();
         Self { data }
     }
@@ -78,6 +77,7 @@ impl<T: NNVFloat, D: Dimension + ndarray::RemoveAxis> Bounds<T, D> {
 }
 
 impl<T: crate::NNVFloat, D: Dimension + ndarray::RemoveAxis> Bounds<T, D> {
+    /// # Panics
     pub fn subset(&self, rhs: &Self) -> bool {
         Zip::from(self.bounds_iter())
             .and(rhs.bounds_iter())
@@ -105,7 +105,7 @@ impl<T: NNVFloat> Bounds1<T> {
         }
     }
 
-    pub fn affine_map(&self, aff: Affine2<T>) -> Self {
+    pub fn affine_map(&self, aff: &Affine2<T>) -> Self {
         let lower = aff.apply(&self.lower());
         let upper = aff.apply(&self.upper());
         Self::new(lower.view(), upper.view())
@@ -114,16 +114,17 @@ impl<T: NNVFloat> Bounds1<T> {
     pub fn split_at(&self, index: usize) -> (Self, Self) {
         let (head, tail) = self.data.view().split_at(Axis(1), index);
         (
-            Bounds1 {
+            Self {
                 data: head.to_owned(),
             },
-            Bounds1 {
+            Self {
                 data: tail.to_owned(),
             },
         )
     }
 
-    pub fn append(mut self, other: Self) -> Self {
+    /// # Panics
+    pub fn append(mut self, other: &Self) -> Self {
         self.data.append(Axis(1), other.data.view()).unwrap();
         self
     }

@@ -14,7 +14,6 @@ use ndarray::Ix2;
 use ndarray::{Array1, Array2};
 use rand::distributions::{Bernoulli, Distribution};
 use rand::Rng;
-use std::fmt;
 
 /// Data structure representing the paths through a deep neural network (DNN)
 #[derive(Debug)]
@@ -174,7 +173,7 @@ impl<T: crate::NNVFloat> Constellation<T, Ix2> {
     /// # Panics
     ///
     /// loc, scale: Input Gaussian
-    /// safe_value
+    /// `safe_value`
     #[allow(clippy::too_many_lines)]
     pub fn sample_safe_star(
         &mut self,
@@ -532,7 +531,7 @@ impl<T: crate::NNVFloat> Constellation<T, Ix2> {
                             }
                         };
                         // Safe unwrap due to above handling
-                        let dist = Bernoulli::new(fst_prob.clone().into()).expect(&format!("Bad fst_prob: {:?} fst_cdf: {:?} snd_cdf: {:?}, fst_n {:?}, snd_n {:?}", fst_prob, fst_cdf, snd_cdf, fst_cdf.is_normal(), snd_cdf.is_normal()));
+                        let dist = Bernoulli::new(fst_prob.into()).expect(&format!("Bad fst_prob: {:?} fst_cdf: {:?} snd_cdf: {:?}, fst_n {:?}, snd_n {:?}", fst_prob, fst_cdf, snd_cdf, fst_cdf.is_normal(), snd_cdf.is_normal()));
                         if dist.sample(rng) {
                             path_logp += fst_prob.ln();
                             Some((children[0], path_logp))

@@ -163,7 +163,7 @@ impl<T: NNVFloat> Layer<T> {
                     let (bounds_part, (lower_part, upper_part)) =
                         deep_poly_relu(&bounds_head, &lower_aff_head, &upper_aff_head);
                     (
-                        bounds_part.append(bounds_tail),
+                        bounds_part.append(&bounds_tail),
                         (
                             lower_part.append(&lower_aff_tail),
                             upper_part.append(&upper_aff_tail),

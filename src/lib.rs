@@ -1,4 +1,4 @@
-// #![warn(clippy::all, clippy::pedantic, clippy::nursery, clippy::cargo)]
+#![warn(clippy::all, clippy::pedantic, clippy::nursery, clippy::cargo)]
 #![allow(clippy::must_use_candidate)]
 #![feature(fn_traits)]
 #![feature(destructuring_assignment)]
@@ -216,7 +216,7 @@ impl PyConstellation {
         let unfixed_bounds =
             unfixed_part.map(|(l, u)| Bounds1::new(l.as_array().view(), u.as_array().view()));
         let bounds = match (fixed_bounds, unfixed_bounds) {
-            (Some(f), Some(u)) => Some(f.append(u)),
+            (Some(f), Some(u)) => Some(f.append(&u)),
             (Some(f), None) => Some(f),
             (None, Some(u)) => Some(u),
             (None, None) => None,

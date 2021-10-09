@@ -91,6 +91,7 @@ impl<T: NNVFloat> Polytope<T> {
         self.halfspaces.is_member(point)
     }
 
+    /// # Panics
     pub fn gaussian_cdf(
         &self,
         mu: &Array1<T>,
@@ -122,7 +123,7 @@ impl<T: NNVFloat> Polytope<T> {
         let sigma = sigma.mapv(std::convert::Into::into);
 
         // sample unfixed dimensions
-        let mut constraint_coeffs: Array2<f64> = self.coeffs().mapv(|x| x.into());
+        let mut constraint_coeffs: Array2<f64> = self.coeffs().mapv(std::convert::Into::into);
         // normalise each equation
         let row_norms: Array1<f64> = constraint_coeffs
             .rows()
@@ -252,29 +253,26 @@ impl<T: NNVFloat> Polytope<T> {
             .map_collect(|&lb, &ub| if lb == ub { lb } else { T::zero() });
 
         // update eqns
-        if let Some(halfspaces) = self
-            .halfspaces
+        self.halfspaces
             .reduce_with_values(fixed_vals.view(), fixed_idxs.view())
-        {
-            let reduced_poly = Self { halfspaces };
+            .map(|halfspaces| {
+                let reduced_poly = Self { halfspaces };
 
-            // update bounds
-            let new_lbs: Array1<T> = lbs
-                .into_iter()
-                .zip(&fixed_idxs)
-                .filter(|(_lb, &is_fix)| !is_fix)
-                .map(|(&lb, _is_fix)| lb)
-                .collect();
-            let new_ubs: Array1<T> = ubs
-                .into_iter()
-                .zip(&fixed_idxs)
-                .filter(|(_ub, &is_fix)| !is_fix)
-                .map(|(&ub, _is_fix)| ub)
-                .collect();
-            Some((reduced_poly, (new_lbs, new_ubs)))
-        } else {
-            None
-        }
+                // update bounds
+                let new_lbs: Array1<T> = lbs
+                    .into_iter()
+                    .zip(&fixed_idxs)
+                    .filter(|(_lb, &is_fix)| !is_fix)
+                    .map(|(&lb, _is_fix)| lb)
+                    .collect();
+                let new_ubs: Array1<T> = ubs
+                    .into_iter()
+                    .zip(&fixed_idxs)
+                    .filter(|(_ub, &is_fix)| !is_fix)
+                    .map(|(&ub, _is_fix)| ub)
+                    .collect();
+                (reduced_poly, (new_lbs, new_ubs))
+            })
     }
 }
 

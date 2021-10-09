@@ -5,7 +5,6 @@ use crate::tensorshape::TensorShape;
 use crate::NNVFloat;
 use ndarray::concatenate;
 use ndarray::iter::Lanes;
-use ndarray::ScalarOperand;
 use ndarray::ShapeError;
 use ndarray::Zip;
 use ndarray::{Array, Array1, Array2, Array4};
@@ -15,7 +14,6 @@ use ndarray::{Axis, Dimension};
 use ndarray::{Ix1, Ix2, Ix4, IxDyn};
 use std::convert::TryFrom;
 use std::fmt::{Debug, Display};
-use std::iter::Sum;
 use std::ops::{Add, AddAssign, Mul, MulAssign};
 
 pub type Affine2<A> = Affine<A, Ix2>;
@@ -195,7 +193,7 @@ impl<T: NNVFloat> Affine2<T> {
             pos_rhs.output_dim()
         );
         assert_eq!(self.input_dim(), neg_rhs.output_dim());
-        Affine2 {
+        Self {
             basis: crate::util::signed_matmul(
                 &self.basis.view(),
                 &pos_rhs.basis.view(),
@@ -211,6 +209,7 @@ impl<T: NNVFloat> Affine2<T> {
 }
 
 impl<T: NNVFloat> Affine2<T> {
+    /// # Panics
     pub fn scale_eqns(&mut self, x: ArrayView1<T>) {
         assert_eq!(self.basis.nrows(), x.len());
         Zip::from(self.basis.rows_mut())
