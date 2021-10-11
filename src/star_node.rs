@@ -53,7 +53,7 @@ impl<T: NNVFloat> StarNodeOp<T> {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum StarNodeType<T: NNVFloat> {
     Leaf,
     Affine {
@@ -120,6 +120,10 @@ impl<T: NNVFloat, D: Dimension> StarNode<T, D> {
 
     pub fn set_cdf(&mut self, val: T) {
         self.star_cdf = Some(val);
+    }
+
+    pub fn reset_cdf(&mut self) {
+        self.star_cdf = None;
     }
 
     /// # Panics

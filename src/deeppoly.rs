@@ -110,30 +110,36 @@ pub fn deep_poly<T: NNVFloat>(input_bounds: &Bounds1<T>, dnn_iter: DNNIterator<T
     let ndim = input_bounds.ndim();
     // Affine expressing bounds on each variable in current layer as a
     // linear function of input bounds
-    let aff_bounds = dnn_iter.fold(
-        // Initialize with identity
-        (
-            input_bounds.clone(),
-            (Affine2::identity(ndim), Affine2::identity(ndim)),
-        ),
-        |(bounds_concrete, (laff, uaff)), op| {
-            let out = op.apply_bounds(&bounds_concrete, &laff, &uaff);
-            debug_assert!(out.0.bounds_iter().into_iter().all(|x| x[[0]] <= x[[1]]));
-            if cfg!(debug_assertions) {
-                let lower_bounds = out.1 .0.signed_apply(input_bounds);
-                let upper_bounds = out.1 .1.signed_apply(input_bounds);
-                let realized_abstract_bounds =
-                    Bounds1::new(lower_bounds.lower(), upper_bounds.upper());
-                assert!(
-                    realized_abstract_bounds.subset(&out.0),
-                    "\n\nRealized abstract: {:?}\nConcrete: {:?}\n\n",
-                    realized_abstract_bounds,
-                    bounds_concrete
+    let aff_bounds =
+        dnn_iter.fold(
+            // Initialize with identity
+            (
+                input_bounds.clone(),
+                (Affine2::identity(ndim), Affine2::identity(ndim)),
+            ),
+            |(bounds_concrete, (laff, uaff)), op| {
+                let out = op.apply_bounds(&bounds_concrete, &laff, &uaff);
+                debug_assert!(
+                    out.0.bounds_iter().into_iter().all(|x| (x[[0]] <= x[[1]])
+                        || (x[[0]] - x[[1]]) < std::convert::From::from(1e-4)),
+                    "Bounds: {:?}",
+                    out.0
                 );
-            }
-            out
-        },
-    );
+                if cfg!(debug_assertions) {
+                    let lower_bounds = out.1 .0.signed_apply(input_bounds);
+                    let upper_bounds = out.1 .1.signed_apply(input_bounds);
+                    let realized_abstract_bounds =
+                        Bounds1::new(lower_bounds.lower(), upper_bounds.upper());
+                    assert!(
+                        realized_abstract_bounds.subset(&out.0),
+                        "\n\nRealized abstract: {:?}\nConcrete: {:?}\n\n",
+                        realized_abstract_bounds,
+                        bounds_concrete
+                    );
+                }
+                out
+            },
+        );
     // Final substitution to get output bounds
     let lower_bounds = aff_bounds.1 .0.signed_apply(input_bounds);
     let upper_bounds = aff_bounds.1 .1.signed_apply(input_bounds);

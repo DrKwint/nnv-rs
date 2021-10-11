@@ -1,9 +1,10 @@
-#![warn(clippy::all, clippy::pedantic, clippy::nursery, clippy::cargo)]
+//#![warn(clippy::all, clippy::pedantic, clippy::nursery, clippy::cargo)]
 #![allow(clippy::must_use_candidate)]
 #![feature(fn_traits)]
 #![feature(destructuring_assignment)]
 #![feature(unboxed_closures)]
 #![feature(trait_alias)]
+#![feature(convert_float_to_int)]
 extern crate approx;
 extern crate env_logger;
 extern crate good_lp;
@@ -20,6 +21,8 @@ extern crate shh;
 extern crate truncnorm;
 
 pub mod affine;
+pub mod asterism;
+pub mod belt;
 pub mod bounds;
 pub mod constellation;
 pub mod deeppoly;
@@ -38,6 +41,7 @@ use crate::bounds::Bounds1;
 use crate::dnn::DNNIndex;
 use crate::dnn::DNNIterator;
 use affine::Affine;
+use asterism::Asterism;
 pub use bounds::Bounds;
 use constellation::Constellation;
 pub use dnn::Layer;
@@ -237,13 +241,10 @@ impl PyConstellation {
         max_iters: usize,
     ) -> (Py<PyArray1<f64>>, f64, f64) {
         let mut rng = thread_rng();
-        let (samples, branch_logp) = self.constellation.bounded_sample_multivariate_gaussian(
-            &mut rng,
-            safe_value,
-            cdf_samples,
-            num_samples,
-            max_iters,
-        );
+        let mut asterism = Asterism::new(&mut self.constellation, safe_value);
+        let (samples, branch_logp) = asterism
+            .sample_safe_star(num_samples, &mut rng, cdf_samples, max_iters)
+            .unwrap();
         let gil = Python::acquire_gil();
         let py = gil.python();
         (
