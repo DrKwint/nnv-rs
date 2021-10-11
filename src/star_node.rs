@@ -200,6 +200,16 @@ impl<T: NNVFloat> StarNode<T, Ix2> {
     pub fn get_local_bounds(&mut self) -> &Bounds1<T> {
         if self.local_bounds.is_none() {
             self.local_bounds = Some(self.star.calculate_axis_aligned_bounding_box());
+            debug_assert!(
+                self.local_bounds
+                    .clone()
+                    .unwrap()
+                    .bounds_iter()
+                    .into_iter()
+                    .all(|x| (x[[0]] <= x[[1]])),
+                "Calculated bounds are flipped! {}",
+                self.local_bounds.clone().unwrap()
+            );
         }
         self.local_bounds.as_ref().unwrap()
     }

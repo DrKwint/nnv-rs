@@ -256,7 +256,9 @@ impl<T: NNVFloat> Star2<T> {
     /// TODO: Change output type to Option<T>
     pub fn get_max(&self, idx: usize) -> T {
         let neg_one: T = std::convert::From::from(-1.);
-        let eqn = self.representation.get_eqn(idx) * neg_one;
+        let mut eqn = self.representation.get_eqn(idx);
+        let shift = eqn.shift()[0];
+        eqn *= neg_one;
 
         if let Some(ref poly) = self.constraints {
             let solved = solve(
@@ -270,7 +272,7 @@ impl<T: NNVFloat> Star2<T> {
                 Err(ResolutionError::Unbounded) => panic!("Error, unbounded"),
                 _ => panic!(),
             };
-            eqn.shift()[0] - val
+            shift - val
         } else {
             T::infinity()
         }

@@ -107,6 +107,13 @@ pub fn deep_poly_relu<T: NNVFloat>(
 pub fn deep_poly<T: NNVFloat>(input_bounds: &Bounds1<T>, dnn_iter: DNNIterator<T>) -> Bounds1<T> {
     debug!("Starting Deeppoly at {:?}", dnn_iter.get_idx());
     trace!("with input bounds {:?}", input_bounds);
+    debug_assert!(
+        input_bounds
+            .bounds_iter()
+            .into_iter()
+            .all(|x| (x[[0]] <= x[[1]])),
+        "Input bounds are flipped!"
+    );
     let ndim = input_bounds.ndim();
     // Affine expressing bounds on each variable in current layer as a
     // linear function of input bounds
@@ -118,6 +125,8 @@ pub fn deep_poly<T: NNVFloat>(input_bounds: &Bounds1<T>, dnn_iter: DNNIterator<T
                 (Affine2::identity(ndim), Affine2::identity(ndim)),
             ),
             |(bounds_concrete, (laff, uaff)), op| {
+                println!("bounds_concrete: {}", bounds_concrete);
+                println!("operation: {:?}", op);
                 let out = op.apply_bounds(&bounds_concrete, &laff, &uaff);
                 debug_assert!(
                     out.0.bounds_iter().into_iter().all(|x| (x[[0]] <= x[[1]])
