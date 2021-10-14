@@ -227,7 +227,9 @@ prop_compose! {
             center in array1(num_dims),
             constraints in non_empty_polytope(num_dims, num_constraints)
         ) -> Star2<f64> {
-            Star2::new(basis, center).with_constraints(constraints)
+            let star = Star2::new(basis, center).with_constraints(constraints);
+            assert!(!star.is_empty());
+            star
         }
 }
 

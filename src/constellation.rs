@@ -96,13 +96,20 @@ impl<T: crate::NNVFloat> Constellation<T, Ix2> {
         *self.get_node_type(id) == StarNodeType::Leaf
     }
 
-    pub fn get_node_cdf(&mut self, node_id: usize, cdf_samples: usize, max_iters: usize) -> T {
+    pub fn get_node_cdf<R: Rng>(
+        &mut self,
+        node_id: usize,
+        cdf_samples: usize,
+        max_iters: usize,
+        rng: &mut R,
+    ) -> T {
         self.arena[node_id].gaussian_cdf(
             &self.loc,
             &self.scale,
             cdf_samples,
             max_iters,
             &self.input_bounds,
+            rng,
         )
     }
 
@@ -112,6 +119,27 @@ impl<T: crate::NNVFloat> Constellation<T, Ix2> {
 
     pub fn add_node_cdf(&mut self, node_id: usize, cdf: T) {
         self.arena[node_id].add_cdf(cdf);
+    }
+
+    pub fn sample_gaussian_node_output<R: Rng>(
+        &self,
+        node_id: usize,
+        rng: &mut R,
+        n: usize,
+        max_iters: usize,
+    ) -> Vec<(Array1<T>, T)> {
+        let node = &self.arena[node_id];
+        node.gaussian_sample(
+            rng,
+            &self.loc,
+            &self.scale,
+            n,
+            max_iters,
+            &self.input_bounds,
+        )
+        .into_iter()
+        .map(|(input, weight)| (node.forward(&input), weight))
+        .collect()
     }
 
     pub fn sample_gaussian_node<R: Rng>(

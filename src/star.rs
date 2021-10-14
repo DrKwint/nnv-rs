@@ -296,13 +296,14 @@ impl<T: NNVFloat> Star2<T> {
     /// (cdf estimate, estimate error, cdf upper bound)
     ///
     /// # Panics
-    pub fn trunc_gaussian_cdf(
+    pub fn trunc_gaussian_cdf<R: Rng>(
         &self,
         mu: &Array1<T>,
         sigma: &Array2<T>,
         n: usize,
         max_iters: usize,
         input_bounds: &Option<Bounds1<T>>,
+        rng: &mut R,
     ) -> (f64, f64, f64) {
         // remove fixed dimensions from mu and sigma
         debug!(
@@ -320,12 +321,12 @@ impl<T: NNVFloat> Star2<T> {
                 {
                     reduced_poly.filter_trivial();
                     debug_assert!(!reduced_poly.any_nan());
-                    reduced_poly.gaussian_cdf(mu, sigma, n, max_iters)
+                    reduced_poly.gaussian_cdf(mu, sigma, n, max_iters, rng)
                 } else {
                     (1., 0., 1.)
                 }
             } else {
-                poly.gaussian_cdf(mu, sigma, n, max_iters)
+                poly.gaussian_cdf(mu, sigma, n, max_iters, rng)
             }
         } else {
             // Unbounded sums to 1
@@ -398,13 +399,51 @@ impl<T: NNVFloat> Star4<T> {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::test_util::{array2, empty_star, non_empty_star};
-    use ndarray::arr1;
+    use crate::test_util::{array1, array2, empty_star, non_empty_star, pos_def_array1};
+    use ndarray::{arr1, arr2};
     use proptest::prelude::*;
     use proptest::proptest;
+    use rand::prelude::*;
+    use rand_pcg::Pcg64;
     use std::panic;
 
+    #[test]
+    fn test_gaussian_sample_manual() {
+        let mut rng = Pcg64::seed_from_u64(2);
+        let loc: Array1<f64> = arr1(&[-2.52]);
+        let scale_diag: Array1<f64> = arr1(&[0.00001]);
+        let lbs = loc.clone() - 3.5 * scale_diag.clone();
+        let ubs = loc.clone() + 3.5 * scale_diag.clone();
+        let input_bounds = Bounds1::new(lbs.view(), ubs.view());
+        let mut star: Star2<f64> = Star2::new(Array2::eye(1) * 8.016, Array1::zeros(1));
+        star = star.add_constraints(&Inequality::new(arr2(&[[-1.], [1.]]), arr1(&[2.52, 0.10])));
+        star.gaussian_sample(
+            &mut rng,
+            &loc,
+            &Array2::from_diag(&scale_diag).to_owned(),
+            10,
+            20,
+            &Some(input_bounds),
+        );
+        /*
+        Star { representation: Affine { basis: [[8.016197283509424]], shape=[1, 1], strides=[1, 1], layout=CFcf (0xf), const ndim=2, shift: [0.0], shape=[1], strides=[1], layout=CFcf (0xf), const ndim=1 }, constraints: Some(Polytope { halfspaces: Inequality { coeffs: [[-1.0],
+            [1.0],
+            [-1.0],
+            [1.0],
+            [-1.0]], shape=[5, 1], strides=[1, 1], layout=CFcf (0xf), const ndim=2, rhs: [2.52102610837301, 0.1001445177130087, 5.47728758574745, 20.0, 20.0], shape=[5], strides=[1], layout=CFcf (0xf), const ndim=1 } }) }
+        */
+    }
+
     proptest! {
+        #[test]
+        fn test_gaussian_sample(star in non_empty_star(1,3), loc in array1(1), scale_diag in pos_def_array1(1)) {
+            let mut rng = rand::thread_rng();
+            let lbs = loc.clone() - 3.5 * scale_diag.clone();
+            let ubs = loc.clone() + 3.5 * scale_diag.clone();
+            let input_bounds = Bounds1::new(lbs.view(), ubs.view());
+            star.gaussian_sample(&mut rng, &loc, &Array2::from_diag(&scale_diag).to_owned(), 10, 20, &Some(input_bounds));
+        }
+
         #[test]
         fn test_get_min_feasible(star in non_empty_star(2,3)) {
             prop_assert!(!star.input_space_polytope().unwrap().is_empty(), "Polytope is empty");

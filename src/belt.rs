@@ -1,13 +1,16 @@
 use crate::constellation::Constellation;
 use crate::NNVFloat;
+use ndarray::Array1;
 use ndarray::Dimension;
 use ndarray::Ix2;
 use ordered_float::OrderedFloat;
 use rand::thread_rng;
+use rand::Rng;
 use std::collections::BinaryHeap;
 use std::convert::TryInto;
 
 /// Frontier contains pairs of weight and index into the constellation arena
+#[derive(Debug)]
 struct Belt<'a, T: NNVFloat, D: Dimension> {
     constellation: &'a mut Constellation<T, D>,
     frontier: BinaryHeap<(OrderedFloat<T>, usize)>, // Tuples are ordered lexicographically
@@ -34,20 +37,24 @@ impl<'a, T: crate::NNVFloat> Belt<'a, T, Ix2> {
     /// We'll always choose the node with greatest weight as the next to expand
     ///
     /// I'm so meta, even this acronym -XKCD
-    pub fn expand(&mut self) {
-        let (weight, next) = self.frontier.pop().unwrap();
-        let children = self.constellation.get_node_child_ids(next);
-        children.into_iter().for_each(|idx| {
-            let cdf = self.constellation.get_node_cdf(idx, 10, 10);
-            let bounds = self.constellation.get_node_output_bounds(idx);
-            let f = bounds.0.abs().max(bounds.1.abs()); // Estimate to be refined
-            let entry = (std::convert::From::from(f * cdf), idx);
-            if self.constellation.is_node_leaf(idx) {
-                self.leaves.push(entry);
-            } else {
-                self.frontier.push(entry);
-            }
-        });
+    pub fn expand<R: Rng>(&mut self, rng: &mut R) -> bool {
+        if let Some((_weight, next)) = self.frontier.pop() {
+            let children = self.constellation.get_node_child_ids(next);
+            children.into_iter().for_each(|idx| {
+                let cdf = self.constellation.get_node_cdf(idx, 10, 10, rng);
+                let bounds = self.constellation.get_node_output_bounds(idx);
+                let f = bounds.0.abs().max(bounds.1.abs()); // Estimate to be refined
+                let entry = (std::convert::From::from(f * cdf), idx);
+                if self.constellation.is_node_leaf(idx) {
+                    self.leaves.push(entry);
+                } else {
+                    self.frontier.push(entry);
+                }
+            });
+            true
+        } else {
+            false
+        }
     }
 
     /// Args:
@@ -55,8 +62,7 @@ impl<'a, T: crate::NNVFloat> Belt<'a, T, Ix2> {
     ///
     /// Returns:
     ///     E_{N(mu, sigma)}[f] where f is the underlying DNN, i.e. the expected value of the output
-    pub fn importance_sample(&self, n_samples: T) {
-        //-> T {
+    pub fn importance_sample(&self, n_samples: T) -> T {
         let mut rng = thread_rng();
         let total_weight: T = self
             .frontier
@@ -64,16 +70,25 @@ impl<'a, T: crate::NNVFloat> Belt<'a, T, Ix2> {
             .map(|(weight, _idx)| weight)
             .sum::<OrderedFloat<T>>()
             .0;
-        let samples = self
-            .frontier
+        self.frontier
             .iter()
             .chain(self.leaves.iter())
             .map(|(weight, idx)| {
                 let star_prob = weight.0 / total_weight;
                 let n_local_samples = ((star_prob * n_samples).into() as u64).try_into().unwrap();
-                self.constellation
-                    .sample_gaussian_node(*idx, &mut rng, n_local_samples, 10)
-            });
+                let (local_samples, local_sample_p): (Vec<Array1<T>>, Vec<T>) = self
+                    .constellation
+                    .sample_gaussian_node_output(*idx, &mut rng, n_local_samples, 10)
+                    .iter()
+                    .map(|x| x)
+                    .cloned()
+                    .unzip();
+                let local_sum: T = local_samples.iter().map(|x| x[[0]]).sum();
+                let local_mean: T = local_sum / (local_samples.len() as f64).into();
+                local_mean * weight.0
+            })
+            .sum::<T>()
+            / total_weight
     }
 }
 
@@ -85,10 +100,20 @@ mod test {
 
     proptest! {
         #[test]
-        fn test_perform_importance_sample(mut constellation in generic_constellation(2, 2, 2, 2)) {
+        fn test_perform_importance_sample(mut constellation in constellation(2, 1, 2, 2)) {
             let mut belt = Belt::new(&mut constellation);
-            belt.expand();
             belt.importance_sample(1.0);
+        }
+
+        #[test]
+        fn test_multiple_beltloops(mut constellation in constellation(2, 2, 2, 2)) {
+            let mut rng = rand::thread_rng();
+            let mut belt = Belt::new(&mut constellation);
+            (0..10).for_each(|_| {
+                belt.expand(&mut rng);
+                println!("Belt: {:?}", belt);
+                belt.importance_sample(100.);
+            });
         }
     }
 }

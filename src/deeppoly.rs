@@ -125,8 +125,6 @@ pub fn deep_poly<T: NNVFloat>(input_bounds: &Bounds1<T>, dnn_iter: DNNIterator<T
                 (Affine2::identity(ndim), Affine2::identity(ndim)),
             ),
             |(bounds_concrete, (laff, uaff)), op| {
-                println!("bounds_concrete: {}", bounds_concrete);
-                println!("operation: {:?}", op);
                 let out = op.apply_bounds(&bounds_concrete, &laff, &uaff);
                 debug_assert!(
                     out.0.bounds_iter().into_iter().all(|x| (x[[0]] <= x[[1]])

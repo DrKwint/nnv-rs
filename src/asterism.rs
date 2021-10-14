@@ -1,4 +1,5 @@
 use crate::constellation::Constellation;
+use crate::rand::SeedableRng;
 use crate::star_node::StarNodeType;
 use crate::NNVFloat;
 use log::debug;
@@ -7,6 +8,7 @@ use ndarray::Dimension;
 use ndarray::Ix2;
 use rand::distributions::{Bernoulli, Distribution};
 use rand::Rng;
+use rand_pcg::Pcg64;
 
 pub struct Asterism<'a, T: NNVFloat, D: Dimension> {
     constellation: &'a mut Constellation<T, D>,
@@ -67,35 +69,42 @@ impl<'a, T: NNVFloat> Asterism<'a, T, Ix2> {
             "Running sample_safe_star with: safe_value {}",
             self.safe_value
         );
-        let mut rng = rand::thread_rng();
         let mut current_node = 0;
         let mut path = vec![];
         let mut path_logp = T::zero();
         let input_bounds = self.constellation.get_input_bounds().clone();
-        let infeasible_reset =
-            |me: &mut Self, x: usize, path: &mut Vec<usize>, path_logp: &mut T| -> usize {
-                debug!("Infeasible reset!");
-                me.set_feasible(x, false);
-                let mut infeas_cdf = me.constellation.get_node_cdf(x, cdf_samples, max_iters);
-                path.drain(..).rev().for_each(|x| {
-                    // check if all chilren are infeasible
-                    if me
+        let infeasible_reset = |me: &mut Self,
+                                x: usize,
+                                path: &mut Vec<usize>,
+                                path_logp: &mut T,
+                                rng: &mut R|
+         -> usize {
+            debug!("Infeasible reset!");
+            me.set_feasible(x, false);
+            let mut infeas_cdf = me
+                .constellation
+                .get_node_cdf(x, cdf_samples, max_iters, rng);
+            path.drain(..).rev().for_each(|x| {
+                // check if all chilren are infeasible
+                if me
+                    .constellation
+                    .get_node_child_ids(x)
+                    .iter()
+                    .any(|&x| me.get_feasible(x))
+                {
+                    // if not infeasible, update CDF
+                    me.constellation
+                        .add_node_cdf(x, T::neg(T::one()) * infeas_cdf);
+                } else {
+                    me.set_feasible(x, false);
+                    infeas_cdf = me
                         .constellation
-                        .get_node_child_ids(x)
-                        .iter()
-                        .any(|&x| me.get_feasible(x))
-                    {
-                        // if not infeasible, update CDF
-                        me.constellation
-                            .add_node_cdf(x, T::neg(T::one()) * infeas_cdf);
-                    } else {
-                        me.set_feasible(x, false);
-                        infeas_cdf = me.constellation.get_node_cdf(x, cdf_samples, max_iters)
-                    }
-                });
-                *path_logp = T::zero();
-                0
-            };
+                        .get_node_cdf(x, cdf_samples, max_iters, rng)
+                }
+            });
+            *path_logp = T::zero();
+            0
+        };
         loop {
             debug!("Current node: {:?}", current_node);
             // base case for feasability
@@ -111,7 +120,7 @@ impl<'a, T: NNVFloat> Asterism<'a, T, Ix2> {
                     // handle case where star is safe
                     let safe_sample = self.constellation.sample_gaussian_node(
                         current_node,
-                        &mut rng,
+                        rng,
                         num_samples,
                         max_iters,
                     );
@@ -119,13 +128,14 @@ impl<'a, T: NNVFloat> Asterism<'a, T, Ix2> {
                 } else if output_bounds.0 > self.safe_value {
                     // handle case where star is infeasible
                     self.set_feasible(current_node, false);
-                    current_node = infeasible_reset(self, current_node, &mut path, &mut path_logp);
+                    current_node =
+                        infeasible_reset(self, current_node, &mut path, &mut path_logp, rng);
                     continue;
                 } else if let StarNodeType::Leaf = self.constellation.get_node_type(current_node) {
                     // do procedure to select safe part
                     let safe_sample = self.constellation.sample_gaussian_node_safe(
                         current_node,
-                        &mut rng,
+                        rng,
                         num_samples,
                         max_iters,
                         self.safe_value,
@@ -137,13 +147,8 @@ impl<'a, T: NNVFloat> Asterism<'a, T, Ix2> {
             }
             // expand node
             {
-                let result = self.select_safe_child(
-                    current_node,
-                    path_logp,
-                    cdf_samples,
-                    max_iters,
-                    &mut rng,
-                );
+                let result =
+                    self.select_safe_child(current_node, path_logp, cdf_samples, max_iters, rng);
                 match result {
                     Some((node, logp)) => {
                         current_node = node;
@@ -151,7 +156,7 @@ impl<'a, T: NNVFloat> Asterism<'a, T, Ix2> {
                     }
                     None => {
                         current_node =
-                            infeasible_reset(self, current_node, &mut path, &mut path_logp);
+                            infeasible_reset(self, current_node, &mut path, &mut path_logp, rng);
                     }
                 }
             }
@@ -165,13 +170,13 @@ impl<'a, T: NNVFloat> Asterism<'a, T, Ix2> {
     ///     path_logp (T): The log probability of reaching the child from the root node
     ///
     /// # Panics
-    fn select_safe_child(
+    fn select_safe_child<R: Rng>(
         &mut self,
         current_node: usize,
         mut path_logp: T,
         cdf_samples: usize,
         max_iters: usize,
-        rng: &mut rand::rngs::ThreadRng,
+        rng: &mut R,
     ) -> Option<(usize, T)> {
         let input_bounds = self.constellation.get_input_bounds();
         match *self.constellation.get_node_type(current_node) {
@@ -212,12 +217,18 @@ impl<'a, T: NNVFloat> Asterism<'a, T, Ix2> {
                         Some((children[0], path_logp))
                     }
                     2 => {
-                        let fst_cdf =
-                            self.constellation
-                                .get_node_cdf(children[0], cdf_samples, max_iters);
-                        let snd_cdf =
-                            self.constellation
-                                .get_node_cdf(children[1], cdf_samples, max_iters);
+                        let fst_cdf = self.constellation.get_node_cdf(
+                            children[0],
+                            cdf_samples,
+                            max_iters,
+                            rng,
+                        );
+                        let snd_cdf = self.constellation.get_node_cdf(
+                            children[1],
+                            cdf_samples,
+                            max_iters,
+                            rng,
+                        );
                         debug!(
                             "Selecting between 2 children with CDFs: {} and {}",
                             fst_cdf, snd_cdf
@@ -237,6 +248,7 @@ impl<'a, T: NNVFloat> Asterism<'a, T, Ix2> {
                                     current_node,
                                     cdf_samples,
                                     max_iters,
+                                    rng,
                                 );
                                 let mut derived_fst_cdf = parent_cdf - snd_cdf;
 
@@ -255,6 +267,7 @@ impl<'a, T: NNVFloat> Asterism<'a, T, Ix2> {
                                     current_node,
                                     cdf_samples,
                                     max_iters,
+                                    rng,
                                 );
                                 let mut derived_snd_cdf = parent_cdf - fst_cdf;
                                 if derived_snd_cdf.is_sign_negative() {
@@ -318,11 +331,13 @@ impl<'a, T: NNVFloat> Asterism<'a, T, Ix2> {
                                 children[0],
                                 cdf_samples,
                                 max_iters,
+                                rng,
                             );
                             let snd_cdf = self.constellation.get_node_cdf(
                                 children[1],
                                 cdf_samples,
                                 max_iters,
+                                rng,
                             );
 
                             // Handle the case where a CDF gives a non-normal value
@@ -333,6 +348,7 @@ impl<'a, T: NNVFloat> Asterism<'a, T, Ix2> {
                                         current_node,
                                         cdf_samples,
                                         max_iters,
+                                        rng,
                                     );
                                     let derived_fst_cdf = parent_cdf - snd_cdf;
                                     self.constellation
@@ -344,6 +360,7 @@ impl<'a, T: NNVFloat> Asterism<'a, T, Ix2> {
                                         current_node,
                                         cdf_samples,
                                         max_iters,
+                                        rng,
                                     );
                                     let derived_snd_cdf = parent_cdf - fst_cdf;
                                     self.constellation
@@ -383,7 +400,10 @@ mod test {
         fn test_sample_safe_star(mut constellation in generic_constellation(2, 2, 2, 2)) {
             let mut rng = rand::thread_rng();
             let mut asterism = Asterism::new(&mut constellation, 1.);
-            asterism.sample_safe_star(1, &mut rng, 1, 1);
+            let default = Array1::zeros(asterism.constellation.get_dnn().input_shape()[0].unwrap());
+            let sample = asterism.sample_safe_star(1, &mut rng, 1, 1).unwrap_or((vec![(default, 0.69)], 0.69));
+            println!("sample {:?}", sample);
+            assert_eq!(sample.0[0].0.len(), asterism.constellation.get_dnn().input_shape()[0].unwrap(), "expected sample shape: {:?}", asterism.constellation.get_dnn().input_shape()[0].unwrap())
         }
     }
 }

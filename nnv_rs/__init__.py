@@ -149,8 +149,6 @@ class Constellation:
         for (samp, l, s) in zip(sample, self.loc, self.scale):
             prob *= norm.pdf(samp, l, s)
         normal_logp = np.log(prob)
-        truncnorm_prob = np.exp(sample_logp)
-        branch_prob = np.exp(branch_logp)
         if not np.all(np.isfinite(sample)):
             raise ValueError()
         if not np.all(np.isfinite(normal_logp)):
