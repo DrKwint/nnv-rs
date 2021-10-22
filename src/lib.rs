@@ -70,6 +70,7 @@ pub trait NNVFloat = 'static
     + approx::AbsDiffEq
     + rand::distributions::uniform::SampleUniform;
 
+/*
 #[pyclass]
 #[derive(Clone, Debug)]
 struct PyDNN {
@@ -264,3 +265,4 @@ pub fn nnv_rs(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_class::<PyDNN>()?;
     Ok(())
 }
+*/
