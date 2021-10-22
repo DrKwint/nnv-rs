@@ -62,7 +62,7 @@ impl<'a, T: crate::NNVFloat> Belt<'a, T, Ix2> {
     ///
     /// Returns:
     ///     E_{N(mu, sigma)}[f] where f is the underlying DNN, i.e. the expected value of the output
-    pub fn importance_sample(&self, n_samples: T) -> T {
+    pub fn importance_sample(&mut self, n_samples: T) -> T {
         let mut rng = thread_rng();
         let total_weight: T = self
             .frontier
@@ -71,8 +71,9 @@ impl<'a, T: crate::NNVFloat> Belt<'a, T, Ix2> {
             .sum::<OrderedFloat<T>>()
             .0;
         self.frontier
+            .clone()
             .iter()
-            .chain(self.leaves.iter())
+            .chain(self.leaves.clone().iter())
             .map(|(weight, idx)| {
                 let star_prob = weight.0 / total_weight;
                 let n_local_samples = ((star_prob * n_samples).into() as u64).try_into().unwrap();
@@ -80,7 +81,6 @@ impl<'a, T: crate::NNVFloat> Belt<'a, T, Ix2> {
                     .constellation
                     .sample_gaussian_node_output(*idx, &mut rng, n_local_samples, 10)
                     .iter()
-                    .map(|x| x)
                     .cloned()
                     .unzip();
                 let local_sum: T = local_samples.iter().map(|x| x[[0]]).sum();

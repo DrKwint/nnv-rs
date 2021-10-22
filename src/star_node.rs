@@ -5,6 +5,7 @@ use crate::deeppoly::deep_poly;
 use crate::dnn::DNNIndex;
 use crate::dnn::DNNIterator;
 use crate::dnn::DNN;
+use crate::polytope::PolytopeInputDistribution;
 use crate::star::Star;
 use crate::NNVFloat;
 use log::trace;
@@ -81,6 +82,7 @@ pub struct StarNode<T: NNVFloat, D: Dimension> {
     local_bounds: Option<Bounds1<T>>,
     output_bounds: Option<(T, T)>,
     is_feasible: bool,
+    gaussian_distribution: Option<PolytopeInputDistribution<T>>,
 }
 
 impl<T: NNVFloat, D: Dimension> StarNode<T, D> {
@@ -92,6 +94,7 @@ impl<T: NNVFloat, D: Dimension> StarNode<T, D> {
             local_bounds,
             output_bounds: None,
             is_feasible: true,
+            gaussian_distribution: None,
         }
     }
 
@@ -141,6 +144,25 @@ impl<T: NNVFloat, D: Dimension> StarNode<T, D> {
 }
 
 impl<T: NNVFloat> StarNode<T, Ix2> {
+    pub fn get_gaussian_distribution(
+        &mut self,
+        loc: &Array1<T>,
+        scale: &Array2<T>,
+        max_accept_reject_iters: usize,
+        input_bounds: &Option<Bounds1<T>>,
+    ) -> &mut PolytopeInputDistribution<T> {
+        if self.gaussian_distribution.is_none() {
+            self.gaussian_distribution = self.star.get_input_trunc_gaussian(
+                loc,
+                scale,
+                max_accept_reject_iters,
+                input_bounds,
+            );
+            assert!(!self.gaussian_distribution.is_none(), "explicit panic"); // really, we just want to use a general gaussian here
+        }
+        self.gaussian_distribution.as_mut().unwrap()
+    }
+
     pub fn forward(&self, x: &Array1<T>) -> Array1<T> {
         self.star.get_representation().apply(&x.view())
     }
@@ -154,6 +176,7 @@ impl<T: NNVFloat> StarNode<T, Ix2> {
             local_bounds: None,
             output_bounds: None,
             is_feasible: true,
+            gaussian_distribution: None,
         }
     }
 
@@ -168,10 +191,9 @@ impl<T: NNVFloat> StarNode<T, Ix2> {
     ) -> T {
         self.star_cdf.map_or_else(
             || {
-                let out = self
-                    .star
-                    .trunc_gaussian_cdf(mu, sigma, n, max_iters, input_bounds, rng);
-                let cdf: T = out.0.into();
+                let cdf: T = self
+                    .get_gaussian_distribution(mu, sigma, max_iters, input_bounds)
+                    .cdf(n, rng);
                 debug_assert!(cdf.is_sign_positive());
                 self.star_cdf = Some(cdf);
                 cdf
@@ -185,7 +207,7 @@ impl<T: NNVFloat> StarNode<T, Ix2> {
 
     /// # Panics
     pub fn gaussian_sample<R: Rng>(
-        &self,
+        &mut self,
         rng: &mut R,
         mu: &Array1<T>,
         sigma: &Array2<T>,
@@ -193,12 +215,21 @@ impl<T: NNVFloat> StarNode<T, Ix2> {
         max_iters: usize,
         input_bounds: &Option<Bounds1<T>>,
     ) -> Vec<(Array1<T>, T)> {
-        self.star
-            .clone()
-            .gaussian_sample(rng, mu, sigma, n, max_iters, input_bounds)
-            .iter()
-            .map(|(arr, val)| (arr.mapv(|x| x.into()), num::NumCast::from(*val).unwrap()))
+        let distribution = self.get_gaussian_distribution(mu, sigma, max_iters, input_bounds);
+        distribution.sample_n(n, rng)
+
+        //let constraint_coeffs = self.star.get_constraint_coeffs();
+        //let inv_constraint_coeffs: Array2<T> =
+        //    util::pinv(&constraint_coeffs.unwrap().mapv(|x| x.into())).mapv(|x| x.into());
+        /*
+        samples
+            .into_iter()
+            .map(|(arr, val)| {
+                //let samp_t = inv_constraint_coeffs.dot(&arr.t()).reversed_axes();
+                (samp_t, num::NumCast::from(val).unwrap())
+            })
             .collect()
+        */
     }
 
     /// # Panics

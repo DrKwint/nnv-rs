@@ -3,7 +3,7 @@ from setuptools_rust import Binding, RustExtension
 
 setup(
     name="nnv-rs",
-    version="0.1.0",
+    version="0.2.0",
     rust_extensions=[
         RustExtension("nnv_rs.nnv_rs", binding=Binding.PyO3, native=True)
     ],

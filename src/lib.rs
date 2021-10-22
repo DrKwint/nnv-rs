@@ -70,6 +70,7 @@ pub trait NNVFloat = 'static
     + approx::AbsDiffEq
     + rand::distributions::uniform::SampleUniform;
 
+/*
 #[pyclass]
 #[derive(Clone, Debug)]
 struct PyDNN {
@@ -239,28 +240,30 @@ impl PyConstellation {
         cdf_samples: usize,
         num_samples: usize,
         max_iters: usize,
-    ) -> (Py<PyArray1<f64>>, f64, f64) {
+    ) -> Option<(Py<PyArray1<f64>>, f64, f64)> {
         let mut rng = thread_rng();
         let mut asterism = Asterism::new(&mut self.constellation, safe_value);
-        let (samples, branch_logp) = asterism
-            .sample_safe_star(num_samples, &mut rng, cdf_samples, max_iters)
-            .unwrap();
+        let output = asterism.sample_safe_star(num_samples, &mut rng, cdf_samples, max_iters);
+        if output.is_none() {
+            return None;
+        }
+        let (samples, branch_logp) = output.unwrap();
         let gil = Python::acquire_gil();
         let py = gil.python();
-        (
+        Some((
             PyArray1::from_array(py, &samples[0].0).to_owned(),
             samples[0].1,
             branch_logp,
-        )
+        ))
     }
 }
 
 /// # Errors
 #[pymodule]
 pub fn nnv_rs(_py: Python, m: &PyModule) -> PyResult<()> {
-    #[cfg(debug_assertions)]
-    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("trace")).init();
+    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("error")).init();
     m.add_class::<PyConstellation>()?;
     m.add_class::<PyDNN>()?;
     Ok(())
 }
+*/

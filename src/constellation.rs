@@ -1,5 +1,6 @@
 #![allow(non_snake_case)]
 use crate::dnn::DNNIterator;
+use crate::dnn::{DNNIndex, DNN};
 use crate::star::Star;
 use crate::star_node::StarNode;
 use crate::star_node::StarNodeOp;
@@ -7,7 +8,6 @@ use crate::star_node::StarNodeType;
 use crate::util::ArenaLike;
 use crate::Bounds;
 use crate::NNVFloat;
-use crate::DNN;
 use ndarray::Dimension;
 use ndarray::Ix2;
 use ndarray::{Array1, Array2};
@@ -88,6 +88,34 @@ impl<T: NNVFloat, D: Dimension> Constellation<T, D> {
 }
 
 impl<T: crate::NNVFloat> Constellation<T, Ix2> {
+    pub fn initialize_node_tilting_from_parent(
+        &mut self,
+        node_id: usize,
+        parent_id: usize,
+        max_accept_reject_iters: usize,
+    ) {
+        let parent_tilting_soln = self.arena[parent_id]
+            .get_gaussian_distribution(
+                &self.loc,
+                &self.scale,
+                max_accept_reject_iters,
+                &self.input_bounds,
+            )
+            .get_tilting_solution(None)
+            .clone();
+        let child_distr = self.arena[node_id].get_gaussian_distribution(
+            &self.loc,
+            &self.scale,
+            max_accept_reject_iters,
+            &self.input_bounds,
+        );
+        child_distr.get_tilting_solution(Some(&parent_tilting_soln));
+    }
+
+    pub fn get_node_dnn_index(&self, node_id: usize) -> DNNIndex {
+        self.arena[node_id].get_dnn_index()
+    }
+
     pub fn get_node_output_bounds(&mut self, node_id: usize) -> (T, T) {
         self.arena[node_id].get_output_bounds(&self.dnn, &|x| (x.lower()[[0]], x.upper()[[0]]))
     }
@@ -122,13 +150,13 @@ impl<T: crate::NNVFloat> Constellation<T, Ix2> {
     }
 
     pub fn sample_gaussian_node_output<R: Rng>(
-        &self,
+        &mut self,
         node_id: usize,
         rng: &mut R,
         n: usize,
         max_iters: usize,
     ) -> Vec<(Array1<T>, T)> {
-        let node = &self.arena[node_id];
+        let node = &mut self.arena[node_id];
         node.gaussian_sample(
             rng,
             &self.loc,
@@ -143,7 +171,7 @@ impl<T: crate::NNVFloat> Constellation<T, Ix2> {
     }
 
     pub fn sample_gaussian_node<R: Rng>(
-        &self,
+        &mut self,
         node_id: usize,
         rng: &mut R,
         n: usize,
@@ -167,7 +195,7 @@ impl<T: crate::NNVFloat> Constellation<T, Ix2> {
         max_iters: usize,
         safe_value: T,
     ) -> Vec<(Array1<T>, T)> {
-        let safe_star = self.arena[node_id].get_safe_star(safe_value);
+        let mut safe_star = self.arena[node_id].get_safe_star(safe_value);
         safe_star.gaussian_sample(
             rng,
             &self.loc,

@@ -5,18 +5,17 @@ use crate::affine::{Affine, Affine2, Affine4};
 use crate::bounds::Bounds1;
 use crate::inequality::Inequality;
 use crate::polytope::Polytope;
+use crate::polytope::PolytopeInputDistribution;
 use crate::tensorshape::TensorShape;
 use crate::util::solve;
 use crate::NNVFloat;
 use good_lp::ResolutionError;
-use log::debug;
 use ndarray::Array4;
 use ndarray::ArrayView1;
 use ndarray::Dimension;
 use ndarray::Ix4;
 use ndarray::{Array1, Array2};
 use ndarray::{Axis, Ix2};
-use rand::Rng;
 use std::fmt::Debug;
 
 pub type Star2<A> = Star<A, Ix2>;
@@ -79,10 +78,14 @@ impl<T: NNVFloat, D: Dimension> Star<T, D> {
 
     /// Add constraints to restrict the input set. Each row represents a
     /// constraint and the last column represents the upper bounds.
-    pub fn add_constraints(mut self, new_constraints: &Inequality<T>) -> Self {
+    pub fn add_constraints(
+        mut self,
+        new_constraints: &Inequality<T>,
+        check_redundant: bool,
+    ) -> Self {
         // assert_eq!(self.representation.is_lhs, new_constraints.is_lhs);
         if let Some(ref mut constrs) = self.constraints {
-            constrs.add_constraints(new_constraints);
+            constrs.add_constraints(new_constraints, check_redundant);
         } else {
             self.constraints = Some(Polytope::from_halfspaces(new_constraints.clone()));
         }
@@ -91,17 +94,38 @@ impl<T: NNVFloat, D: Dimension> Star<T, D> {
 }
 
 impl<T: NNVFloat> Star2<T> {
+    pub fn get_constraint_coeffs(&self) -> Option<Array2<T>> {
+        self.constraints.as_ref().map(|x| x.coeffs().to_owned())
+    }
+
     pub fn get_safe_subset(&self, safe_value: T) -> Self {
         let subset = self.clone();
         let mut new_constr: Inequality<T> = self.representation.clone().into();
         let mut rhs = new_constr.rhs_mut();
         rhs *= T::neg(T::one());
         rhs += safe_value;
-        subset.add_constraints(&new_constr)
+        subset.add_constraints(&new_constr, false)
     }
-}
 
-impl<T: NNVFloat> Star2<T> {
+    pub fn get_input_trunc_gaussian(
+        &self,
+        mu: &Array1<T>,
+        sigma: &Array2<T>,
+        max_accept_reject_iters: usize,
+        input_bounds: &Option<Bounds1<T>>,
+    ) -> Option<PolytopeInputDistribution<T>> {
+        self.constraints
+            .as_ref()
+            .and_then(|x| {
+                if let Some(bounds) = input_bounds {
+                    x.reduce_fixed_inputs(bounds)
+                } else {
+                    Some(x.clone())
+                }
+            })
+            .map(|poly| poly.get_truncnorm_distribution(mu, sigma, max_accept_reject_iters))
+    }
+
     /// Create a new Star with given dimension.
     ///
     /// By default this Star covers the space because it has no constraints. To add constraints call `.add_constraints`.
@@ -109,7 +133,7 @@ impl<T: NNVFloat> Star2<T> {
     /// # Panics
     pub fn default(input_shape: &TensorShape) -> Self {
         assert_eq!(input_shape.rank(), 1);
-        assert!(input_shape.is_fully_defined());
+        debug_assert!(input_shape.is_fully_defined());
         let dim = input_shape[0].unwrap();
         Self {
             representation: Affine2::new(Array2::eye(dim), Array1::zeros(dim)),
@@ -129,9 +153,7 @@ impl<T: NNVFloat> Star2<T> {
 
     /// # Panics
     pub fn with_constraints(mut self, constraints: Polytope<T>) -> Self {
-        if self.constraints.is_some() {
-            panic!();
-        }
+        debug_assert!(!self.constraints.is_some(), "explicit panic");
         self.constraints = Some(constraints);
         self
     }
@@ -178,10 +200,10 @@ impl<T: NNVFloat> Star2<T> {
             aff.basis_mut().assign(&neg_basis_part);
             aff.into()
         };
-        let upper_star = self.clone().add_constraints(&new_constr);
+        let upper_star = self.clone().add_constraints(&new_constr, true);
 
         new_constr *= neg_one;
-        let mut lower_star = self.clone().add_constraints(&new_constr);
+        let mut lower_star = self.clone().add_constraints(&new_constr, true);
         lower_star.representation.zero_eqn(index);
 
         let lower_star_opt = if lower_star.is_empty() {
@@ -291,6 +313,7 @@ impl<T: NNVFloat> Star2<T> {
             .map_or(false, crate::polytope::Polytope::is_empty)
     }
 
+    /*
     /// # Returns
     ///
     /// (cdf estimate, estimate error, cdf upper bound)
@@ -333,7 +356,9 @@ impl<T: NNVFloat> Star2<T> {
             (1., 0., 1.)
         }
     }
+    */
 
+    /*
     /// # Panics
     ///
     /// # Returns
@@ -371,6 +396,7 @@ impl<T: NNVFloat> Star2<T> {
             todo!()
         }
     }
+    */
 }
 
 impl<T: NNVFloat> Star4<T> {
@@ -381,7 +407,7 @@ impl<T: NNVFloat> Star4<T> {
     /// # Panics
     pub fn default(input_shape: &TensorShape) -> Self {
         assert_eq!(input_shape.rank(), 3);
-        assert!(input_shape.is_fully_defined());
+        debug_assert!(input_shape.is_fully_defined());
         let shape_slice = input_shape.as_defined_slice().unwrap();
         let slice_exact: [usize; 4] = [
             shape_slice[0],

@@ -34,7 +34,7 @@ class DNN:
         nlayers = len(affine_list)
         for i, aff in enumerate(affine_list):
             # Add dense
-            assert (len(aff[0].shape) == 2, aff)
+            assert len(aff[0].shape) == 2, aff
             self.dnn.add_dense(aff[0].T, aff[1])
             # Add relu
             if i != nlayers - 1:
@@ -86,7 +86,7 @@ class Constellation:
         else:
             self.constellation = PyConstellation(dnn.dnn, input_bounds,
                                                  self.loc, np.diag(self.scale))
-        self.safe_value = safe_value
+        self.default_safe_value = safe_value
 
     def _set_loc(self, loc):
         if loc.ndim == 2:
@@ -104,7 +104,7 @@ class Constellation:
         else:
             bounds = self.constellation.get_input_bounds()
         self.constellation = PyConstellation(dnn.dnn, bounds, self.loc,
-                                             self.scale)
+                                             np.diag(self.scale))
 
     def set_input_bounds(self, fixed_part, loc, scale):
         self._set_loc(loc)
@@ -119,17 +119,20 @@ class Constellation:
     def bounded_sample_with_input_bounds(self,
                                          fixed_part,
                                          loc=None,
-                                         scale=None):
+                                         scale=None,
+                                         safe_value=None):
         fixed_part = np.squeeze(fixed_part).astype(np.float64)
         if loc is None:
             loc = self.loc
         if scale is None:
             scale = self.scale
         self.set_input_bounds(fixed_part, loc, scale)
-        return self.bounded_sample()
+        return self.bounded_sample(safe_value)
 
-    def bounded_sample(self):
-        if self.safe_value == np.inf:
+    def bounded_sample(self, safe_value=None):
+        if safe_value is None:
+            safe_value = self.default_safe_value
+        if safe_value == np.inf:
             sample = np.random.normal(self.loc, self.scale)
             if not np.all(np.isfinite(sample)):
                 raise ValueError()
@@ -143,13 +146,25 @@ class Constellation:
             if not np.all(np.isfinite(np.log(prob + 1e-12))):
                 raise ValueError("Bad logprob from prob {}".format(prob))
             return sample, np.log(prob + 1e-12)
-        sample, sample_logp, branch_logp = self.constellation.bounded_sample_multivariate_gaussian(
-            self.safe_value, cdf_samples=100, num_samples=20, max_iters=10)
+        output = self.constellation.bounded_sample_multivariate_gaussian(
+            safe_value, cdf_samples=30, num_samples=1, max_iters=2)
+        if output is None:
+            sample = np.random.normal(self.loc, self.scale)
+            prob = 1.
+            for (samp, l, s) in zip(sample, self.loc, self.scale):
+                dim_prob = norm.pdf(samp, l, s)
+                if not np.all(np.isfinite(dim_prob)):
+                    raise ValueError("Bad dim_prob {} from {} {} {}", dim_prob,
+                                     samp, l, s)
+                prob *= dim_prob
+            return sample, np.log(prob + 1e-12)
+        sample, sample_logp, branch_logp = output
         prob = 1.
         for (samp, l, s) in zip(sample, self.loc, self.scale):
             prob *= norm.pdf(samp, l, s)
-        normal_logp = np.log(prob)
+        normal_logp = np.log(prob + 1e-12)
         if not np.all(np.isfinite(sample)):
+            print("Sample not all finite:", sample)
             raise ValueError()
         if not np.all(np.isfinite(normal_logp)):
             raise ValueError()
