@@ -13,7 +13,7 @@ exclude = [
 ]
 
 [lib]
-name = "nnv_rs_py"
+name = "nnv_rs"
 crate-type = ["lib", "cdylib"]
 test = true
 
