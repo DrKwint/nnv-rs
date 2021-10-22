@@ -30,7 +30,7 @@ ndarray-linalg = { version = "^0.14.0", features = ["openblas-system"] }
 ndarray-stats = "^0.5.0"
 num = "^0.4.0"
 rand = "^0.8.4"
-truncnorm = "^0.2.0"
+truncnorm = "^0.3.1"
 shh = "^1.0.1"
 ordered-float = "^2.8.0"
 
