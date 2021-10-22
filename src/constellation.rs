@@ -1,13 +1,13 @@
 #![allow(non_snake_case)]
+use crate::bounds::Bounds;
 use crate::dnn::DNNIterator;
+use crate::dnn::DNN;
 use crate::star::Star;
 use crate::star_node::StarNode;
 use crate::star_node::StarNodeOp;
 use crate::star_node::StarNodeType;
 use crate::util::ArenaLike;
-use crate::Bounds;
 use crate::NNVFloat;
-use crate::DNN;
 use ndarray::Dimension;
 use ndarray::Ix2;
 use ndarray::{Array1, Array2};

@@ -1,5 +1,4 @@
 use crate::constellation::Constellation;
-use crate::rand::SeedableRng;
 use crate::star_node::StarNodeType;
 use crate::NNVFloat;
 use log::debug;
@@ -8,7 +7,6 @@ use ndarray::Dimension;
 use ndarray::Ix2;
 use rand::distributions::{Bernoulli, Distribution};
 use rand::Rng;
-use rand_pcg::Pcg64;
 
 pub struct Asterism<'a, T: NNVFloat, D: Dimension> {
     constellation: &'a mut Constellation<T, D>,

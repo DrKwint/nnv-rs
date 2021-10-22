@@ -5,8 +5,7 @@ use crate::inequality::Inequality;
 use crate::rand::distributions::Distribution;
 use rand::Rng;
 
-use crate::ndarray_linalg::{Eigh, Inverse, UPLO};
-use crate::util::embed_identity;
+use crate::ndarray_linalg::{Eigh, UPLO};
 use crate::util::l2_norm;
 use crate::util::pinv;
 use crate::util::solve;
@@ -14,8 +13,7 @@ use crate::util::LinearExpression;
 use crate::NNVFloat;
 use good_lp::solvers::highs::highs;
 use log::debug;
-use ndarray::Slice;
-use ndarray::{concatenate, s, Array};
+use ndarray::{concatenate, s};
 use truncnorm::distributions::MultivariateTruncatedNormal;
 use truncnorm::truncnorm::mv_truncnormal_cdf;
 use truncnorm::truncnorm::mv_truncnormal_rand;
@@ -195,7 +193,7 @@ impl<T: NNVFloat> Polytope<T> {
             )
         };
         let inv_constraint_coeffs = pinv(&sq_coeffs); //&sq_coeffs.pinv().unwrap();
-        let mut samples = inv_constraint_coeffs
+        let samples = inv_constraint_coeffs
             .dot(&centered_samples.t())
             .reversed_axes();
         let mut filtered_samples: Vec<(Array1<f64>, f64)> = samples
