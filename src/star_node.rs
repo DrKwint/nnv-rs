@@ -53,7 +53,7 @@ impl<T: NNVFloat> StarNodeOp<T> {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum StarNodeType<T: NNVFloat> {
     Leaf,
     Affine {
@@ -122,6 +122,10 @@ impl<T: NNVFloat, D: Dimension> StarNode<T, D> {
         self.star_cdf = Some(val);
     }
 
+    pub fn reset_cdf(&mut self) {
+        self.star_cdf = None;
+    }
+
     /// # Panics
     pub fn add_cdf(&mut self, add: T) {
         if let Some(ref mut cdf) = self.star_cdf {
@@ -137,6 +141,10 @@ impl<T: NNVFloat, D: Dimension> StarNode<T, D> {
 }
 
 impl<T: NNVFloat> StarNode<T, Ix2> {
+    pub fn forward(&self, x: &Array1<T>) -> Array1<T> {
+        self.star.get_representation().apply(&x.view())
+    }
+
     pub fn get_safe_star(&self, safe_value: T) -> Self {
         let safe_star = self.star.get_safe_subset(safe_value);
         Self {
@@ -149,19 +157,20 @@ impl<T: NNVFloat> StarNode<T, Ix2> {
         }
     }
 
-    pub fn gaussian_cdf(
+    pub fn gaussian_cdf<R: Rng>(
         &mut self,
         mu: &Array1<T>,
         sigma: &Array2<T>,
         n: usize,
         max_iters: usize,
         input_bounds: &Option<Bounds1<T>>,
+        rng: &mut R,
     ) -> T {
         self.star_cdf.map_or_else(
             || {
                 let out = self
                     .star
-                    .trunc_gaussian_cdf(mu, sigma, n, max_iters, input_bounds);
+                    .trunc_gaussian_cdf(mu, sigma, n, max_iters, input_bounds, rng);
                 let cdf: T = out.0.into();
                 debug_assert!(cdf.is_sign_positive());
                 self.star_cdf = Some(cdf);
@@ -196,6 +205,16 @@ impl<T: NNVFloat> StarNode<T, Ix2> {
     pub fn get_local_bounds(&mut self) -> &Bounds1<T> {
         if self.local_bounds.is_none() {
             self.local_bounds = Some(self.star.calculate_axis_aligned_bounding_box());
+            debug_assert!(
+                self.local_bounds
+                    .clone()
+                    .unwrap()
+                    .bounds_iter()
+                    .into_iter()
+                    .all(|x| (x[[0]] <= x[[1]])),
+                "Calculated bounds are flipped! {}",
+                self.local_bounds.clone().unwrap()
+            );
         }
         self.local_bounds.as_ref().unwrap()
     }

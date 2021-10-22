@@ -8,6 +8,7 @@ use rand::Rng;
 use crate::ndarray_linalg::{Eigh, Inverse, UPLO};
 use crate::util::embed_identity;
 use crate::util::l2_norm;
+use crate::util::pinv;
 use crate::util::solve;
 use crate::util::LinearExpression;
 use crate::NNVFloat;
@@ -92,12 +93,13 @@ impl<T: NNVFloat> Polytope<T> {
     }
 
     /// # Panics
-    pub fn gaussian_cdf(
+    pub fn gaussian_cdf<R: Rng>(
         &self,
         mu: &Array1<T>,
         sigma: &Array2<T>,
         n: usize,
         max_iters: usize,
+        rng: &mut R,
     ) -> (f64, f64, f64) {
         let (sq_constr_lb, sq_constr_ub, sq_constr_sigma, _sq_coeffs) = self.prepare(mu, sigma);
         debug!("Gaussian CDF with mu {:?} sigma {:?}", mu, sq_constr_sigma);
@@ -106,9 +108,14 @@ impl<T: NNVFloat> Polytope<T> {
             debug_assert!(eigvals.into_iter().all(|x| !x.is_sign_negative()));
         }
 
-        // println!("Gaussian CDF with mu {:?} sigma {:?} lb {:?} ub {:?}", mu, sq_constr_sigma, sq_constr_lb, sq_constr_ub);
-        let (est, est_err, ub) =
-            mv_truncnormal_cdf(sq_constr_lb, sq_constr_ub, sq_constr_sigma, n, max_iters);
+        let (est, est_err, ub) = mv_truncnormal_cdf(
+            sq_constr_lb,
+            sq_constr_ub,
+            sq_constr_sigma,
+            n,
+            max_iters,
+            rng,
+        );
         debug_assert!(est >= 0.);
         (est, est_err, ub)
     }
@@ -121,31 +128,28 @@ impl<T: NNVFloat> Polytope<T> {
         // convert T to f64 in inputs
         let mu = mu.mapv(std::convert::Into::into);
         let sigma = sigma.mapv(std::convert::Into::into);
-
-        // sample unfixed dimensions
         let mut constraint_coeffs: Array2<f64> = self.coeffs().mapv(std::convert::Into::into);
-        // normalise each equation
+        let mut ub = self.ubs().mapv(std::convert::Into::into);
+
+        // normalise each constraint equation
         let row_norms: Array1<f64> = constraint_coeffs
             .rows()
             .into_iter()
             .map(|row| row.mapv(|x| x * x).sum().sqrt())
             .collect();
         constraint_coeffs = (&constraint_coeffs.t() / &row_norms).reversed_axes();
-        let ub = self.ubs().mapv(std::convert::Into::into) / row_norms;
+        ub = ub / row_norms;
 
-        // embed constraint coeffs in an identity matrix
-        let sq_coeffs = embed_identity(&constraint_coeffs, None).reversed_axes();
-        // if there are more constraints than variables, add dummy variables
-        let sq_sigma = embed_identity(&sigma, Some(sq_coeffs.nrows()));
+        let sq_coeffs = constraint_coeffs;
+        let sq_sigma = sigma;
         let sq_constr_sigma = {
             let sigma: Array2<f64> = sq_coeffs.dot(&sq_sigma.dot(&sq_coeffs.t()));
             let diag_addn = Array2::from_diag(&Array1::from_elem(sigma.nrows(), 1e-12));
             sigma + diag_addn
         };
-        let mut sq_ub = Array::from_elem(sq_coeffs.nrows(), f64::INFINITY);
-        sq_ub.slice_mut(s![..ub.len()]).assign(&ub);
+        let sq_ub = ub;
 
-        let extended_reduced_mu = if sq_coeffs.nrows() == mu.len() {
+        let extended_reduced_mu = if sq_coeffs.nrows() == mu.len() || true {
             mu
         } else {
             let mut e_r_mu = Array1::zeros(sq_coeffs.nrows());
@@ -181,15 +185,19 @@ impl<T: NNVFloat> Polytope<T> {
             .sample(rng);
             (sample.insert_axis(Axis(1)), array![1.])
         } else {
-            mv_truncnormal_rand(sq_constr_lb, sq_constr_ub, sq_constr_sigma, n, max_iters)
+            mv_truncnormal_rand(
+                sq_constr_lb,
+                sq_constr_ub,
+                sq_constr_sigma,
+                n,
+                max_iters,
+                rng,
+            )
         };
-        let inv_constraint_coeffs = &sq_coeffs.inv().unwrap();
+        let inv_constraint_coeffs = pinv(&sq_coeffs); //&sq_coeffs.pinv().unwrap();
         let mut samples = inv_constraint_coeffs
             .dot(&centered_samples.t())
             .reversed_axes();
-        samples = samples
-            .slice_axis(Axis(1), Slice::from(0..sigma.nrows()))
-            .to_owned();
         let mut filtered_samples: Vec<(Array1<f64>, f64)> = samples
             .rows()
             .into_iter()
@@ -199,9 +207,9 @@ impl<T: NNVFloat> Polytope<T> {
             .collect();
         if filtered_samples.is_empty() {
             filtered_samples = if let Some((x_c, _r)) = self.chebyshev_center() {
-                vec![(x_c, 0.43)]
+                vec![(inv_constraint_coeffs.dot(&x_c.t()), 0.43)]
             } else {
-                vec![(mu, 0.43)]
+                panic!("Couldn't calculate a valid sample!");
             };
         };
         filtered_samples

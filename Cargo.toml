@@ -33,8 +33,10 @@ num = "^0.4.0"
 numpy = "^0.13.2"
 pyo3 = "^0.13"
 rand = "^0.8.4"
-truncnorm = "^0.1.1"
+truncnorm = "^0.2.0"
 shh = "^1.0.1"
+ordered-float = "^2.8.0"
+rand_pcg = "*"
 
 [dev-dependencies]
 ndarray-rand = "^0.14.0"
