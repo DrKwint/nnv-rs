@@ -59,7 +59,7 @@ impl Index<isize> for TensorShape {
         if idx < 0 {
             idx += self.dims.len() as isize;
         }
-        assert!(idx >= 0, "idx {} < 0", idx);
+        debug_assert!(idx >= 0, "idx {} < 0", idx);
         &self.dims[idx as usize]
     }
 }

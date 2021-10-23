@@ -9,6 +9,7 @@ use crate::tensorshape::TensorShape;
 use crate::NNVFloat;
 use log::trace;
 use ndarray::Array;
+use ndarray::Array1;
 use ndarray::ArrayD;
 use ndarray::Ix1;
 use ndarray::Ix2;
@@ -37,9 +38,21 @@ impl<T: NNVFloat> DNN<T> {
         &self.layers
     }
 }
+
 impl<T: NNVFloat> DNN<T> {
     pub fn forward(&self, input: ArrayD<T>) -> ArrayD<T> {
         self.layers.iter().fold(input, |x, layer| layer.forward(x))
+    }
+
+    pub fn forward1(&self, input: Array1<T>) -> Array1<T> {
+        self.layers.iter().fold(input, |x, layer| layer.forward1(x))
+    }
+
+    pub fn forward_suffix1(&self, input: Array1<T>, position: &DNNIndex) -> Array1<T> {
+        self.layers
+            .iter()
+            .skip(position.get_layer())
+            .fold(input, |x, layer| layer.forward1(x))
     }
 }
 
@@ -110,6 +123,17 @@ impl<T: NNVFloat> Layer<T> {
     /// # Panics
     pub fn calculate_output_shape(&self, _input_shape: &TensorShape) -> TensorShape {
         todo!();
+    }
+
+    pub fn forward1(&self, input: Array1<T>) -> Array1<T> {
+        match self {
+            Layer::Dense(aff) => {
+                debug_assert_eq!(input.ndim(), 1);
+                aff.apply(&input.view())
+            }
+            Layer::ReLU(_) => input.mapv(|x| if x.lt(&T::zero()) { T::zero() } else { x }),
+            _ => panic!(),
+        }
     }
 
     /// # Panics
@@ -190,12 +214,17 @@ impl<T: NNVFloat> fmt::Display for Layer<T> {
 }
 
 #[derive(Debug, Clone, Copy, Default)]
+/// Indicated which operations have already been run
 pub struct DNNIndex {
     layer: Option<usize>,
     remaining_steps: Option<usize>,
 }
 
 impl DNNIndex {
+    fn get_layer(&self) -> usize {
+        self.layer.map_or(0, |x| x + 1)
+    }
+
     fn increment<T: NNVFloat>(&mut self, dnn: &DNN<T>) {
         // Decrement active relu
         let mut advance_layer_flag = false;
@@ -208,7 +237,7 @@ impl DNNIndex {
             advance_layer_flag = true;
         }
 
-        // advance layer
+        // advance layer at the end of running a full layer (e.g., all step relus)
         if advance_layer_flag {
             if let Some(ref mut layer) = self.layer {
                 *layer += 1;
@@ -260,7 +289,7 @@ impl<T: NNVFloat> Iterator for DNNIterator<'_, T> {
     type Item = StarNodeOp<T>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        trace!("idx {:?}", self.get_idx());
+        trace!("dnn iterator idx {:?}", self.get_idx());
         // Check finished
         if self.finished {
             return None;
@@ -328,7 +357,7 @@ mod tests {
         }
 
         idx.increment(&dnn);
-        assert!(dnn.get_layer(idx.layer.unwrap()).is_none());
+        debug_assert!(dnn.get_layer(idx.layer.unwrap()).is_none());
     }
 
     proptest! {

@@ -3,6 +3,7 @@ use crate::affine::Affine2;
 use crate::rand::distributions::Distribution;
 use crate::rand::SeedableRng;
 use crate::NNVFloat;
+use ndarray::concatenate;
 use ndarray::iter::{Lanes, LanesMut};
 use ndarray::Array2;
 use ndarray::Axis;
@@ -30,6 +31,18 @@ impl<T: NNVFloat, D: Dimension + ndarray::RemoveAxis> Bounds<T, D> {
     ) -> Self {
         let data: Array<T, D> = stack(Axis(0), &[lower, upper]).unwrap();
         Self { data }
+    }
+
+    pub fn fixed_idxs(&self) -> Array<bool, D::Smaller> {
+        Zip::from(self.lower())
+            .and(self.upper())
+            .map_collect(|&lb, &ub| lb == ub)
+    }
+
+    pub fn fixed_vals_or_zeros(&self) -> Array<T, D::Smaller> {
+        Zip::from(self.lower())
+            .and(self.upper())
+            .map_collect(|&lb, &ub| if lb == ub { lb } else { T::zero() })
     }
 
     pub fn is_all_finite(&self) -> bool {
@@ -121,6 +134,23 @@ impl<T: NNVFloat> Bounds1<T> {
                 data: tail.to_owned(),
             },
         )
+    }
+
+    pub fn drop_idxs<I: Iterator<Item = bool>>(&self, idxs: I) -> Self {
+        Self {
+            data: concatenate(
+                Axis(1),
+                &self
+                    .data
+                    .columns()
+                    .into_iter()
+                    .zip(idxs)
+                    .filter(|(_dim, drop)| !drop)
+                    .map(|(dim, _drop)| dim.insert_axis(Axis(0)))
+                    .collect::<Vec<_>>(),
+            )
+            .unwrap(),
+        }
     }
 
     /// # Panics

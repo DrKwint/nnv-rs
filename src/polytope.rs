@@ -2,37 +2,27 @@
 //! Implementation of H-representation polytopes
 use crate::bounds::Bounds1;
 use crate::inequality::Inequality;
-use crate::rand::distributions::Distribution;
-use rand::Rng;
-
-use crate::ndarray_linalg::{Eigh, UPLO};
+use crate::util;
 use crate::util::l2_norm;
-use crate::util::pinv;
 use crate::util::solve;
 use crate::util::LinearExpression;
 use crate::NNVFloat;
 use good_lp::solvers::highs::highs;
-use log::debug;
-use ndarray::{concatenate, s};
-use truncnorm::distributions::MultivariateTruncatedNormal;
-use truncnorm::truncnorm::mv_truncnormal_cdf;
-use truncnorm::truncnorm::mv_truncnormal_rand;
-
 use good_lp::Expression;
-
 use good_lp::ProblemVariables;
-
 use good_lp::Variable;
 use good_lp::{variable, Solution, SolverModel};
+use ndarray::concatenate;
 use ndarray::Array2;
 use ndarray::ArrayView1;
 use ndarray::ArrayView2;
-use ndarray::Ix1;
-use ndarray::Zip;
-use ndarray::{array, Array1, Axis};
-
+use ndarray::Ix2;
+use ndarray::{Array1, Axis};
+use rand::Rng;
 use std::collections::HashMap;
 use std::fmt::Debug;
+use truncnorm::distributions::MultivariateTruncatedNormal;
+use truncnorm::tilting::TiltingSolution;
 
 /// H-representation polytope
 #[derive(Clone, Debug)]
@@ -54,7 +44,7 @@ impl<T: NNVFloat> Polytope<T> {
     /// # Panics
     pub fn with_input_bounds(mut self, input_bounds: Bounds1<T>) -> Self {
         let item = Self::from(input_bounds);
-        self.halfspaces.add_eqns(&item.halfspaces);
+        self.halfspaces.add_eqns(&item.halfspaces, false);
         self
     }
 
@@ -70,8 +60,8 @@ impl<T: NNVFloat> Polytope<T> {
         self.halfspaces.rhs()
     }
 
-    pub fn add_constraints(&mut self, constraints: &Inequality<T>) {
-        self.halfspaces.add_eqns(constraints)
+    pub fn add_constraints(&mut self, constraints: &Inequality<T>, check_redundant: bool) {
+        self.halfspaces.add_eqns(constraints, check_redundant)
     }
 
     pub fn num_constraints(&self) -> usize {
@@ -90,39 +80,12 @@ impl<T: NNVFloat> Polytope<T> {
         self.halfspaces.is_member(point)
     }
 
-    /// # Panics
-    pub fn gaussian_cdf<R: Rng>(
+    pub fn get_truncnorm_distribution(
         &self,
         mu: &Array1<T>,
         sigma: &Array2<T>,
-        n: usize,
-        max_iters: usize,
-        rng: &mut R,
-    ) -> (f64, f64, f64) {
-        let (sq_constr_lb, sq_constr_ub, sq_constr_sigma, _sq_coeffs) = self.prepare(mu, sigma);
-        debug!("Gaussian CDF with mu {:?} sigma {:?}", mu, sq_constr_sigma);
-        if cfg!(test) || cfg!(debug) {
-            let (eigvals, _) = sq_constr_sigma.eigh(UPLO::Lower).unwrap();
-            debug_assert!(eigvals.into_iter().all(|x| !x.is_sign_negative()));
-        }
-
-        let (est, est_err, ub) = mv_truncnormal_cdf(
-            sq_constr_lb,
-            sq_constr_ub,
-            sq_constr_sigma,
-            n,
-            max_iters,
-            rng,
-        );
-        debug_assert!(est >= 0.);
-        (est, est_err, ub)
-    }
-
-    fn prepare(
-        &self,
-        mu: &Array1<T>,
-        sigma: &Array2<T>,
-    ) -> (Array1<f64>, Array1<f64>, Array2<f64>, Array2<f64>) {
+        max_accept_reject_iters: usize,
+    ) -> PolytopeInputDistribution<T> {
         // convert T to f64 in inputs
         let mu = mu.mapv(std::convert::Into::into);
         let sigma = sigma.mapv(std::convert::Into::into);
@@ -135,82 +98,37 @@ impl<T: NNVFloat> Polytope<T> {
             .into_iter()
             .map(|row| row.mapv(|x| x * x).sum().sqrt())
             .collect();
+        debug_assert!(
+            !row_norms.iter().any(|x| *x == 0.),
+            "{:?}",
+            constraint_coeffs.rows().into_iter().collect::<Vec<_>>()
+        );
         constraint_coeffs = (&constraint_coeffs.t() / &row_norms).reversed_axes();
         ub = ub / row_norms;
 
-        let sq_coeffs = constraint_coeffs;
         let sq_sigma = sigma;
         let sq_constr_sigma = {
-            let sigma: Array2<f64> = sq_coeffs.dot(&sq_sigma.dot(&sq_coeffs.t()));
+            let sigma: Array2<f64> = constraint_coeffs.dot(&sq_sigma.dot(&constraint_coeffs.t()));
             let diag_addn = Array2::from_diag(&Array1::from_elem(sigma.nrows(), 1e-12));
             sigma + diag_addn
         };
         let sq_ub = ub;
 
-        let extended_reduced_mu = if sq_coeffs.nrows() == mu.len() || true {
-            mu
-        } else {
-            let mut e_r_mu = Array1::zeros(sq_coeffs.nrows());
-            e_r_mu.slice_mut(s![..mu.len()]).assign(&mu);
-            e_r_mu
-        };
-
-        let sq_constr_ub = &sq_ub - &sq_coeffs.dot(&extended_reduced_mu);
+        let sq_constr_ub = &sq_ub - &constraint_coeffs.dot(&mu);
         let sq_constr_lb = Array1::from_elem(sq_constr_ub.len(), f64::NEG_INFINITY);
-        (sq_constr_lb, sq_constr_ub, sq_constr_sigma, sq_coeffs)
-    }
-
-    /// # Panics
-    #[allow(clippy::too_many_lines)]
-    pub fn gaussian_sample<R: Rng>(
-        &self,
-        rng: &mut R,
-        mu: &Array1<T>,
-        sigma: &Array2<T>,
-        n: usize,
-        max_iters: usize,
-    ) -> Vec<(Array1<f64>, f64)> {
-        let (sq_constr_lb, sq_constr_ub, sq_constr_sigma, sq_coeffs) = self.prepare(mu, sigma);
-        let mu = mu.mapv(std::convert::Into::into);
-        let (centered_samples, logp) = if sq_constr_sigma.len() == 1 {
-            let sample = MultivariateTruncatedNormal::<Ix1>::new(
-                array![0.],
-                sq_constr_sigma.index_axis(Axis(0), 0).to_owned(),
-                sq_constr_lb,
-                sq_constr_ub,
-                max_iters,
-            )
-            .sample(rng);
-            (sample.insert_axis(Axis(1)), array![1.])
-        } else {
-            mv_truncnormal_rand(
-                sq_constr_lb,
-                sq_constr_ub,
-                sq_constr_sigma,
-                n,
-                max_iters,
-                rng,
-            )
-        };
-        let inv_constraint_coeffs = pinv(&sq_coeffs); //&sq_coeffs.pinv().unwrap();
-        let samples = inv_constraint_coeffs
-            .dot(&centered_samples.t())
-            .reversed_axes();
-        let mut filtered_samples: Vec<(Array1<f64>, f64)> = samples
-            .rows()
-            .into_iter()
-            .zip(logp)
-            .map(|(x, logp)| (&x.to_owned() + &mu, logp))
-            .filter(|(x, _logp)| self.is_member(&x.mapv(|v| v.into()).view()))
-            .collect();
-        if filtered_samples.is_empty() {
-            filtered_samples = if let Some((x_c, _r)) = self.chebyshev_center() {
-                vec![(inv_constraint_coeffs.dot(&x_c.t()), 0.43)]
-            } else {
-                panic!("Couldn't calculate a valid sample!");
-            };
-        };
-        filtered_samples
+        let distribution = MultivariateTruncatedNormal::<Ix2>::new(
+            mu,
+            sq_constr_sigma,
+            sq_constr_lb,
+            sq_constr_ub,
+            max_accept_reject_iters,
+        );
+        let inv_coeffs: Array2<T> =
+            util::pinv(&constraint_coeffs.mapv(|x| x.into())).mapv(|x| x.into());
+        PolytopeInputDistribution {
+            distribution,
+            inv_coeffs,
+        }
     }
 
     /// Source: <https://stanford.edu/class/ee364a/lectures/problems.pdf>
@@ -248,36 +166,18 @@ impl<T: NNVFloat> Polytope<T> {
         }
     }
 
-    pub fn reduce_fixed_inputs(
-        &self,
-        lbs: &ArrayView1<T>,
-        ubs: &ArrayView1<T>,
-    ) -> Option<(Self, (Array1<T>, Array1<T>))> {
-        let fixed_idxs = Zip::from(lbs).and(ubs).map_collect(|&lb, &ub| lb == ub);
-        let fixed_vals = Zip::from(lbs)
-            .and(ubs)
-            .map_collect(|&lb, &ub| if lb == ub { lb } else { T::zero() });
+    /// Returns None if the reduced polytope is empty
+    pub fn reduce_fixed_inputs(&self, bounds: &Bounds1<T>) -> Option<Self> {
+        let fixed_idxs = bounds.fixed_idxs();
+        let fixed_vals = bounds.fixed_vals_or_zeros();
 
         // update eqns
         self.halfspaces
             .reduce_with_values(fixed_vals.view(), fixed_idxs.view())
             .map(|halfspaces| {
-                let reduced_poly = Self { halfspaces };
-
-                // update bounds
-                let new_lbs: Array1<T> = lbs
-                    .into_iter()
-                    .zip(&fixed_idxs)
-                    .filter(|(_lb, &is_fix)| !is_fix)
-                    .map(|(&lb, _is_fix)| lb)
-                    .collect();
-                let new_ubs: Array1<T> = ubs
-                    .into_iter()
-                    .zip(&fixed_idxs)
-                    .filter(|(_ub, &is_fix)| !is_fix)
-                    .map(|(&ub, _is_fix)| ub)
-                    .collect();
-                (reduced_poly, (new_lbs, new_ubs))
+                let mut reduced_poly = Self { halfspaces };
+                reduced_poly.filter_trivial();
+                reduced_poly
             })
     }
 }
@@ -325,5 +225,35 @@ impl<T: NNVFloat> From<Bounds1<T>> for Polytope<T> {
         .unwrap();
         let halfspaces = Inequality::new(coeffs, rhs);
         Self { halfspaces }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct PolytopeInputDistribution<T> {
+    distribution: MultivariateTruncatedNormal<Ix2>,
+    inv_coeffs: Array2<T>,
+}
+
+impl<T: NNVFloat> PolytopeInputDistribution<T> {
+    pub fn sample_n<R: Rng>(&mut self, n: usize, rng: &mut R) -> Vec<(Array1<T>, T)> {
+        let (sample_arr, logp_arr) = self.distribution.sample_n(n, rng);
+        sample_arr
+            .rows()
+            .into_iter()
+            .zip(logp_arr.into_iter())
+            .map(|(x, logp)| (self.inv_coeffs.dot(&x.mapv(|x| x.into())), logp.into()))
+            .collect()
+    }
+
+    pub fn cdf<R: Rng>(&mut self, n: usize, rng: &mut R) -> T {
+        let (est, rel_err, upper_bound) = self.distribution.cdf(n, rng);
+        est.into()
+    }
+
+    pub fn get_tilting_solution(
+        &mut self,
+        initialization: Option<&TiltingSolution>,
+    ) -> &TiltingSolution {
+        self.distribution.get_tilting_solution(initialization)
     }
 }
