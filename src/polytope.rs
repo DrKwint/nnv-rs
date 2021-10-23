@@ -4,6 +4,7 @@ use crate::bounds::Bounds1;
 use crate::inequality::Inequality;
 use crate::util;
 use crate::util::l2_norm;
+use crate::util::pinv;
 use crate::util::solve;
 use crate::util::LinearExpression;
 use crate::NNVFloat;

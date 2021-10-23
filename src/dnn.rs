@@ -1,3 +1,4 @@
+use crate::affine::Affine;
 use crate::affine::Affine2;
 use crate::affine::Affine4;
 use crate::bounds::Bounds1;
@@ -5,7 +6,6 @@ use crate::deeppoly::deep_poly_relu;
 use crate::star::Star;
 use crate::star_node::StarNodeOp;
 use crate::tensorshape::TensorShape;
-use crate::Affine;
 use crate::NNVFloat;
 use log::trace;
 use ndarray::Array;
