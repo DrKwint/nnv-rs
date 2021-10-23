@@ -1,6 +1,6 @@
+use crate::bounds::Bounds1;
 use crate::constellation::Constellation;
 use crate::star_node::StarNodeType;
-use crate::Bounds1;
 use crate::NNVFloat;
 use log::{debug, info, trace};
 use ndarray::concatenate;
