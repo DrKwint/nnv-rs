@@ -1,7 +1,7 @@
 use crate::affine::Affine2;
 use crate::util::solve;
+use crate::util::LinearSolution;
 use crate::NNVFloat;
-use good_lp::ResolutionError;
 use ndarray::arr1;
 use ndarray::concatenate;
 use ndarray::Axis;
@@ -58,11 +58,10 @@ impl<T: NNVFloat> Inequality<T> {
             concatenate![Axis(0), self.rhs(), arr1(&[maximize_rhs])].view(),
             maximize_eqn.view(),
         );
-        let val: f64 = match solved.0 {
-            Ok(_) => solved.1.unwrap(),
-            Err(ResolutionError::Infeasible) => return true,
-            Err(ResolutionError::Unbounded) => return true,
-            _ => panic!(),
+        let val: f64 = match solved {
+            LinearSolution::Solution(_, val) => val,
+            LinearSolution::Infeasible => return true,
+            LinearSolution::Unbounded => return true,
         };
         val > rhs.into()
     }

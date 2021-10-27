@@ -2,6 +2,7 @@
 use crate::bounds::Bounds;
 use crate::dnn::DNNIterator;
 use crate::dnn::{DNNIndex, DNN};
+use crate::polytope::PolytopeInputDistribution;
 use crate::star::Star;
 use crate::star_node::StarNode;
 use crate::star_node::StarNodeOp;
@@ -18,6 +19,7 @@ use rand::Rng;
 pub struct Constellation<T: NNVFloat, D: Dimension> {
     arena: Vec<StarNode<T, D>>,
     node_type: Vec<Option<StarNodeType<T>>>,
+    parents: Vec<Option<usize>>,
     loc: Array1<T>,
     scale: Array2<T>,
     dnn: DNN<T>,
@@ -36,9 +38,11 @@ impl<T: NNVFloat, D: Dimension> Constellation<T, D> {
         let star_node = StarNode::default(input_star, None);
         let node_type = vec![None];
         let arena = vec![star_node];
+        let parents = vec![None];
         Self {
             arena,
             node_type,
+            parents,
             loc,
             scale,
             dnn,
@@ -66,6 +70,16 @@ impl<T: NNVFloat, D: Dimension> Constellation<T, D> {
         &self.input_bounds
     }
 
+    /*
+    fn add_node(&mut self, node: StarNode<T, D>, parent_id: usize) -> usize {
+        let child_idx = self.arena.new_node(node);
+        let other_child_idx = self.node_type.new_node(None);
+        let other_other_child_idx = self.parents.new_node(Some(parent_id));
+        debug_assert_eq!(child_idx, other_child_idx);
+        child_idx
+    }
+    */
+
     pub fn reset_input_distribution(&mut self, loc: Array1<T>, scale: Array2<T>) {
         self.loc = loc;
         self.scale = scale;
@@ -78,31 +92,33 @@ impl<T: NNVFloat, D: Dimension> Constellation<T, D> {
         self.node_type = vec![None];
         self.input_bounds = input_bounds;
     }
-
-    fn add_node(&mut self, node: StarNode<T, D>) -> usize {
-        let child_idx = self.arena.new_node(node);
-        let other_child_idx = self.node_type.new_node(None);
-        debug_assert_eq!(child_idx, other_child_idx);
-        child_idx
-    }
 }
 
 impl<T: crate::NNVFloat> Constellation<T, Ix2> {
+    fn add_node_with_gauss_init(&mut self, node: StarNode<T, Ix2>, parent_id: usize) -> usize {
+        let child_idx = self.arena.new_node(node);
+        let other_child_idx = self.node_type.new_node(None);
+        let other_other_child_idx = self.parents.new_node(Some(parent_id));
+        debug_assert_eq!(child_idx, other_child_idx);
+        debug_assert!(self.try_get_gaussian_distribution(parent_id).is_some());
+        self.initialize_node_tilting_from_parent(child_idx, parent_id, 20);
+        child_idx
+    }
+
     pub fn initialize_node_tilting_from_parent(
         &mut self,
         node_id: usize,
         parent_id: usize,
         max_accept_reject_iters: usize,
     ) {
-        let parent_tilting_soln = self.arena[parent_id]
-            .get_gaussian_distribution(
-                &self.loc,
-                &self.scale,
-                max_accept_reject_iters,
-                &self.input_bounds,
-            )
-            .get_tilting_solution(None)
-            .clone();
+        let parent_tilting_soln = {
+            debug_assert!(self.try_get_gaussian_distribution(parent_id).is_some());
+            let parent_distr = self.arena[parent_id]
+                .try_get_gaussian_distribution()
+                .unwrap();
+            debug_assert!(parent_distr.try_get_tilting_solution().is_some());
+            parent_distr.try_get_tilting_solution().unwrap().clone()
+        };
         let child_distr = self.arena[node_id].get_gaussian_distribution(
             &self.loc,
             &self.scale,
@@ -110,6 +126,13 @@ impl<T: crate::NNVFloat> Constellation<T, Ix2> {
             &self.input_bounds,
         );
         child_distr.get_tilting_solution(Some(&parent_tilting_soln));
+    }
+
+    pub fn try_get_gaussian_distribution(
+        &self,
+        node_id: usize,
+    ) -> Option<&PolytopeInputDistribution<T>> {
+        self.arena[node_id].try_get_gaussian_distribution()
     }
 
     pub fn get_node_dnn_index(&self, node_id: usize) -> DNNIndex {
@@ -164,6 +187,7 @@ impl<T: crate::NNVFloat> Constellation<T, Ix2> {
             n,
             max_iters,
             &self.input_bounds,
+            None,
         )
         .into_iter()
         .map(|(input, weight)| (node.forward(&input), weight))
@@ -177,6 +201,14 @@ impl<T: crate::NNVFloat> Constellation<T, Ix2> {
         n: usize,
         max_iters: usize,
     ) -> Vec<(Array1<T>, T)> {
+        let initialization_opt = self.parents[node_id].map(|x| {
+            self.arena[x]
+                .try_get_gaussian_distribution()
+                .unwrap()
+                .try_get_tilting_solution()
+                .unwrap()
+                .clone()
+        });
         self.arena[node_id].gaussian_sample(
             rng,
             &self.loc,
@@ -184,11 +216,12 @@ impl<T: crate::NNVFloat> Constellation<T, Ix2> {
             n,
             max_iters,
             &self.input_bounds,
+            initialization_opt,
         )
     }
 
     pub fn sample_gaussian_node_safe<R: Rng>(
-        &self,
+        &mut self,
         node_id: usize,
         rng: &mut R,
         n: usize,
@@ -196,6 +229,14 @@ impl<T: crate::NNVFloat> Constellation<T, Ix2> {
         safe_value: T,
     ) -> Vec<(Array1<T>, T)> {
         let mut safe_star = self.arena[node_id].get_safe_star(safe_value);
+        let initialization_opt = self.parents[node_id].map(|x| {
+            self.arena[x]
+                .try_get_gaussian_distribution()
+                .unwrap()
+                .try_get_tilting_solution()
+                .unwrap()
+                .clone()
+        });
         safe_star.gaussian_sample(
             rng,
             &self.loc,
@@ -203,6 +244,7 @@ impl<T: crate::NNVFloat> Constellation<T, Ix2> {
             n,
             max_iters,
             &self.input_bounds,
+            initialization_opt,
         )
     }
 
@@ -232,6 +274,7 @@ impl<T: crate::NNVFloat> Constellation<T, Ix2> {
                 .and_then(std::option::Option::as_ref)
                 .unwrap()
         } else {
+            debug_assert!(self.try_get_gaussian_distribution(node_id).is_some());
             self.expand(node_id)
         }
     }
@@ -286,13 +329,17 @@ impl<T: crate::NNVFloat> Constellation<T, Ix2> {
 
         // Get this node's operation from the dnn_iter
         let op = dnn_iter.next();
+        debug_assert!(self.arena[node_id]
+            .try_get_gaussian_distribution()
+            .is_some());
         // Do this node's operation to produce its children
         let children = match op {
             Some(StarNodeOp::Leaf) => StarNodeType::Leaf,
             Some(StarNodeOp::Affine(aff)) => {
-                let child_idx = self.add_node(
+                let child_idx = self.add_node_with_gauss_init(
                     StarNode::default(self.arena[node_id].get_star().affine_map2(&aff), None)
                         .with_dnn_index(dnn_iter.get_idx()),
+                    node_id,
                 );
                 StarNodeType::Affine { child_idx }
             }
@@ -308,7 +355,7 @@ impl<T: crate::NNVFloat> Constellation<T, Ix2> {
                     bounds.index_mut(dim)[1] = T::zero();
                     let lower_node =
                         StarNode::default(lower_star, Some(bounds)).with_dnn_index(dnn_idx);
-                    let id = self.add_node(lower_node);
+                    let id = self.add_node_with_gauss_init(lower_node, node_id);
                     ids.push(id);
                 }
 
@@ -320,7 +367,7 @@ impl<T: crate::NNVFloat> Constellation<T, Ix2> {
                     }
                     let upper_node =
                         StarNode::default(upper_star, Some(bounds)).with_dnn_index(dnn_idx);
-                    let id = self.add_node(upper_node);
+                    let id = self.add_node_with_gauss_init(upper_node, node_id);
                     ids.push(id);
                 }
 
@@ -341,7 +388,7 @@ impl<T: crate::NNVFloat> Constellation<T, Ix2> {
                     bounds.index_mut(dim)[1] = T::zero();
                     let dropout_node =
                         StarNode::default(dropout_star, Some(bounds)).with_dnn_index(dnn_idx);
-                    let id = self.add_node(dropout_node);
+                    let id = self.add_node_with_gauss_init(dropout_node, node_id);
                     ids.push(id);
                 }
 
@@ -351,7 +398,7 @@ impl<T: crate::NNVFloat> Constellation<T, Ix2> {
                     bounds.index_mut(dim)[1] = T::zero();
                     let lower_node =
                         StarNode::default(lower_star, Some(bounds)).with_dnn_index(dnn_idx);
-                    let id = self.add_node(lower_node);
+                    let id = self.add_node_with_gauss_init(lower_node, node_id);
                     ids.push(id);
                 }
 
@@ -363,7 +410,7 @@ impl<T: crate::NNVFloat> Constellation<T, Ix2> {
                     }
                     let upper_node =
                         StarNode::default(upper_star, Some(bounds)).with_dnn_index(dnn_idx);
-                    let id = self.add_node(upper_node);
+                    let id = self.add_node_with_gauss_init(upper_node, node_id);
                     ids.push(id);
                 }
 

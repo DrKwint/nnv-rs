@@ -14,6 +14,7 @@ use ndarray::Ix2;
 use ndarray::{Array1, Array2};
 use rand::Rng;
 use std::fmt::Debug;
+use truncnorm::tilting::TiltingSolution;
 
 #[derive(Debug, Clone)]
 pub enum StarNodeOp<T: NNVFloat> {
@@ -144,6 +145,10 @@ impl<T: NNVFloat, D: Dimension> StarNode<T, D> {
 }
 
 impl<T: NNVFloat> StarNode<T, Ix2> {
+    pub fn try_get_gaussian_distribution(&self) -> Option<&PolytopeInputDistribution<T>> {
+        self.gaussian_distribution.as_ref()
+    }
+
     pub fn get_gaussian_distribution(
         &mut self,
         loc: &Array1<T>,
@@ -158,7 +163,8 @@ impl<T: NNVFloat> StarNode<T, Ix2> {
                 max_accept_reject_iters,
                 input_bounds,
             );
-            assert!(!self.gaussian_distribution.is_none(), "explicit panic"); // really, we just want to use a general gaussian here
+            debug_assert!(!self.gaussian_distribution.is_none(), "explicit panic");
+            // really, we just want to use a general gaussian here
         }
         self.gaussian_distribution.as_mut().unwrap()
     }
@@ -214,8 +220,10 @@ impl<T: NNVFloat> StarNode<T, Ix2> {
         n: usize,
         max_iters: usize,
         input_bounds: &Option<Bounds1<T>>,
+        tilting_initialization: Option<TiltingSolution>,
     ) -> Vec<(Array1<T>, T)> {
         let distribution = self.get_gaussian_distribution(mu, sigma, max_iters, input_bounds);
+        distribution.get_tilting_solution(tilting_initialization.as_ref());
         distribution.sample_n(n, rng)
 
         //let constraint_coeffs = self.star.get_constraint_coeffs();

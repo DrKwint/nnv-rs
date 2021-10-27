@@ -92,7 +92,7 @@ impl<T: NNVFloat> Affine2<T> {
     /// # Panics
     /// If improper shapes are passed in
     pub fn new(basis: Array2<T>, shift: Array1<T>) -> Self {
-        assert_eq!(basis.shape()[0], shift.len());
+        debug_assert_eq!(basis.shape()[0], shift.len());
         Self { basis, shift }
     }
 
@@ -185,14 +185,14 @@ impl<T: NNVFloat> Affine2<T> {
 
     /// # Panics
     pub fn signed_compose(&self, pos_rhs: &Self, neg_rhs: &Self) -> Self {
-        assert_eq!(
+        debug_assert_eq!(
             self.input_dim(),
             pos_rhs.output_dim(),
             "self input dim: {}, pos_rhs output dim: {}",
             self.input_dim(),
             pos_rhs.output_dim()
         );
-        assert_eq!(self.input_dim(), neg_rhs.output_dim());
+        debug_assert_eq!(self.input_dim(), neg_rhs.output_dim());
         Self {
             basis: crate::util::signed_matmul(
                 &self.basis.view(),
@@ -211,7 +211,7 @@ impl<T: NNVFloat> Affine2<T> {
 impl<T: NNVFloat> Affine2<T> {
     /// # Panics
     pub fn scale_eqns(&mut self, x: ArrayView1<T>) {
-        assert_eq!(self.basis.nrows(), x.len());
+        debug_assert_eq!(self.basis.nrows(), x.len());
         Zip::from(self.basis.rows_mut())
             .and(self.shift.view_mut())
             .and(x)

@@ -6,8 +6,9 @@ use crate::util;
 use crate::util::l2_norm;
 use crate::util::solve;
 use crate::util::LinearExpression;
+use crate::util::LinearSolution;
 use crate::NNVFloat;
-use good_lp::solvers::highs::highs;
+use good_lp::solvers::coin_cbc::coin_cbc;
 use good_lp::Expression;
 use good_lp::ProblemVariables;
 use good_lp::Variable;
@@ -137,7 +138,7 @@ impl<T: NNVFloat> Polytope<T> {
         let mut problem = ProblemVariables::new();
         let r = problem.add_variable();
         let x_c = problem.add_vector(variable(), b.len());
-        let mut unsolved = problem.maximise(r).using(highs);
+        let mut unsolved = problem.maximise(r).using(coin_cbc);
 
         self.halfspaces
             .coeffs()
@@ -196,10 +197,9 @@ impl<T: NNVFloat> Polytope<T> {
             self.halfspaces.coeffs().rows(),
             self.halfspaces.rhs(),
             c.view(),
-        )
-        .0;
+        );
 
-        !matches!(solved, Ok(_))
+        !matches!(solved, LinearSolution::Solution(_, _))
     }
 }
 
@@ -246,8 +246,12 @@ impl<T: NNVFloat> PolytopeInputDistribution<T> {
     }
 
     pub fn cdf<R: Rng>(&mut self, n: usize, rng: &mut R) -> T {
-        let (est, rel_err, upper_bound) = self.distribution.cdf(n, rng);
+        let (est, _rel_err, _upper_bound) = self.distribution.cdf(n, rng);
         est.into()
+    }
+
+    pub fn try_get_tilting_solution(&self) -> Option<&TiltingSolution> {
+        self.distribution.try_get_tilting_solution()
     }
 
     pub fn get_tilting_solution(

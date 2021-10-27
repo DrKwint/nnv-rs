@@ -8,7 +8,6 @@
 extern crate approx;
 extern crate env_logger;
 extern crate good_lp;
-extern crate highs;
 extern crate itertools;
 extern crate ndarray;
 extern crate ndarray_linalg;

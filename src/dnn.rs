@@ -145,7 +145,7 @@ impl<T: NNVFloat> Layer<T> {
     pub fn forward(&self, input: ArrayD<T>) -> ArrayD<T> {
         match self {
             Layer::Dense(aff) => {
-                assert_eq!(input.ndim(), 1);
+                debug_assert_eq!(input.ndim(), 1);
                 aff.apply(&input.into_dimensionality::<Ix1>().unwrap().view())
                     .into_dyn()
             }

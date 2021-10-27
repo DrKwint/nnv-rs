@@ -1,8 +1,9 @@
 //! Utility functions
 #![allow(non_snake_case)]
+use crate::good_lp::Solution;
 use crate::NNVFloat;
-use good_lp::solvers::highs::{highs, HighsSolution};
-use good_lp::{variable, ResolutionError, Solution, SolverModel};
+use good_lp::solvers::coin_cbc::coin_cbc;
+use good_lp::{variable, ResolutionError, SolverModel};
 use good_lp::{Expression, IntoAffineExpression, ProblemVariables, Variable};
 use itertools::iproduct;
 use ndarray::{s, Axis, Slice};
@@ -75,11 +76,7 @@ impl IntoAffineExpression for LinearExpression {
 
 /// Minimizes the expression `c` given the constraint `Ax < b`.
 /// # Panics
-pub fn solve<'a, I, T: 'a + NNVFloat>(
-    A: I,
-    b: ArrayView1<T>,
-    c: ArrayView1<T>,
-) -> (Result<HighsSolution, ResolutionError>, Option<f64>)
+pub fn solve<'a, I, T: 'a + NNVFloat>(A: I, b: ArrayView1<T>, c: ArrayView1<T>) -> LinearSolution
 where
     I: IntoIterator<Item = ArrayView1<'a, T>>,
 {
@@ -98,7 +95,7 @@ where
             .zip(c.iter().map(|x| (*x).into()))
             .collect(),
     };
-    let mut unsolved = problem.minimise(c_expression.clone()).using(highs);
+    let mut unsolved = problem.minimise(c_expression.clone()).using(coin_cbc);
 
     A.into_iter()
         .zip(b.into_iter())
@@ -116,9 +113,22 @@ where
             unsolved.add_constraint(constr);
         });
 
-    let soln = unsolved.solve();
-    let fun = soln.as_ref().ok().map(|x| x.eval(c_expression));
-    (soln, fun)
+    let raw_soln_result = unsolved.solve();
+    match raw_soln_result {
+        Ok(raw_soln) => {
+            let cbc_model = raw_soln.model();
+            match cbc_model.secondary_status() {
+                HasSolution => {
+                    let param = Array1::from_iter(cbc_model.col_solution().into_iter().copied());
+                    let fun = raw_soln.eval(c_expression);
+                    LinearSolution::Solution(param, fun)
+                }
+            }
+        }
+        Err(ResolutionError::Infeasible) => LinearSolution::Infeasible,
+        Err(ResolutionError::Unbounded) => LinearSolution::Unbounded,
+        _ => panic!(),
+    }
 }
 
 /// Returns a 2D array of D\[i,j\] = AB\[i,j\] if A\[i,j\] >= 0 and D\[i,j\] = AC\[i,j\] if A\[i,j\] < 0.
@@ -133,8 +143,8 @@ pub fn signed_matmul<T: Float + Sum + Debug>(
     B: &ArrayView2<T>,
     C: &ArrayView2<T>,
 ) -> Array2<T> {
-    assert_eq!(A.ncols(), B.nrows());
-    assert_eq!(A.ncols(), C.nrows());
+    debug_assert_eq!(A.ncols(), B.nrows());
+    debug_assert_eq!(A.ncols(), C.nrows());
     let mut out = Array2::zeros([A.nrows(), B.ncols()]);
     iproduct!(0..A.nrows(), 0..B.ncols()).for_each(|(i, j)| {
         out[[i, j]] = (0..A.ncols())
@@ -156,8 +166,8 @@ pub fn signed_dot<T: Float + Sum + Debug>(
     B: &ArrayView1<T>,
     C: &ArrayView1<T>,
 ) -> Array1<T> {
-    assert_eq!(A.ncols(), B.len());
-    assert_eq!(A.ncols(), C.len());
+    debug_assert_eq!(A.ncols(), B.len());
+    debug_assert_eq!(A.ncols(), C.len());
 
     let mut out = Array1::zeros(A.nrows());
     (0..A.nrows()).for_each(|i| {
@@ -184,6 +194,12 @@ impl<T> ArenaLike<T> for Vec<T> {
         self.push(data);
         new_id
     }
+}
+
+pub enum LinearSolution {
+    Solution(Array1<f64>, f64),
+    Infeasible,
+    Unbounded,
 }
 
 #[cfg(test)]

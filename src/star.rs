@@ -8,8 +8,8 @@ use crate::polytope::Polytope;
 use crate::polytope::PolytopeInputDistribution;
 use crate::tensorshape::TensorShape;
 use crate::util::solve;
+use crate::util::LinearSolution;
 use crate::NNVFloat;
-use good_lp::ResolutionError;
 use ndarray::Array4;
 use ndarray::ArrayView1;
 use ndarray::Dimension;
@@ -83,7 +83,6 @@ impl<T: NNVFloat, D: Dimension> Star<T, D> {
         new_constraints: &Inequality<T>,
         check_redundant: bool,
     ) -> Self {
-        // assert_eq!(self.representation.is_lhs, new_constraints.is_lhs);
         if let Some(ref mut constrs) = self.constraints {
             constrs.add_constraints(new_constraints, check_redundant);
         } else {
@@ -132,7 +131,7 @@ impl<T: NNVFloat> Star2<T> {
     ///
     /// # Panics
     pub fn default(input_shape: &TensorShape) -> Self {
-        assert_eq!(input_shape.rank(), 1);
+        debug_assert_eq!(input_shape.rank(), 1);
         debug_assert!(input_shape.is_fully_defined());
         let dim = input_shape[0].unwrap();
         Self {
@@ -256,13 +255,11 @@ impl<T: NNVFloat> Star2<T> {
                 poly.ubs(),
                 eqn.basis().index_axis(Axis(0), 0),
             );
-            let val = match solved.0 {
-                Ok(_) => std::convert::From::from(solved.1.unwrap()),
-                Err(ResolutionError::Infeasible) => panic!("Error, infeasible"),
-                Err(ResolutionError::Unbounded) => panic!("Error, unbounded"),
-                _ => panic!(),
-            };
-            eqn.shift()[0] + val
+            if let LinearSolution::Solution(_, val) = solved {
+                eqn.shift()[0] + val.into()
+            } else {
+                panic!()
+            }
         } else {
             T::neg_infinity()
         }
@@ -288,13 +285,11 @@ impl<T: NNVFloat> Star2<T> {
                 poly.ubs(),
                 eqn.basis().index_axis(Axis(0), 0),
             );
-            let val = match solved.0 {
-                Ok(_) => std::convert::From::from(solved.1.unwrap()),
-                Err(ResolutionError::Infeasible) => panic!("Error, infeasible"),
-                Err(ResolutionError::Unbounded) => panic!("Error, unbounded"),
-                _ => panic!(),
-            };
-            shift - val
+            if let LinearSolution::Solution(_, val) = solved {
+                shift - val.into()
+            } else {
+                panic!()
+            }
         } else {
             T::infinity()
         }
@@ -406,7 +401,7 @@ impl<T: NNVFloat> Star4<T> {
     ///
     /// # Panics
     pub fn default(input_shape: &TensorShape) -> Self {
-        assert_eq!(input_shape.rank(), 3);
+        debug_assert_eq!(input_shape.rank(), 3);
         debug_assert!(input_shape.is_fully_defined());
         let shape_slice = input_shape.as_defined_slice().unwrap();
         let slice_exact: [usize; 4] = [

@@ -137,7 +137,7 @@ pub fn deep_poly<T: NNVFloat>(input_bounds: &Bounds1<T>, dnn_iter: DNNIterator<T
                     let upper_bounds = out.1 .1.signed_apply(input_bounds);
                     let realized_abstract_bounds =
                         Bounds1::new(lower_bounds.lower(), upper_bounds.upper());
-                    assert!(
+                    debug_assert!(
                         realized_abstract_bounds.subset(&out.0),
                         "\n\nRealized abstract: {:?}\nConcrete: {:?}\n\n",
                         realized_abstract_bounds,
