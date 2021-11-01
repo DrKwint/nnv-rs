@@ -20,7 +20,6 @@ use ndarray::ArrayView2;
 use ndarray::Ix2;
 use ndarray::{Array1, Axis};
 use rand::Rng;
-use std::collections::HashMap;
 use std::fmt::Debug;
 use truncnorm::distributions::MultivariateTruncatedNormal;
 use truncnorm::tilting::TiltingSolution;
@@ -149,9 +148,8 @@ impl<T: NNVFloat> Polytope<T> {
                 let (coeffs, ub) = pair;
                 let coeffs = coeffs.map(|x| (*x).into());
                 let l2_norm_val = l2_norm(coeffs.view());
-                let mut expr_map: HashMap<Variable, f64> =
-                    x_c.iter().copied().zip(coeffs).collect();
-                expr_map.insert(r, l2_norm_val);
+                let mut expr_map: Vec<(Variable, f64)> = x_c.iter().copied().zip(coeffs).collect();
+                expr_map.push((r, l2_norm_val));
                 let expr = LinearExpression {
                     coefficients: expr_map,
                 };

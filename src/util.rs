@@ -11,7 +11,6 @@ use ndarray::{Array1, Array2, ArrayView1, ArrayView2};
 use ndarray_linalg::SVD;
 use num::Float;
 use std::cmp::max;
-use std::collections::HashMap;
 use std::fmt::Debug;
 use std::iter::Sum;
 
@@ -62,11 +61,11 @@ pub fn embed_identity(A: &Array2<f64>, dim_opt: Option<usize>) -> Array2<f64> {
 /// An linear expression without a constant component
 #[derive(Clone)]
 pub struct LinearExpression {
-    pub coefficients: HashMap<Variable, f64>,
+    pub coefficients: Vec<(Variable, f64)>,
 }
 
 impl IntoAffineExpression for LinearExpression {
-    type Iter = std::collections::hash_map::IntoIter<Variable, f64>;
+    type Iter = std::vec::IntoIter<(Variable, f64)>;
 
     #[inline]
     fn linear_coefficients(self) -> Self::Iter {
