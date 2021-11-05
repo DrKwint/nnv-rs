@@ -60,7 +60,10 @@ impl<'a, T: NNVFloat> Asterism<'a, T, Ix2> {
     ///
     /// # Returns
     ///
-    /// (Vec of (samples, sample probabilities), branch probability)
+    /// (Vec of samples, log path probability, total invalid cdf proportion)
+    ///
+    /// Sample probability can be calculated (in a network without dropouts) by calculating
+    /// gaussian probability and dividing by (1 - invalid cdf proportion)
     #[allow(clippy::too_many_lines)]
     pub fn sample_safe_star<R: Rng>(
         &mut self,
@@ -69,18 +72,19 @@ impl<'a, T: NNVFloat> Asterism<'a, T, Ix2> {
         cdf_samples: usize,
         max_iters: usize,
         time_limit_opt: Option<Duration>,
-    ) -> Option<(Vec<Array1<T>>, T)> {
+    ) -> Option<(Vec<Array1<T>>, T, T)> {
         let start_time = Instant::now();
         let mut best_sample = None;
         let mut best_sample_val = T::infinity();
         let mut current_node = 0;
         let mut path = vec![];
         let mut path_logp = T::zero();
-        let mut invalid_logp = T::zero();
+        let mut total_infeasible_cdf = T::zero();
         let infeasible_reset = |me: &mut Self,
                                 x: usize,
                                 path: &mut Vec<usize>,
                                 path_logp: &mut T,
+                                total_infeasible_cdf: &mut T,
                                 rng: &mut R|
          -> usize {
             debug!("Infeasible reset!");
@@ -106,6 +110,7 @@ impl<'a, T: NNVFloat> Asterism<'a, T, Ix2> {
                         .get_node_cdf(x, cdf_samples, max_iters, rng)
                 }
             });
+            *total_infeasible_cdf += infeas_cdf;
             *path_logp = T::zero();
             0
         };
@@ -129,7 +134,7 @@ impl<'a, T: NNVFloat> Asterism<'a, T, Ix2> {
                         self.safe_value,
                         path.len()
                     );
-                    return Some((vec![safe_sample], path_logp));
+                    return Some((vec![safe_sample], path_logp, total_infeasible_cdf));
                 }
                 Err((unsafe_sample, val)) => {
                     best_sample = Some(unsafe_sample);
@@ -159,12 +164,18 @@ impl<'a, T: NNVFloat> Asterism<'a, T, Ix2> {
                         num_samples,
                         max_iters,
                     );
-                    return Some((safe_sample, path_logp));
+                    return Some((safe_sample, path_logp, total_infeasible_cdf));
                 } else if output_bounds.0 > self.safe_value {
                     // handle case where star is infeasible
                     self.set_feasible(current_node, false);
-                    current_node =
-                        infeasible_reset(self, current_node, &mut path, &mut path_logp, rng);
+                    current_node = infeasible_reset(
+                        self,
+                        current_node,
+                        &mut path,
+                        &mut path_logp,
+                        &mut total_infeasible_cdf,
+                        rng,
+                    );
                     continue;
                 } else if let StarNodeType::Leaf = self.constellation.get_node_type(current_node) {
                     // do procedure to select safe part
@@ -179,7 +190,7 @@ impl<'a, T: NNVFloat> Asterism<'a, T, Ix2> {
                         max_iters,
                         self.safe_value,
                     );
-                    return Some((safe_sample, path_logp));
+                    return Some((safe_sample, path_logp, total_infeasible_cdf));
                 }
                 // otherwise, push to path and continue expanding
                 path.push(current_node);
@@ -192,7 +203,7 @@ impl<'a, T: NNVFloat> Asterism<'a, T, Ix2> {
                         best_sample_val,
                         path.len()
                     );
-                    return best_sample.map(|x| (vec![x], path_logp));
+                    return best_sample.map(|x| (vec![x], path_logp, total_infeasible_cdf));
                 }
             }
             debug_assert!(self
@@ -210,8 +221,14 @@ impl<'a, T: NNVFloat> Asterism<'a, T, Ix2> {
                         path_logp += logp;
                     }
                     None => {
-                        current_node =
-                            infeasible_reset(self, current_node, &mut path, &mut path_logp, rng);
+                        current_node = infeasible_reset(
+                            self,
+                            current_node,
+                            &mut path,
+                            &mut path_logp,
+                            &mut total_infeasible_cdf,
+                            rng,
+                        );
                     }
                 }
             }
