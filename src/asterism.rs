@@ -69,13 +69,14 @@ impl<'a, T: NNVFloat> Asterism<'a, T, Ix2> {
         cdf_samples: usize,
         max_iters: usize,
         time_limit_opt: Option<Duration>,
-    ) -> Option<(Vec<(Array1<T>, T)>, T)> {
+    ) -> Option<(Vec<Array1<T>>, T)> {
         let start_time = Instant::now();
         let mut best_sample = None;
         let mut best_sample_val = T::infinity();
         let mut current_node = 0;
         let mut path = vec![];
         let mut path_logp = T::zero();
+        let mut invalid_logp = T::zero();
         let infeasible_reset = |me: &mut Self,
                                 x: usize,
                                 path: &mut Vec<usize>,
@@ -223,11 +224,11 @@ impl<'a, T: NNVFloat> Asterism<'a, T, Ix2> {
         rng: &mut R,
         num_samples: usize,
         max_iters: usize,
-    ) -> Result<(Array1<T>, T), ((Array1<T>, T), T)> {
+    ) -> Result<Array1<T>, (Array1<T>, T)> {
         let unsafe_sample =
             self.constellation
                 .sample_gaussian_node(current_node, rng, num_samples, max_iters);
-        let unsafe_len = unsafe_sample[0].0.len();
+        let unsafe_len = unsafe_sample[0].len();
         let fixed_input_part: Option<Array1<T>> = {
             self.constellation
                 .get_input_bounds()
@@ -239,26 +240,21 @@ impl<'a, T: NNVFloat> Asterism<'a, T, Ix2> {
                 })
         };
         let dnn_idx = self.constellation.get_node_dnn_index(current_node);
-        let mut best_sample = (Array1::zeros(1), T::zero());
+        let mut best_sample = Array1::zeros(1);
         let mut best_val = T::infinity();
         let sample_opt = if let Some(fixed_input_part) = fixed_input_part {
             let mut input_iter = unsafe_sample
                 .into_iter()
                 .zip(iter::repeat(fixed_input_part))
-                .map(|((unfix, logp), fix)| {
-                    (
-                        concatenate(Axis(0), &[unfix.view(), fix.view()]).unwrap(),
-                        logp,
-                    )
-                });
-            input_iter.find_map(|(x, logp)| {
+                .map(|(unfix, fix)| concatenate(Axis(0), &[unfix.view(), fix.view()]).unwrap());
+            input_iter.find_map(|x| {
                 let output = self.constellation.get_dnn().forward1(x.clone());
                 debug_assert_eq!(output.len(), 1);
                 if output[[0]] < self.safe_value {
-                    Some((x, logp))
+                    Some(x)
                 } else {
                     if output[[0]] < best_val {
-                        best_sample = (x, logp);
+                        best_sample = x;
                         best_val = output[[0]]
                     }
                     None
@@ -266,14 +262,14 @@ impl<'a, T: NNVFloat> Asterism<'a, T, Ix2> {
             })
         } else {
             let mut input_iter = unsafe_sample.into_iter();
-            input_iter.find_map(|(x, logp)| {
+            input_iter.find_map(|x| {
                 let output = self.constellation.get_dnn().forward1(x.clone());
                 debug_assert_eq!(output.len(), 1);
                 if output[[0]] < self.safe_value {
-                    Some((x, logp))
+                    Some(x)
                 } else {
                     if output[[0]] < best_val {
-                        best_sample = (x, logp);
+                        best_sample = x;
                         best_val = output[[0]]
                     }
                     None
@@ -281,19 +277,11 @@ impl<'a, T: NNVFloat> Asterism<'a, T, Ix2> {
             })
         };
         sample_opt
-            .map(|(sample, logp)| {
+            .map(|sample| {
                 let unfixed = sample.slice(s![..unsafe_len]).to_owned();
-                (unfixed, logp)
+                unfixed
             })
-            .ok_or_else(|| {
-                (
-                    (
-                        best_sample.0.slice(s![..unsafe_len]).to_owned(),
-                        best_sample.1,
-                    ),
-                    best_val,
-                )
-            })
+            .ok_or_else(|| (best_sample.slice(s![..unsafe_len]).to_owned(), best_val))
     }
 
     /// Given a node, samples one of its children and returns the log probability

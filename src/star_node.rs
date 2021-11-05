@@ -221,23 +221,10 @@ impl<T: NNVFloat> StarNode<T, Ix2> {
         max_iters: usize,
         input_bounds: &Option<Bounds1<T>>,
         tilting_initialization: Option<TiltingSolution>,
-    ) -> Vec<(Array1<T>, T)> {
+    ) -> Vec<Array1<T>> {
         let distribution = self.get_gaussian_distribution(mu, sigma, max_iters, input_bounds);
         distribution.get_tilting_solution(tilting_initialization.as_ref());
         distribution.sample_n(n, rng)
-
-        //let constraint_coeffs = self.star.get_constraint_coeffs();
-        //let inv_constraint_coeffs: Array2<T> =
-        //    util::pinv(&constraint_coeffs.unwrap().mapv(|x| x.into())).mapv(|x| x.into());
-        /*
-        samples
-            .into_iter()
-            .map(|(arr, val)| {
-                //let samp_t = inv_constraint_coeffs.dot(&arr.t()).reversed_axes();
-                (samp_t, num::NumCast::from(val).unwrap())
-            })
-            .collect()
-        */
     }
 
     /// # Panics

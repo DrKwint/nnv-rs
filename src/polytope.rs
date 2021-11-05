@@ -233,13 +233,12 @@ pub struct PolytopeInputDistribution<T> {
 }
 
 impl<T: NNVFloat> PolytopeInputDistribution<T> {
-    pub fn sample_n<R: Rng>(&mut self, n: usize, rng: &mut R) -> Vec<(Array1<T>, T)> {
-        let (sample_arr, logp_arr) = self.distribution.sample_n(n, rng);
+    pub fn sample_n<R: Rng>(&mut self, n: usize, rng: &mut R) -> Vec<Array1<T>> {
+        let sample_arr = self.distribution.sample_n(n, rng);
         sample_arr
             .rows()
             .into_iter()
-            .zip(logp_arr.into_iter())
-            .map(|(x, logp)| (self.inv_coeffs.dot(&x.mapv(|x| x.into())), logp.into()))
+            .map(|x| (self.inv_coeffs.dot(&x.mapv(|x| x.into()))))
             .collect()
     }
 

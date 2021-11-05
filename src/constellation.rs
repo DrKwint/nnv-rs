@@ -178,7 +178,7 @@ impl<T: crate::NNVFloat> Constellation<T, Ix2> {
         rng: &mut R,
         n: usize,
         max_iters: usize,
-    ) -> Vec<(Array1<T>, T)> {
+    ) -> Vec<Array1<T>> {
         let node = &mut self.arena[node_id];
         node.gaussian_sample(
             rng,
@@ -190,7 +190,7 @@ impl<T: crate::NNVFloat> Constellation<T, Ix2> {
             None,
         )
         .into_iter()
-        .map(|(input, weight)| (node.forward(&input), weight))
+        .map(|input| node.forward(&input))
         .collect()
     }
 
@@ -200,7 +200,7 @@ impl<T: crate::NNVFloat> Constellation<T, Ix2> {
         rng: &mut R,
         n: usize,
         max_iters: usize,
-    ) -> Vec<(Array1<T>, T)> {
+    ) -> Vec<Array1<T>> {
         let initialization_opt = self.parents[node_id].map(|x| {
             self.arena[x]
                 .try_get_gaussian_distribution()
@@ -227,7 +227,7 @@ impl<T: crate::NNVFloat> Constellation<T, Ix2> {
         n: usize,
         max_iters: usize,
         safe_value: T,
-    ) -> Vec<(Array1<T>, T)> {
+    ) -> Vec<Array1<T>> {
         let mut safe_star = self.arena[node_id].get_safe_star(safe_value);
         let initialization_opt = self.parents[node_id].map(|x| {
             self.arena[x]

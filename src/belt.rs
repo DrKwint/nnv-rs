@@ -77,12 +77,11 @@ impl<'a, T: crate::NNVFloat> Belt<'a, T, Ix2> {
             .map(|(weight, idx)| {
                 let star_prob = weight.0 / total_weight;
                 let n_local_samples = ((star_prob * n_samples).into() as u64).try_into().unwrap();
-                let (local_samples, local_sample_p): (Vec<Array1<T>>, Vec<T>) = self
+                let local_samples: Vec<Array1<T>> = self
                     .constellation
                     .sample_gaussian_node_output(*idx, &mut rng, n_local_samples, 10)
-                    .iter()
-                    .cloned()
-                    .unzip();
+                    .into_iter()
+                    .collect();
                 let local_sum: T = local_samples.iter().map(|x| x[[0]]).sum();
                 let local_mean: T = local_sum / (local_samples.len() as f64).into();
                 local_mean * weight.0
