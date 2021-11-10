@@ -231,6 +231,26 @@ impl<T: NNVFloat> Star2<T> {
         (dropout_star_opt, stars.0, stars.1)
     }
 
+    #[cfg(feature = "rayon")]
+    pub fn par_get_min(&self, idx: usize) -> T {
+        let eqn = self.representation.get_eqn(idx);
+
+        if let Some(ref poly) = self.constraints {
+            let solved = par_solve(
+                poly.coeffs().rows(),
+                poly.ubs(),
+                eqn.basis().index_axis(Axis(0), 0),
+            );
+            if let LinearSolution::Solution(_, val) = solved {
+                eqn.shift()[0] + val.into()
+            } else {
+                panic!()
+            }
+        } else {
+            T::neg_infinity()
+        }
+    }
+
     /// Calculates the minimum value of the equation at index `idx`
     /// given the constraints
     ///
@@ -262,6 +282,29 @@ impl<T: NNVFloat> Star2<T> {
             }
         } else {
             T::neg_infinity()
+        }
+    }
+
+    #[cfg(feature = "rayon")]
+    pub fn par_get_max(&self, idx: usize) -> T {
+        let neg_one: T = std::convert::From::from(-1.);
+        let mut eqn = self.representation.get_eqn(idx);
+        let shift = eqn.shift()[0];
+        eqn *= neg_one;
+
+        if let Some(ref poly) = self.constraints {
+            let solved = par_solve(
+                poly.coeffs().rows(),
+                poly.ubs(),
+                eqn.basis().index_axis(Axis(0), 0),
+            );
+            if let LinearSolution::Solution(_, val) = solved {
+                shift - val.into()
+            } else {
+                panic!()
+            }
+        } else {
+            T::infinity()
         }
     }
 

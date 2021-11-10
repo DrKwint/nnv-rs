@@ -227,6 +227,10 @@ impl<T: NNVFloat> StarNode<T, Ix2> {
         distribution.sample_n(n, rng)
     }
 
+    pub fn try_get_local_bounds(&self) -> &Option<Bounds1<T>> {
+        &self.local_bounds
+    }
+
     /// # Panics
     pub fn get_local_bounds(&mut self) -> &Bounds1<T> {
         if self.local_bounds.is_none() {

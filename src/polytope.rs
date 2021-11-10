@@ -106,10 +106,9 @@ impl<T: NNVFloat> Polytope<T> {
         constraint_coeffs = (&constraint_coeffs.t() / &row_norms).reversed_axes();
         ub = ub / row_norms;
 
-        let sq_sigma = sigma;
         let sq_constr_sigma = {
-            let sigma: Array2<f64> = constraint_coeffs.dot(&sq_sigma.dot(&constraint_coeffs.t()));
-            let diag_addn = Array2::from_diag(&Array1::from_elem(sigma.nrows(), 1e-12));
+            let sigma: Array2<f64> = constraint_coeffs.dot(&sigma.dot(&constraint_coeffs.t()));
+            let diag_addn = Array2::from_diag(&Array1::from_elem(sigma.nrows(), 1e-5));
             sigma + diag_addn
         };
         let sq_ub = ub;
@@ -208,16 +207,16 @@ impl<T: NNVFloat> From<Bounds1<T>> for Polytope<T> {
         let coeffs = concatenate(
             Axis(0),
             &[
-                (Array2::eye(item.ndim()) * T::neg(T::one())).view(),
                 Array2::eye(item.ndim()).view(),
+                (Array2::eye(item.ndim()) * T::neg(T::one())).view(),
             ],
         )
         .unwrap();
         let rhs = concatenate(
             Axis(0),
             &[
-                (item.lower().to_owned() * T::neg(T::one())).view(),
                 item.upper(),
+                (item.lower().to_owned() * T::neg(T::one())).view(),
             ],
         )
         .unwrap();

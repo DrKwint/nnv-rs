@@ -6,6 +6,8 @@
 #![feature(trait_alias)]
 #![feature(convert_float_to_int)]
 extern crate approx;
+#[cfg(feature = "openblas-system")]
+extern crate blas_src;
 extern crate env_logger;
 extern crate good_lp;
 extern crate itertools;

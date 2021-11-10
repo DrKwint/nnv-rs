@@ -87,7 +87,7 @@ impl<'a, T: NNVFloat> Asterism<'a, T, Ix2> {
                                 total_infeasible_cdf: &mut T,
                                 rng: &mut R|
          -> usize {
-            debug!("Infeasible reset!");
+            info!("Infeasible reset!");
             me.set_feasible(x, false);
             let mut infeas_cdf = me
                 .constellation
@@ -128,9 +128,10 @@ impl<'a, T: NNVFloat> Asterism<'a, T, Ix2> {
                 .try_get_gaussian_distribution(current_node)
                 .is_some());
             match safe_sample_opt {
-                Ok(safe_sample) => {
+                Ok((safe_sample, est_cost)) => {
                     info!(
-                        "Safe sample with value at most {} at depth {:?}",
+                        "Safe sample with value {} less than {} at depth {:?}",
+                        est_cost,
                         self.safe_value,
                         path.len()
                     );
@@ -144,7 +145,11 @@ impl<'a, T: NNVFloat> Asterism<'a, T, Ix2> {
             // check feasibility of current node
             {
                 // makes the assumption that bounds are on 0th dimension of output
-                let output_bounds = self.constellation.get_node_output_bounds(current_node);
+                let output_bounds = if current_node != 0 {
+                    self.constellation.get_node_output_bounds(current_node)
+                } else {
+                    (T::neg_infinity(), T::infinity())
+                };
                 debug!("Output bounds: {:?}", output_bounds);
                 debug_assert!(self
                     .constellation
@@ -241,7 +246,7 @@ impl<'a, T: NNVFloat> Asterism<'a, T, Ix2> {
         rng: &mut R,
         num_samples: usize,
         max_iters: usize,
-    ) -> Result<Array1<T>, (Array1<T>, T)> {
+    ) -> Result<(Array1<T>, T), (Array1<T>, T)> {
         let unsafe_sample =
             self.constellation
                 .sample_gaussian_node(current_node, rng, num_samples, max_iters);
@@ -259,7 +264,7 @@ impl<'a, T: NNVFloat> Asterism<'a, T, Ix2> {
         let dnn_idx = self.constellation.get_node_dnn_index(current_node);
         let mut best_sample = Array1::zeros(1);
         let mut best_val = T::infinity();
-        let sample_opt = if let Some(fixed_input_part) = fixed_input_part {
+        let sample_opt: Option<(Array1<T>, T)> = if let Some(fixed_input_part) = fixed_input_part {
             let mut input_iter = unsafe_sample
                 .into_iter()
                 .zip(iter::repeat(fixed_input_part))
@@ -268,7 +273,7 @@ impl<'a, T: NNVFloat> Asterism<'a, T, Ix2> {
                 let output = self.constellation.get_dnn().forward1(x.clone());
                 debug_assert_eq!(output.len(), 1);
                 if output[[0]] < self.safe_value {
-                    Some(x)
+                    Some((x, output[[0]]))
                 } else {
                     if output[[0]] < best_val {
                         best_sample = x;
@@ -283,7 +288,7 @@ impl<'a, T: NNVFloat> Asterism<'a, T, Ix2> {
                 let output = self.constellation.get_dnn().forward1(x.clone());
                 debug_assert_eq!(output.len(), 1);
                 if output[[0]] < self.safe_value {
-                    Some(x)
+                    Some((x, output[[0]]))
                 } else {
                     if output[[0]] < best_val {
                         best_sample = x;
@@ -294,9 +299,9 @@ impl<'a, T: NNVFloat> Asterism<'a, T, Ix2> {
             })
         };
         sample_opt
-            .map(|sample| {
+            .map(|(sample, est_cost)| {
                 let unfixed = sample.slice(s![..unsafe_len]).to_owned();
-                unfixed
+                (unfixed, est_cost)
             })
             .ok_or_else(|| (best_sample.slice(s![..unsafe_len]).to_owned(), best_val))
     }
