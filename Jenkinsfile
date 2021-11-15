@@ -4,7 +4,7 @@ pipeline {
     stages {
         stage('Build') {
             steps {
-                cargo build
+                bash 'cargo build'
             }
         }
     }
