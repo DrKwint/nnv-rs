@@ -8,7 +8,7 @@ pipeline {
             }
 
             steps {
-                sh '$CARGO_HOME/bin/cargo build'
+                sh 'bash -c "cargo build"'
             }
         }
     }
