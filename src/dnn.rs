@@ -372,15 +372,15 @@ mod tests {
         fn test_dnn_iterator_is_finite(dnn in fc_dnn(2, 2, 1, 2)) {
             let expected_steps: usize = dnn.layers.iter().enumerate().map(|(i, layer)| {
                 match layer {
-                    Layer::ReLU(ndims) => *ndims,
+                    Layer::ReLU(ndims) => ndims,
                     Layer::Dropout(_) => {
                         if let Some(Layer::ReLU(_)) = dnn.get_layer(i - 1) {
-                            0
+                            &0
                         } else {
-                            1
+                            &1
                         }
                     },
-                    _ => 1,
+                    _ => &1,
                 }
             }).sum();
 

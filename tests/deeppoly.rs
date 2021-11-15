@@ -1,17 +1,20 @@
 use ndarray::Array1;
 use ndarray::Ix1;
-use nnv_rs_py::bounds::Bounds;
-use nnv_rs_py::deeppoly::*;
-use nnv_rs_py::dnn::DNNIndex;
-use nnv_rs_py::dnn::DNNIterator;
+use nnv_rs::affine::Affine2;
+use nnv_rs::bounds::Bounds;
+use nnv_rs::deeppoly::deep_poly;
+use nnv_rs::dnn::DNNIndex;
+use nnv_rs::dnn::DNNIterator;
+use nnv_rs::dnn::Layer;
+use nnv_rs::dnn::DNN;
 
 mod common;
 
 #[test]
 fn test_deeppoly_correctness() {
     let dnn = common::make_dnn(&vec![2, 2], &1);
-    let lower_bounds = Array1::ones(2) * -20.;
-    let upper_bounds = Array1::ones(2) * 20.;
+    let lower_bounds: Array1<f64> = Array1::ones(2) * -20.;
+    let upper_bounds: Array1<f64> = Array1::ones(2) * 20.;
     let input_bounds = Bounds::new(lower_bounds.view(), upper_bounds.view());
 
     let concrete_input = input_bounds.sample_uniform(0u64);

@@ -443,7 +443,7 @@ mod test {
         fn test_cache_bounds_equivalence(mut constellation in generic_constellation(2, 2, 2, 2)) {
             let mut rng = rand::thread_rng();
             let mut asterism = Asterism::new(&mut constellation, 1.);
-            asterism.sample_safe_star(1, &mut rng, 1, 1);
+            asterism.sample_safe_star(1, &mut rng, 1, 1, None);
 
             for (i, node) in constellation.arena.iter_mut().enumerate() {
                 if let Some(local_bounds) = node.get_local_bounds_direct() {

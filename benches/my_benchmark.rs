@@ -4,15 +4,15 @@ use ndarray::Array1;
 use ndarray::Array2;
 use ndarray_rand::rand_distr::Normal;
 use ndarray_rand::RandomExt;
-use nnv_rs_py::affine::Affine;
-use nnv_rs_py::affine::Affine2;
-use nnv_rs_py::constellation::Constellation;
-use nnv_rs_py::deeppoly::*;
-use nnv_rs_py::star::Star2;
-use nnv_rs_py::Bounds;
-use nnv_rs_py::Layer;
-use nnv_rs_py::StarNode;
-use nnv_rs_py::DNN;
+use nnv_rs::affine::Affine;
+use nnv_rs::affine::Affine2;
+use nnv_rs::bounds::Bounds;
+use nnv_rs::constellation::Constellation;
+use nnv_rs::deeppoly::*;
+use nnv_rs::dnn::Layer;
+use nnv_rs::dnn::DNN;
+use nnv_rs::star::Star2;
+use nnv_rs::star_node::StarNode;
 use pprof::criterion::{Output, PProfProfiler};
 
 fn bench(c: &mut Criterion) {
@@ -55,7 +55,7 @@ fn bench(c: &mut Criterion) {
                 loc.clone(),
                 scale.clone(),
             );
-            constellation.sample_safe_star(1., 100, 20)
+            //constellation.sample_safe_star(1., 100, 20)
         })
     });
     group.finish();

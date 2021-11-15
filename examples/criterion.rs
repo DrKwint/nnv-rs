@@ -4,7 +4,6 @@ use criterion::{black_box, BenchmarkId, Criterion};
 
 use criterion::profiler::Profiler;
 use pprof::criterion::{Output, PProfProfiler};
-use pprof::protos::Message;
 use pprof::ProfilerGuard;
 use std::fs::create_dir_all;
 use std::fs::File;
@@ -37,11 +36,11 @@ impl<'a> Profiler for CpuProfiler<'a> {
 
             let pb_file_name = benchmark_dir.join(format!("{}.pb", benchmark_id));
             let mut pb_file = File::create(pb_file_name).unwrap();
-            let profile = report.pprof().unwrap();
+            //let profile = report.pprof().unwrap();
 
-            let mut content = Vec::new();
-            profile.encode(&mut content).unwrap();
-            pb_file.write_all(&content).unwrap();
+            //let mut content = Vec::new();
+            //profile.encode(&mut content).unwrap();
+            //pb_file.write_all(&content).unwrap();
         };
 
         self.guard = None;
