@@ -3,8 +3,12 @@ pipeline {
 
     stages {
         stage('Build') {
+            environment {
+                CARGO_HOME = '/usr/local/cargo/'
+            }
+
             steps {
-                sh 'cargo build'
+                sh '$CARGO_HOME/bin/cargo build'
             }
         }
     }
