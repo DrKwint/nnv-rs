@@ -530,15 +530,12 @@ mod test {
     use proptest::*;
 
     proptest! {
-        /*
         #[test]
         fn test_sample_safe_star(mut constellation in generic_constellation(2, 2, 2, 2)) {
             let mut rng = rand::thread_rng();
             let mut asterism = Asterism::new(&mut constellation, 1.);
-            let default = Array1::zeros(asterism.constellation.get_dnn().input_shape()[0].unwrap());
-            let sample = asterism.sample_safe_star(1, &mut rng, 1, 1).unwrap_or((vec![(default, 0.69)], 0.69));
-            assert_eq!(sample.0[0].0.len(), asterism.constellation.get_dnn().input_shape()[0].unwrap(), "expected sample shape: {:?}", asterism.constellation.get_dnn().input_shape()[0].unwrap())
+            let default: Array1<f64> = Array1::zeros(asterism.constellation.get_dnn().input_shape()[0].unwrap());
+            let sample = asterism.sample_safe_star(1, &mut rng, 1, 1, None);
         }
-        */
     }
 }
