@@ -72,6 +72,7 @@ impl<'a, T: NNVFloat> Asterism<'a, T, Ix2> {
         cdf_samples: usize,
         max_iters: usize,
         time_limit_opt: Option<Duration>,
+        stability_eps: T,
     ) -> Option<(Vec<Array1<T>>, T, T)> {
         let start_time = Instant::now();
         let mut best_sample = None;
@@ -89,14 +90,14 @@ impl<'a, T: NNVFloat> Asterism<'a, T, Ix2> {
          -> usize {
             info!("Infeasible reset!");
             me.set_feasible(x, false);
-            let mut infeas_cdf = me
-                .constellation
-                .get_node_cdf(x, cdf_samples, max_iters, rng);
+            let mut infeas_cdf =
+                me.constellation
+                    .get_node_cdf(x, cdf_samples, max_iters, rng, stability_eps);
             path.drain(..).rev().for_each(|x| {
                 // check if all chilren are infeasible
                 if me
                     .constellation
-                    .get_node_child_ids(x)
+                    .get_node_child_ids(x, stability_eps)
                     .iter()
                     .any(|&x| me.get_feasible(x))
                 {
@@ -105,9 +106,9 @@ impl<'a, T: NNVFloat> Asterism<'a, T, Ix2> {
                         .add_node_cdf(x, T::neg(T::one()) * infeas_cdf);
                 } else {
                     me.set_feasible(x, false);
-                    infeas_cdf = me
-                        .constellation
-                        .get_node_cdf(x, cdf_samples, max_iters, rng)
+                    infeas_cdf =
+                        me.constellation
+                            .get_node_cdf(x, cdf_samples, max_iters, rng, stability_eps)
                 }
             });
             *total_infeasible_cdf += infeas_cdf;
@@ -122,7 +123,8 @@ impl<'a, T: NNVFloat> Asterism<'a, T, Ix2> {
                 return None;
             }
             // Try to sample and return if a valid sample is found
-            let safe_sample_opt = self.try_safe_sample(current_node, rng, num_samples, max_iters);
+            let safe_sample_opt =
+                self.try_safe_sample(current_node, rng, num_samples, max_iters, stability_eps);
             debug_assert!(self
                 .constellation
                 .try_get_gaussian_distribution(current_node)
@@ -168,6 +170,7 @@ impl<'a, T: NNVFloat> Asterism<'a, T, Ix2> {
                         rng,
                         num_samples,
                         max_iters,
+                        stability_eps,
                     );
                     return Some((safe_sample, path_logp, total_infeasible_cdf));
                 } else if output_bounds.0 > self.safe_value {
@@ -182,7 +185,10 @@ impl<'a, T: NNVFloat> Asterism<'a, T, Ix2> {
                         rng,
                     );
                     continue;
-                } else if let StarNodeType::Leaf = self.constellation.get_node_type(current_node) {
+                } else if let StarNodeType::Leaf = self
+                    .constellation
+                    .get_node_type(current_node, stability_eps)
+                {
                     // do procedure to select safe part
                     info!(
                         "Safe sample with value at most {} at leaf (bounds {:?})",
@@ -194,6 +200,7 @@ impl<'a, T: NNVFloat> Asterism<'a, T, Ix2> {
                         num_samples,
                         max_iters,
                         self.safe_value,
+                        stability_eps,
                     );
                     return Some((safe_sample, path_logp, total_infeasible_cdf));
                 }
@@ -217,8 +224,14 @@ impl<'a, T: NNVFloat> Asterism<'a, T, Ix2> {
                 .is_some());
             // expand node
             {
-                let result =
-                    self.select_safe_child(current_node, path_logp, cdf_samples, max_iters, rng);
+                let result = self.select_safe_child(
+                    current_node,
+                    path_logp,
+                    cdf_samples,
+                    max_iters,
+                    rng,
+                    stability_eps,
+                );
                 match result {
                     Some((node, logp)) => {
                         debug_assert!(node != current_node);
@@ -246,10 +259,15 @@ impl<'a, T: NNVFloat> Asterism<'a, T, Ix2> {
         rng: &mut R,
         num_samples: usize,
         max_iters: usize,
+        stability_eps: T,
     ) -> Result<(Array1<T>, T), (Array1<T>, T)> {
-        let unsafe_sample =
-            self.constellation
-                .sample_gaussian_node(current_node, rng, num_samples, max_iters);
+        let unsafe_sample = self.constellation.sample_gaussian_node(
+            current_node,
+            rng,
+            num_samples,
+            max_iters,
+            stability_eps,
+        );
         let unsafe_len = unsafe_sample[0].len();
         let fixed_input_part: Option<Array1<T>> = {
             self.constellation
@@ -320,13 +338,16 @@ impl<'a, T: NNVFloat> Asterism<'a, T, Ix2> {
         cdf_samples: usize,
         max_iters: usize,
         rng: &mut R,
+        stability_eps: T,
     ) -> Option<(usize, T)> {
         let input_bounds = self.constellation.get_input_bounds();
         debug_assert!(self
             .constellation
             .try_get_gaussian_distribution(current_node)
             .is_some());
-        let current_node_type = self.constellation.get_node_type(current_node);
+        let current_node_type = self
+            .constellation
+            .get_node_type(current_node, stability_eps);
         match *current_node_type {
             // leaf node, which must be partially safe and partially unsafe
             StarNodeType::Leaf => {
@@ -351,17 +372,27 @@ impl<'a, T: NNVFloat> Asterism<'a, T, Ix2> {
                     0 => None,
                     1 => Some((children[0], path_logp)),
                     2 => {
-                        let fst_cdf = self.constellation.get_node_cdf(
-                            children[0],
-                            cdf_samples,
+                        let parent_cdf = self.constellation.get_node_cdf(
+                            current_node,
+                            cdf_samples * 4,
                             max_iters,
                             rng,
+                            stability_eps,
                         );
+                        let fst_cdf = self.constellation.get_node_cdf(
+                            children[0],
+                            cdf_samples * 4,
+                            max_iters,
+                            rng,
+                            stability_eps,
+                        );
+                        //let snd_cdf = parent_cdf - fst_cdf;
                         let snd_cdf = self.constellation.get_node_cdf(
                             children[1],
                             cdf_samples,
                             max_iters,
                             rng,
+                            stability_eps,
                         );
                         debug!(
                             "Selecting between 2 children with CDFs: {} and {}",
@@ -383,6 +414,7 @@ impl<'a, T: NNVFloat> Asterism<'a, T, Ix2> {
                                     cdf_samples,
                                     max_iters,
                                     rng,
+                                    stability_eps,
                                 );
                                 let mut derived_fst_cdf = parent_cdf - snd_cdf;
 
@@ -402,6 +434,7 @@ impl<'a, T: NNVFloat> Asterism<'a, T, Ix2> {
                                     cdf_samples,
                                     max_iters,
                                     rng,
+                                    stability_eps,
                                 );
                                 let mut derived_snd_cdf = parent_cdf - fst_cdf;
                                 if derived_snd_cdf.is_sign_negative() {
@@ -466,12 +499,14 @@ impl<'a, T: NNVFloat> Asterism<'a, T, Ix2> {
                                 cdf_samples,
                                 max_iters,
                                 rng,
+                                stability_eps,
                             );
                             let snd_cdf = self.constellation.get_node_cdf(
                                 children[1],
                                 cdf_samples,
                                 max_iters,
                                 rng,
+                                stability_eps,
                             );
 
                             // Handle the case where a CDF gives a non-normal value
@@ -483,6 +518,7 @@ impl<'a, T: NNVFloat> Asterism<'a, T, Ix2> {
                                         cdf_samples,
                                         max_iters,
                                         rng,
+                                        stability_eps,
                                     );
                                     let derived_fst_cdf = parent_cdf - snd_cdf;
                                     self.constellation
@@ -495,6 +531,7 @@ impl<'a, T: NNVFloat> Asterism<'a, T, Ix2> {
                                         cdf_samples,
                                         max_iters,
                                         rng,
+                                        stability_eps,
                                     );
                                     let derived_snd_cdf = parent_cdf - fst_cdf;
                                     self.constellation
