@@ -1,6 +1,6 @@
 [package]
 name = "nnv-rs"
-version = "0.5.2"
+version = "0.5.3"
 edition = "2021"
 description   = "Verification and Statistics on Deep Neural Networks"
 readme        = "README.md"
