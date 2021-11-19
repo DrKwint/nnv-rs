@@ -2,6 +2,7 @@
 //! Implementation of H-representation polytopes
 use crate::bounds::Bounds1;
 use crate::inequality::Inequality;
+use crate::ndarray_linalg::Inverse;
 use crate::util;
 use crate::util::l2_norm;
 use crate::util::solve;
@@ -85,6 +86,7 @@ impl<T: NNVFloat> Polytope<T> {
         mu: &Array1<T>,
         sigma: &Array2<T>,
         max_accept_reject_iters: usize,
+        stability_eps: T,
     ) -> PolytopeInputDistribution<T> {
         // convert T to f64 in inputs
         let mu = mu.mapv(std::convert::Into::into);
@@ -108,7 +110,10 @@ impl<T: NNVFloat> Polytope<T> {
 
         let sq_constr_sigma = {
             let sigma: Array2<f64> = constraint_coeffs.dot(&sigma.dot(&constraint_coeffs.t()));
-            let diag_addn = Array2::from_diag(&Array1::from_elem(sigma.nrows(), 1e-5));
+            let diag_addn: Array2<f64> =
+                Array2::from_diag(&Array1::from_elem(sigma.nrows(), stability_eps.into()));
+            //println!("sigma cond before stability: {:?}", util::matrix_cond(&sigma, &sigma.inv().unwrap()));
+            //println!("sigma cond after stability: {:?}", util::matrix_cond(&(&sigma + &diag_addn), &(&sigma + &diag_addn).inv().unwrap()));
             sigma + diag_addn
         };
         let sq_ub = ub;
@@ -124,6 +129,7 @@ impl<T: NNVFloat> Polytope<T> {
         );
         let inv_coeffs: Array2<T> =
             util::pinv(&constraint_coeffs.mapv(|x| x.into())).mapv(|x| x.into());
+        // println!("coeffs cond: {:?}", util::matrix_cond(&constraint_coeffs, &inv_coeffs.mapv(|x| x.into())));
         PolytopeInputDistribution {
             distribution,
             inv_coeffs,

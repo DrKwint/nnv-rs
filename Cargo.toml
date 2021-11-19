@@ -35,7 +35,7 @@ ndarray-stats = "^0.5.0"
 num = "^0.4.0"
 openblas-src = { version = "0.10", features = ["cblas", "system"], optional = true }
 rand = "^0.8.4"
-truncnorm = "^0.4.1"
+truncnorm = "^0.4.2"
 shh = "^1.0.1"
 ordered-float = "^2.8.0"
 

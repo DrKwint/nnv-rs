@@ -37,15 +37,17 @@ impl<'a, T: crate::NNVFloat> Belt<'a, T, Ix2> {
     /// We'll always choose the node with greatest weight as the next to expand
     ///
     /// I'm so meta, even this acronym -XKCD
-    pub fn expand<R: Rng>(&mut self, rng: &mut R) -> bool {
+    pub fn expand<R: Rng>(&mut self, rng: &mut R, stability_eps: T) -> bool {
         if let Some((_weight, next)) = self.frontier.pop() {
-            let children = self.constellation.get_node_child_ids(next);
+            let children = self.constellation.get_node_child_ids(next, stability_eps);
             children.into_iter().for_each(|idx| {
-                let cdf = self.constellation.get_node_cdf(idx, 10, 10, rng);
+                let cdf = self
+                    .constellation
+                    .get_node_cdf(idx, 10, 10, rng, stability_eps);
                 let bounds = self.constellation.get_node_output_bounds(idx);
                 let f = bounds.0.abs().max(bounds.1.abs()); // Estimate to be refined
                 let entry = (std::convert::From::from(f * cdf), idx);
-                if self.constellation.is_node_leaf(idx) {
+                if self.constellation.is_node_leaf(idx, stability_eps) {
                     self.leaves.push(entry);
                 } else {
                     self.frontier.push(entry);
@@ -62,7 +64,7 @@ impl<'a, T: crate::NNVFloat> Belt<'a, T, Ix2> {
     ///
     /// Returns:
     ///     E_{N(mu, sigma)}[f] where f is the underlying DNN, i.e. the expected value of the output
-    pub fn importance_sample(&mut self, n_samples: T) -> T {
+    pub fn importance_sample(&mut self, n_samples: T, stability_eps: T) -> T {
         let mut rng = thread_rng();
         let total_weight: T = self
             .frontier
@@ -79,7 +81,7 @@ impl<'a, T: crate::NNVFloat> Belt<'a, T, Ix2> {
                 let n_local_samples = ((star_prob * n_samples).into() as u64).try_into().unwrap();
                 let local_samples: Vec<Array1<T>> = self
                     .constellation
-                    .sample_gaussian_node_output(*idx, &mut rng, n_local_samples, 10)
+                    .sample_gaussian_node_output(*idx, &mut rng, n_local_samples, 10, stability_eps)
                     .into_iter()
                     .collect();
                 let local_sum: T = local_samples.iter().map(|x| x[[0]]).sum();

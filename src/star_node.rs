@@ -155,6 +155,7 @@ impl<T: NNVFloat> StarNode<T, Ix2> {
         scale: &Array2<T>,
         max_accept_reject_iters: usize,
         input_bounds: &Option<Bounds1<T>>,
+        stability_eps: T,
     ) -> &mut PolytopeInputDistribution<T> {
         if self.gaussian_distribution.is_none() {
             self.gaussian_distribution = self.star.get_input_trunc_gaussian(
@@ -162,6 +163,7 @@ impl<T: NNVFloat> StarNode<T, Ix2> {
                 scale,
                 max_accept_reject_iters,
                 input_bounds,
+                stability_eps,
             );
             debug_assert!(!self.gaussian_distribution.is_none(), "explicit panic");
             // really, we just want to use a general gaussian here
@@ -194,11 +196,12 @@ impl<T: NNVFloat> StarNode<T, Ix2> {
         max_iters: usize,
         input_bounds: &Option<Bounds1<T>>,
         rng: &mut R,
+        stability_eps: T,
     ) -> T {
         self.star_cdf.map_or_else(
             || {
                 let cdf: T = self
-                    .get_gaussian_distribution(mu, sigma, max_iters, input_bounds)
+                    .get_gaussian_distribution(mu, sigma, max_iters, input_bounds, stability_eps)
                     .cdf(n, rng);
                 debug_assert!(cdf.is_sign_positive());
                 self.star_cdf = Some(cdf);
@@ -221,8 +224,10 @@ impl<T: NNVFloat> StarNode<T, Ix2> {
         max_iters: usize,
         input_bounds: &Option<Bounds1<T>>,
         tilting_initialization: Option<TiltingSolution>,
+        stability_eps: T,
     ) -> Vec<Array1<T>> {
-        let distribution = self.get_gaussian_distribution(mu, sigma, max_iters, input_bounds);
+        let distribution =
+            self.get_gaussian_distribution(mu, sigma, max_iters, input_bounds, stability_eps);
         distribution.get_tilting_solution(tilting_initialization.as_ref());
         distribution.sample_n(n, rng)
     }

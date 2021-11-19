@@ -112,6 +112,7 @@ impl<T: NNVFloat> Star2<T> {
         sigma: &Array2<T>,
         max_accept_reject_iters: usize,
         input_bounds: &Option<Bounds1<T>>,
+        stability_eps: T,
     ) -> Option<PolytopeInputDistribution<T>> {
         self.constraints
             .as_ref()
@@ -122,7 +123,9 @@ impl<T: NNVFloat> Star2<T> {
                     Some(x.clone())
                 }
             })
-            .map(|poly| poly.get_truncnorm_distribution(mu, sigma, max_accept_reject_iters))
+            .map(|poly| {
+                poly.get_truncnorm_distribution(mu, sigma, max_accept_reject_iters, stability_eps)
+            })
     }
 
     /// Create a new Star with given dimension.
