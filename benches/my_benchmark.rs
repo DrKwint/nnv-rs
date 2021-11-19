@@ -1,28 +1,20 @@
-use criterion::{black_box, criterion_group, criterion_main, Criterion};
+use criterion::{criterion_group, criterion_main, Criterion};
 use env_logger::Builder;
 use env_logger::Env;
-use env_logger::Target;
-use log::info;
 use ndarray::Array;
 use ndarray::Array1;
 use ndarray::Array2;
 use ndarray_rand::rand_distr::Normal;
 use ndarray_rand::RandomExt;
-use nnv_rs::affine::Affine;
 use nnv_rs::affine::Affine2;
 use nnv_rs::asterism::Asterism;
 use nnv_rs::bounds::Bounds;
 use nnv_rs::constellation::Constellation;
-use nnv_rs::deeppoly::*;
 use nnv_rs::dnn::Layer;
 use nnv_rs::dnn::DNN;
 use nnv_rs::star::Star2;
 use nnv_rs::star_node::StarNode;
 use pprof::criterion::{Output, PProfProfiler};
-use std::fs::File;
-use std::io::BufWriter;
-use std::io::Write;
-use std::process::exit;
 use std::process::Command;
 
 fn bench(c: &mut Criterion) {
@@ -32,20 +24,11 @@ fn bench(c: &mut Criterion) {
         .unwrap();
     let mut git_hash = String::from_utf8(output.stdout).unwrap();
     git_hash.pop();
-    git_hash.push_str(".log");
     println!("{}", git_hash);
-    let mut buffer = BufWriter::new(File::create(git_hash).unwrap());
 
-    let env = Env::default()
-        .filter_or("MY_LOG_LEVEL", "trace")
-        .write_style_or("MY_LOG_STYLE", "always");
+    let env = Env::default();
     let mut builder = Builder::from_env(env);
-    let targeted_builder = builder.target(Target::Pipe(Box::new(buffer)));
-    println!("builder {:?}", targeted_builder);
-    targeted_builder.init();
-    println!("builder {:?}", targeted_builder);
-    info!("Test!");
-    exit(0);
+    builder.init();
 
     let mut rng = rand::thread_rng();
     let input_size = 68;
@@ -88,7 +71,7 @@ fn bench(c: &mut Criterion) {
                 scale.clone(),
             );
             let mut asterism = Asterism::new(&mut constellation, 0.);
-            asterism.sample_safe_star(1, &mut rng, 100, 20, None);
+            asterism.sample_safe_star(1, &mut rng, 100, 20, None, 1e-4);
         })
     });
     group.bench_function("constellation::sample_safe_star::random_net@-5", |b| {
@@ -101,7 +84,7 @@ fn bench(c: &mut Criterion) {
                 scale.clone(),
             );
             let mut asterism = Asterism::new(&mut constellation, -5.);
-            asterism.sample_safe_star(1, &mut rng, 100, 20, None);
+            asterism.sample_safe_star(1, &mut rng, 100, 20, None, 1e-4);
         })
     });
     group.bench_function("constellation::sample_safe_star::random_net@-100", |b| {
@@ -114,7 +97,7 @@ fn bench(c: &mut Criterion) {
                 scale.clone(),
             );
             let mut asterism = Asterism::new(&mut constellation, -100.);
-            asterism.sample_safe_star(1, &mut rng, 100, 20, None);
+            asterism.sample_safe_star(1, &mut rng, 100, 20, None, 1e-4);
         })
     });
     group.finish();

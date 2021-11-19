@@ -466,11 +466,10 @@ impl<T: NNVFloat> Star4<T> {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::test_util::{array1, array2, empty_star, non_empty_star, pos_def_array1};
-    use ndarray::{arr1, arr2};
+    use crate::test_util::{array2, empty_star, non_empty_star};
+    use ndarray::arr1;
     use proptest::prelude::*;
     use proptest::proptest;
-    use rand::prelude::*;
     use std::panic;
 
     /*

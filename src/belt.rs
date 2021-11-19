@@ -103,7 +103,7 @@ mod test {
         #[test]
         fn test_perform_importance_sample(mut constellation in constellation(2, 1, 2, 2)) {
             let mut belt = Belt::new(&mut constellation);
-            belt.importance_sample(1.0);
+            belt.importance_sample(1.0, 1e-4);
         }
 
         #[test]
@@ -111,9 +111,9 @@ mod test {
             let mut rng = rand::thread_rng();
             let mut belt = Belt::new(&mut constellation);
             (0..10).for_each(|_| {
-                belt.expand(&mut rng);
+                belt.expand(&mut rng, 1e-4);
                 println!("Belt: {:?}", belt);
-                belt.importance_sample(100.);
+                belt.importance_sample(100., 1e-4);
             });
         }
     }

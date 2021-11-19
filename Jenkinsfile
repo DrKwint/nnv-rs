@@ -28,6 +28,7 @@ pipeline {
             }
 
             steps {
+                RUST_LOG=trace sh '$CARGO_HOME/bin/cargo bench'
                 sh '$CARGO_HOME/bin/cargo bench'
             }
         }
