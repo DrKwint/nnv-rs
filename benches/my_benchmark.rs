@@ -24,7 +24,7 @@ fn bench(c: &mut Criterion) {
         .unwrap();
     let mut git_hash = String::from_utf8(output.stdout).unwrap();
     git_hash.pop();
-    println!("{}", git_hash);
+    println!("Git hash: {}", git_hash);
 
     let env = Env::default();
     let mut builder = Builder::from_env(env);
