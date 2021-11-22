@@ -224,7 +224,7 @@ mod tests {
             let neg = Array1::ones(3) * -1.;
             let result = signed_dot(&arr2.view(), &arr1.view(), &neg.view());
             result.into_iter().zip(arr2.dot(&arr1).iter()).for_each(|(x, y)|
-                                                                     assert_approx_eq!(f64, x, *y)
+                                                                     assert_approx_eq!(f64, x, *y, ulps=10)
                                                                      );
         }
 
@@ -236,7 +236,7 @@ mod tests {
             let pos = Array1::ones(3);
             let result = signed_dot(&arr2.view(), &pos.view(), &arr1.view());
             result.into_iter().zip(arr2.dot(&arr1).iter()).for_each(|(x, y)|
-                                                                     assert_approx_eq!(f64, x, *y)
+                                                                     assert_approx_eq!(f64, x, *y, ulps=10)
                                                                      );
         }
 
