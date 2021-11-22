@@ -214,6 +214,7 @@ pub enum LinearSolution {
 mod tests {
     use super::*;
     use crate::test_util::{array1, array2, bounds1};
+    use float_cmp::*;
     use proptest::prelude::*;
 
     proptest! {
@@ -222,7 +223,9 @@ mod tests {
             arr2 = arr2.map(|x| f64::abs(*x));
             let neg = Array1::ones(3) * -1.;
             let result = signed_dot(&arr2.view(), &arr1.view(), &neg.view());
-            prop_assert_eq!(result, &arr2.dot(&arr1));
+            result.into_iter().zip(arr2.dot(&arr1).iter()).for_each(|(x, y)|
+                                                                     assert_approx_eq!(f64, x, *y)
+                                                                     );
         }
 
         #[test]
@@ -232,7 +235,9 @@ mod tests {
             arr2 -= 0.1;
             let pos = Array1::ones(3);
             let result = signed_dot(&arr2.view(), &pos.view(), &arr1.view());
-            prop_assert_eq!(result, &arr2.dot(&arr1));
+            result.into_iter().zip(arr2.dot(&arr1).iter()).for_each(|(x, y)|
+                                                                     assert_approx_eq!(f64, x, *y)
+                                                                     );
         }
 
         #[test]
