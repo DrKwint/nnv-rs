@@ -466,14 +466,13 @@ impl<T: NNVFloat> Star4<T> {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::test_util::{array1, array2, empty_star, non_empty_star, pos_def_array1};
-    use ndarray::{arr1, arr2};
+    use crate::test_util::{array2, empty_star, non_empty_star};
+    use ndarray::arr1;
     use proptest::prelude::*;
     use proptest::proptest;
-    use rand::prelude::*;
-    use rand_pcg::Pcg64;
     use std::panic;
 
+    /*
     #[test]
     fn test_gaussian_sample_manual() {
         let mut rng = Pcg64::seed_from_u64(2);
@@ -500,8 +499,10 @@ mod test {
             [-1.0]], shape=[5, 1], strides=[1, 1], layout=CFcf (0xf), const ndim=2, rhs: [2.52102610837301, 0.1001445177130087, 5.47728758574745, 20.0, 20.0], shape=[5], strides=[1], layout=CFcf (0xf), const ndim=1 } }) }
         */
     }
+    */
 
     proptest! {
+        /*
         #[test]
         fn test_gaussian_sample(star in non_empty_star(1,3), loc in array1(1), scale_diag in pos_def_array1(1)) {
             let mut rng = rand::thread_rng();
@@ -510,6 +511,7 @@ mod test {
             let input_bounds = Bounds1::new(lbs.view(), ubs.view());
             star.gaussian_sample(&mut rng, &loc, &Array2::from_diag(&scale_diag).to_owned(), 10, 20, &Some(input_bounds));
         }
+        */
 
         #[test]
         fn test_get_min_feasible(star in non_empty_star(2,3)) {
@@ -561,7 +563,7 @@ mod test {
             let mut box_ineq = Inequality::new(box_coeffs.clone(), box_rhs.clone());
             let lower_box_ineq = Inequality::new(-1. * box_coeffs, box_rhs);
 
-            box_ineq.add_eqns(&lower_box_ineq);
+            box_ineq.add_eqns(&lower_box_ineq, true);
             let poly = Polytope::from_halfspaces(box_ineq);
 
             let center = arr1(&[0.0, 0.0]);
@@ -583,7 +585,7 @@ mod test {
             let mut box_ineq = Inequality::new(box_coeffs.clone(), box_rhs.clone());
             let lower_box_ineq = Inequality::new(-1. * box_coeffs, box_rhs);
 
-            box_ineq.add_eqns(&lower_box_ineq);
+            box_ineq.add_eqns(&lower_box_ineq, true);
             let poly = Polytope::from_halfspaces(box_ineq);
 
             let center = arr1(&[0.0, 0.0]);

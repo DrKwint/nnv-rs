@@ -1,13 +1,12 @@
 #![cfg(test)]
 use crate::affine::Affine2;
+use crate::bounds::{Bounds, Bounds1};
+use crate::constellation::Constellation;
+use crate::dnn::Layer;
+use crate::dnn::DNN;
 use crate::inequality::Inequality;
 use crate::polytope::Polytope;
 use crate::star::Star2;
-use crate::Bounds;
-use crate::Bounds1;
-use crate::Constellation;
-use crate::Layer;
-use crate::DNN;
 use ndarray::Array1;
 use ndarray::Array2;
 use ndarray::ArrayView1;
@@ -130,12 +129,12 @@ prop_compose! {
                 .for_each(|eqn_idx| {
                     let eqn = ineq.get_eqn(eqn_idx);
                     if eqn.is_member(&zero.view()) {
-                        inequality.add_eqns(&eqn);
+                        inequality.add_eqns(&eqn, true);
                     } else {
                         let new_coeffs = -1. * eqn.coeffs().to_owned();
                         let new_rhs = -1. * eqn.rhs().to_owned();
                         let eqn = Inequality::new(new_coeffs, new_rhs);
-                        inequality.add_eqns(&eqn);
+                        inequality.add_eqns(&eqn, true);
                     }
                 });
             inequality
@@ -165,8 +164,8 @@ prop_compose! {
             let upper_box_ineq = Inequality::new(box_coeffs.clone(), box_rhs.clone());
             let lower_box_ineq = Inequality::new(-1. * box_coeffs, box_rhs);
 
-            ineq.add_eqns(&upper_box_ineq);
-            ineq.add_eqns(&lower_box_ineq);
+            ineq.add_eqns(&upper_box_ineq, true);
+            ineq.add_eqns(&lower_box_ineq, true);
             Polytope::from_halfspaces(ineq)
         }
 }
@@ -196,7 +195,7 @@ prop_compose! {
                 ineq.coeffs().to_owned() * -1.,
                 ineq.rhs().to_owned()
             );
-            ineq.add_eqns(&inverse_ineq);
+            ineq.add_eqns(&inverse_ineq, true);
 
             // Make a box bigger than possible inner inequalities
             let box_coeffs = Array2::eye(num_dims);
@@ -206,8 +205,8 @@ prop_compose! {
             let upper_box_ineq = Inequality::new(box_coeffs.clone(), box_rhs.clone());
             let lower_box_ineq = Inequality::new(-1. * box_coeffs, box_rhs);
 
-            ineq.add_eqns(&upper_box_ineq);
-            ineq.add_eqns(&lower_box_ineq);
+            ineq.add_eqns(&upper_box_ineq, true);
+            ineq.add_eqns(&lower_box_ineq, true);
 
             // Construct the empty polytope.
             Polytope::from_halfspaces(ineq)

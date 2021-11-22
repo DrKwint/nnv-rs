@@ -13,6 +13,7 @@ exclude = [
 ]
 
 [features]
+default = ["openblas-system"]
 rayon = ["ndarray/rayon", "truncnorm/rayon", "good_lp/minilp"]
 intel-mkl = ["ndarray-linalg/intel-mkl", "truncnorm/intel-mkl"]
 openblas-system = ["ndarray/blas", "blas-src", "openblas-src", "ndarray-linalg/openblas-system", "truncnorm/openblas-system"]
@@ -42,7 +43,7 @@ ordered-float = "^2.8.0"
 ndarray-rand = "^0.14.0"
 proptest = "1.0.0"
 proptest-derive = "0.2.0"
-criterion = { version = "0.3", features = ["html_reports"] }
+criterion = { version = "0.3.5", features = ["html_reports"] }
 pprof = { version = "0.5", features = ["flamegraph", "criterion" ] }
 
 [[bench]]

@@ -1,7 +1,8 @@
 use ndarray::Array;
 use ndarray::Dim;
-use nnv_rs_py::affine::Affine2;
-use nnv_rs_py::dnn::{Layer, DNN};
+use nnv_rs::affine::Affine2;
+use nnv_rs::dnn::Layer;
+use nnv_rs::dnn::DNN;
 use rand::Rng;
 
 pub fn affine2(in_dim: &usize, out_dim: &usize) -> Affine2<f64> {
