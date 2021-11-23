@@ -3,33 +3,21 @@ pipeline {
 
     stages {
         stage('Build') {
-            environment {
-                CARGO_HOME = '/usr/local/cargo'
-            }
-
             steps {
                 sh 'cargo build'
             }
         }
 
         stage('Test') {
-            environment {
-                CARGO_HOME = '/usr/local/cargo'
-            }
-
             steps {
-                sh '$CARGO_HOME/bin/cargo test'
+                sh 'cargo test'
             }
         }
 
         stage('Bench') {
-            environment {
-                CARGO_HOME = '/usr/local/cargo'
-            }
-
             steps {
-                sh 'RUST_LOG=trace $CARGO_HOME/bin/cargo bench'
-                sh '$CARGO_HOME/bin/cargo bench'
+                sh 'RUST_LOG=trace cargo bench'
+                sh 'cargo bench'
             }
         }
     }
