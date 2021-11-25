@@ -1,29 +1,19 @@
 #![allow(non_snake_case, clippy::similar_names)]
 //! Implementation of H-representation polytopes
 use crate::bounds::Bounds1;
+use crate::gaussian::GaussianDistribution;
 use crate::inequality::Inequality;
-use crate::ndarray_linalg::Inverse;
+use crate::lp::solve;
+use crate::lp::LinearSolution;
 use crate::util;
-use crate::util::l2_norm;
-use crate::util::solve;
-use crate::util::LinearExpression;
-use crate::util::LinearSolution;
 use crate::NNVFloat;
-use good_lp::solvers::coin_cbc::coin_cbc;
-use good_lp::Expression;
-use good_lp::ProblemVariables;
-use good_lp::Variable;
-use good_lp::{variable, Solution, SolverModel};
-use ndarray::concatenate;
+use ndarray::Array1;
 use ndarray::Array2;
 use ndarray::ArrayView1;
 use ndarray::ArrayView2;
 use ndarray::Ix2;
-use ndarray::{Array1, Axis};
-use rand::Rng;
 use std::fmt::Debug;
 use truncnorm::distributions::MultivariateTruncatedNormal;
-use truncnorm::tilting::TiltingSolution;
 
 /// H-representation polytope
 #[derive(Clone, Debug)]
@@ -32,9 +22,9 @@ pub struct Polytope<T: NNVFloat> {
 }
 
 impl<T: NNVFloat> Polytope<T> {
-    pub fn new(constraint_coeffs: Array2<T>, upper_bounds: Array1<T>) -> Self {
+    pub fn new(constraint_coeffs: Array2<T>, upper_bounds: Array1<T>, bounds: Bounds1<T>) -> Self {
         Self {
-            halfspaces: Inequality::new(constraint_coeffs, upper_bounds),
+            halfspaces: Inequality::new(constraint_coeffs, upper_bounds, bounds),
         }
     }
 
@@ -59,6 +49,10 @@ impl<T: NNVFloat> Polytope<T> {
 
     pub fn ubs(&self) -> ArrayView1<T> {
         self.halfspaces.rhs()
+    }
+
+    pub fn get_bounds(&self) -> &Bounds1<T> {
+        self.halfspaces.bounds()
     }
 
     pub fn add_constraints(&mut self, constraints: &Inequality<T>, check_redundant: bool) {
@@ -87,7 +81,7 @@ impl<T: NNVFloat> Polytope<T> {
         sigma: &Array2<T>,
         max_accept_reject_iters: usize,
         stability_eps: T,
-    ) -> PolytopeInputDistribution<T> {
+    ) -> GaussianDistribution<T> {
         // convert T to f64 in inputs
         let mu = mu.mapv(std::convert::Into::into);
         let sigma = sigma.mapv(std::convert::Into::into);
@@ -130,12 +124,13 @@ impl<T: NNVFloat> Polytope<T> {
         let inv_coeffs: Array2<T> =
             util::pinv(&constraint_coeffs.mapv(|x| x.into())).mapv(|x| x.into());
         // println!("coeffs cond: {:?}", util::matrix_cond(&constraint_coeffs, &inv_coeffs.mapv(|x| x.into())));
-        PolytopeInputDistribution {
+        GaussianDistribution::TruncGaussian {
             distribution,
             inv_coeffs,
         }
     }
 
+    /* Commented out while we're working on building the lp features
     /// Source: <https://stanford.edu/class/ee364a/lectures/problems.pdf>
     pub fn chebyshev_center(&self) -> Option<(Array1<f64>, f64)> {
         let b = self.halfspaces.rhs();
@@ -169,9 +164,11 @@ impl<T: NNVFloat> Polytope<T> {
             None
         }
     }
+    */
 
     /// Returns None if the reduced polytope is empty
-    pub fn reduce_fixed_inputs(&self, bounds: &Bounds1<T>) -> Option<Self> {
+    pub fn reduce_fixed_inputs(&self) -> Option<Self> {
+        let bounds = self.get_bounds();
         let fixed_idxs = bounds.fixed_idxs();
         let fixed_vals = bounds.fixed_vals_or_zeros();
 
@@ -200,6 +197,7 @@ impl<T: NNVFloat> Polytope<T> {
             self.halfspaces.coeffs().rows(),
             self.halfspaces.rhs(),
             c.view(),
+            self.get_bounds(),
         );
 
         !matches!(solved, LinearSolution::Solution(_, _))
@@ -210,56 +208,9 @@ impl<T: NNVFloat> Polytope<T> {
 #[allow(clippy::fallible_impl_from)]
 impl<T: NNVFloat> From<Bounds1<T>> for Polytope<T> {
     fn from(item: Bounds1<T>) -> Self {
-        let coeffs = concatenate(
-            Axis(0),
-            &[
-                Array2::eye(item.ndim()).view(),
-                (Array2::eye(item.ndim()) * T::neg(T::one())).view(),
-            ],
-        )
-        .unwrap();
-        let rhs = concatenate(
-            Axis(0),
-            &[
-                item.upper(),
-                (item.lower().to_owned() * T::neg(T::one())).view(),
-            ],
-        )
-        .unwrap();
-        let halfspaces = Inequality::new(coeffs, rhs);
+        let coeffs = Array2::zeros((1, item.ndim()));
+        let rhs = Array1::zeros(1);
+        let halfspaces = Inequality::new(coeffs, rhs, item);
         Self { halfspaces }
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct PolytopeInputDistribution<T> {
-    distribution: MultivariateTruncatedNormal<Ix2>,
-    inv_coeffs: Array2<T>,
-}
-
-impl<T: NNVFloat> PolytopeInputDistribution<T> {
-    pub fn sample_n<R: Rng>(&mut self, n: usize, rng: &mut R) -> Vec<Array1<T>> {
-        let sample_arr = self.distribution.sample_n(n, rng);
-        sample_arr
-            .rows()
-            .into_iter()
-            .map(|x| (self.inv_coeffs.dot(&x.mapv(|x| x.into()))))
-            .collect()
-    }
-
-    pub fn cdf<R: Rng>(&mut self, n: usize, rng: &mut R) -> T {
-        let (est, _rel_err, _upper_bound) = self.distribution.cdf(n, rng);
-        est.into()
-    }
-
-    pub fn try_get_tilting_solution(&self) -> Option<&TiltingSolution> {
-        self.distribution.try_get_tilting_solution()
-    }
-
-    pub fn get_tilting_solution(
-        &mut self,
-        initialization: Option<&TiltingSolution>,
-    ) -> &TiltingSolution {
-        self.distribution.get_tilting_solution(initialization)
     }
 }

@@ -1,11 +1,5 @@
 //! Utility functions
 #![allow(non_snake_case)]
-use crate::good_lp::Solution;
-use crate::ndarray_stats::QuantileExt;
-use crate::NNVFloat;
-use good_lp::solvers::coin_cbc::coin_cbc;
-use good_lp::{variable, ResolutionError, SolverModel};
-use good_lp::{Expression, IntoAffineExpression, ProblemVariables, Variable};
 use itertools::iproduct;
 use ndarray::{s, Axis, Slice};
 use ndarray::{Array1, Array2, ArrayView1, ArrayView2};
@@ -65,78 +59,6 @@ pub fn embed_identity(A: &Array2<f64>, dim_opt: Option<usize>) -> Array2<f64> {
     let mut eye = Array2::eye(dim);
     eye.slice_mut(s![..A.nrows(), ..A.ncols()]).assign(A);
     eye
-}
-
-/// An linear expression without a constant component
-#[derive(Clone)]
-pub struct LinearExpression {
-    pub coefficients: Vec<(Variable, f64)>,
-}
-
-impl IntoAffineExpression for LinearExpression {
-    type Iter = std::vec::IntoIter<(Variable, f64)>;
-
-    #[inline]
-    fn linear_coefficients(self) -> Self::Iter {
-        self.coefficients.into_iter()
-    }
-}
-
-/// Minimizes the expression `c` given the constraint `Ax < b`.
-/// # Panics
-pub fn solve<'a, I, T: 'a + NNVFloat>(A: I, b: ArrayView1<T>, c: ArrayView1<T>) -> LinearSolution
-where
-    I: IntoIterator<Item = ArrayView1<'a, T>>,
-{
-    let mut _shh_out;
-    let mut _shh_err;
-    if !cfg!(test) {
-        _shh_out = shh::stdout().unwrap();
-        _shh_err = shh::stderr().unwrap();
-    }
-    let mut problem = ProblemVariables::new();
-    let vars = problem.add_vector(variable(), c.len());
-    let c_expression = LinearExpression {
-        coefficients: vars
-            .iter()
-            .copied()
-            .zip(c.iter().map(|x| (*x).into()))
-            .collect(),
-    };
-    let mut unsolved = problem.minimise(c_expression.clone()).using(coin_cbc);
-
-    A.into_iter()
-        .zip(b.into_iter())
-        .for_each(|pair: (ArrayView1<T>, &T)| {
-            let (coeffs, ub) = pair;
-            let expr = LinearExpression {
-                coefficients: vars
-                    .iter()
-                    .copied()
-                    .zip(coeffs.iter().map(|x| (*x).into()))
-                    .collect(),
-            };
-            let constr =
-                good_lp::constraint::leq(Expression::from_other_affine(expr), (*ub).into());
-            unsolved.add_constraint(constr);
-        });
-
-    let raw_soln_result = unsolved.solve();
-    match raw_soln_result {
-        Ok(raw_soln) => {
-            let cbc_model = raw_soln.model();
-            match cbc_model.secondary_status() {
-                HasSolution => {
-                    let param = Array1::from_iter(cbc_model.col_solution().into_iter().copied());
-                    let fun = raw_soln.eval(c_expression);
-                    LinearSolution::Solution(param, fun)
-                }
-            }
-        }
-        Err(ResolutionError::Infeasible) => LinearSolution::Infeasible,
-        Err(ResolutionError::Unbounded) => LinearSolution::Unbounded,
-        _ => panic!(),
-    }
 }
 
 /// Returns a 2D array of D\[i,j\] = AB\[i,j\] if A\[i,j\] >= 0 and D\[i,j\] = AC\[i,j\] if A\[i,j\] < 0.
@@ -202,12 +124,6 @@ impl<T> ArenaLike<T> for Vec<T> {
         self.push(data);
         new_id
     }
-}
-
-pub enum LinearSolution {
-    Solution(Array1<f64>, f64),
-    Infeasible,
-    Unbounded,
 }
 
 #[cfg(test)]

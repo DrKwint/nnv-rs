@@ -1,8 +1,8 @@
 #![allow(non_snake_case)]
-use crate::bounds::Bounds;
+use crate::bounds::Bounds1;
 use crate::dnn::DNNIterator;
 use crate::dnn::{DNNIndex, DNN};
-use crate::polytope::PolytopeInputDistribution;
+use crate::gaussian::GaussianDistribution;
 use crate::star::Star;
 use crate::star_node::StarNode;
 use crate::star_node::StarNodeOp;
@@ -23,18 +23,11 @@ pub struct Constellation<T: NNVFloat, D: Dimension> {
     loc: Array1<T>,
     scale: Array2<T>,
     dnn: DNN<T>,
-    input_bounds: Option<Bounds<T, D>>,
 }
 
 impl<T: NNVFloat, D: Dimension> Constellation<T, D> {
     /// Instantiate a Constellation with given input set and network
-    pub fn new(
-        input_star: Star<T, D>,
-        dnn: DNN<T>,
-        input_bounds: Option<Bounds<T, D>>,
-        loc: Array1<T>,
-        scale: Array2<T>,
-    ) -> Self {
+    pub fn new(input_star: Star<T, D>, dnn: DNN<T>, loc: Array1<T>, scale: Array2<T>) -> Self {
         let star_node = StarNode::default(input_star, None);
         let node_type = vec![None];
         let arena = vec![star_node];
@@ -46,7 +39,6 @@ impl<T: NNVFloat, D: Dimension> Constellation<T, D> {
             loc,
             scale,
             dnn,
-            input_bounds,
         }
     }
 
@@ -66,35 +58,24 @@ impl<T: NNVFloat, D: Dimension> Constellation<T, D> {
         &self.scale
     }
 
-    pub fn get_input_bounds(&self) -> &Option<Bounds<T, D>> {
-        &self.input_bounds
-    }
-
-    /*
-    fn add_node(&mut self, node: StarNode<T, D>, parent_id: usize) -> usize {
-        let child_idx = self.arena.new_node(node);
-        let other_child_idx = self.node_type.new_node(None);
-        let other_other_child_idx = self.parents.new_node(Some(parent_id));
-        debug_assert_eq!(child_idx, other_child_idx);
-        child_idx
-    }
-    */
-
     pub fn reset_input_distribution(&mut self, loc: Array1<T>, scale: Array2<T>) {
         self.loc = loc;
         self.scale = scale;
         self.arena.iter_mut().for_each(|x| x.reset_cdf());
     }
 
-    pub fn reset_with_star(&mut self, input_star: Star<T, D>, input_bounds: Option<Bounds<T, D>>) {
+    pub fn reset_with_star(&mut self, input_star: Star<T, D>) {
         let star_node = StarNode::default(input_star, None);
         self.arena = vec![star_node];
         self.node_type = vec![None];
-        self.input_bounds = input_bounds;
     }
 }
 
 impl<T: crate::NNVFloat> Constellation<T, Ix2> {
+    pub fn get_input_bounds(&self) -> Option<&Bounds1<T>> {
+        self.arena[0].get_input_bounds()
+    }
+
     fn add_node_with_gauss_init(
         &mut self,
         node: StarNode<T, Ix2>,
@@ -129,7 +110,6 @@ impl<T: crate::NNVFloat> Constellation<T, Ix2> {
             &self.loc,
             &self.scale,
             max_accept_reject_iters,
-            &self.input_bounds,
             stability_eps,
         );
         child_distr.get_tilting_solution(Some(&parent_tilting_soln));
@@ -138,8 +118,12 @@ impl<T: crate::NNVFloat> Constellation<T, Ix2> {
     pub fn try_get_gaussian_distribution(
         &self,
         node_id: usize,
-    ) -> Option<&PolytopeInputDistribution<T>> {
+    ) -> Option<&GaussianDistribution<T>> {
         self.arena[node_id].try_get_gaussian_distribution()
+    }
+
+    pub fn get_node_input_bounds(&self, node_id: usize) -> Option<&Bounds1<T>> {
+        self.arena[node_id].get_input_bounds()
     }
 
     pub fn get_node_dnn_index(&self, node_id: usize) -> DNNIndex {
@@ -167,7 +151,6 @@ impl<T: crate::NNVFloat> Constellation<T, Ix2> {
             &self.scale,
             cdf_samples,
             max_iters,
-            &self.input_bounds,
             rng,
             stability_eps,
         )
@@ -196,7 +179,6 @@ impl<T: crate::NNVFloat> Constellation<T, Ix2> {
             &self.scale,
             n,
             max_iters,
-            &self.input_bounds,
             None,
             stability_eps,
         )
@@ -227,7 +209,6 @@ impl<T: crate::NNVFloat> Constellation<T, Ix2> {
             &self.scale,
             n,
             max_iters,
-            &self.input_bounds,
             initialization_opt,
             stability_eps,
         )
@@ -257,7 +238,6 @@ impl<T: crate::NNVFloat> Constellation<T, Ix2> {
             &self.scale,
             n,
             max_iters,
-            &self.input_bounds,
             initialization_opt,
             stability_eps,
         )
@@ -366,7 +346,7 @@ impl<T: crate::NNVFloat> Constellation<T, Ix2> {
                 let mut ids = vec![];
 
                 if let Some(lower_star) = child_stars.0 {
-                    let mut bounds = self.arena[node_id].get_local_bounds().clone();
+                    let mut bounds = self.arena[node_id].calculate_star_local_bounds().clone();
                     bounds.index_mut(dim)[0] = T::zero();
                     bounds.index_mut(dim)[1] = T::zero();
                     let lower_node =
@@ -376,7 +356,7 @@ impl<T: crate::NNVFloat> Constellation<T, Ix2> {
                 }
 
                 if let Some(upper_star) = child_stars.1 {
-                    let mut bounds = self.arena[node_id].get_local_bounds().clone();
+                    let mut bounds = self.arena[node_id].calculate_star_local_bounds().clone();
                     let mut lb = bounds.index_mut(dim);
                     if lb[0].is_sign_negative() {
                         lb[0] = T::zero();
@@ -399,7 +379,7 @@ impl<T: crate::NNVFloat> Constellation<T, Ix2> {
                 let mut ids = vec![];
 
                 if let Some(dropout_star) = child_stars.0 {
-                    let mut bounds = self.arena[node_id].get_local_bounds().clone();
+                    let mut bounds = self.arena[node_id].calculate_star_local_bounds().clone();
                     bounds.index_mut(dim)[0] = T::zero();
                     bounds.index_mut(dim)[1] = T::zero();
                     let dropout_node =
@@ -409,7 +389,7 @@ impl<T: crate::NNVFloat> Constellation<T, Ix2> {
                 }
 
                 if let Some(lower_star) = child_stars.1 {
-                    let mut bounds = self.arena[node_id].get_local_bounds().clone();
+                    let mut bounds = self.arena[node_id].calculate_star_local_bounds().clone();
                     bounds.index_mut(dim)[0] = T::zero();
                     bounds.index_mut(dim)[1] = T::zero();
                     let lower_node =
@@ -419,7 +399,7 @@ impl<T: crate::NNVFloat> Constellation<T, Ix2> {
                 }
 
                 if let Some(upper_star) = child_stars.2 {
-                    let mut bounds = self.arena[node_id].get_local_bounds().clone();
+                    let mut bounds = self.arena[node_id].calculate_star_local_bounds().clone();
                     let mut lb = bounds.index_mut(dim);
                     if lb[0].is_sign_negative() {
                         lb[0] = T::zero();
@@ -462,10 +442,10 @@ mod test {
             asterism.sample_safe_star(1, &mut rng, 1, 1, None, 1e-4);
 
             for (i, node) in constellation.arena.iter_mut().enumerate() {
-                if let Some(local_bounds) = node.get_local_bounds_direct() {
+                if let Some(local_bounds) = node.calculate_star_local_bounds_direct() {
                     let bounds = local_bounds.clone();
                     node.set_local_bounds_direct(None);
-                    let expected_local_bounds = node.get_local_bounds();
+                    let expected_local_bounds = node.calculate_star_local_bounds();
 
                     prop_assert!(bounds.bounds_iter().into_iter()
                         .zip(expected_local_bounds.bounds_iter().into_iter())

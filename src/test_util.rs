@@ -155,7 +155,6 @@ prop_compose! {
                 .prop_filter("Non-zero intercepts",
                              |i| !i.rhs().iter().any(|x| *x == 0.0_f64))
         ) -> Polytope<f64> {
-
             // Make a box bigger than possible inner inequalities
             let box_coeffs = Array2::eye(num_dims);
             let mut box_rhs = Array1::ones(num_dims);

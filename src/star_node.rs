@@ -5,7 +5,7 @@ use crate::deeppoly::deep_poly;
 use crate::dnn::DNNIndex;
 use crate::dnn::DNNIterator;
 use crate::dnn::DNN;
-use crate::polytope::PolytopeInputDistribution;
+use crate::gaussian::GaussianDistribution;
 use crate::star::Star;
 use crate::NNVFloat;
 use log::trace;
@@ -83,7 +83,7 @@ pub struct StarNode<T: NNVFloat, D: Dimension> {
     local_bounds: Option<Bounds1<T>>,
     output_bounds: Option<(T, T)>,
     is_feasible: bool,
-    gaussian_distribution: Option<PolytopeInputDistribution<T>>,
+    gaussian_distribution: Option<GaussianDistribution<T>>,
 }
 
 impl<T: NNVFloat, D: Dimension> StarNode<T, D> {
@@ -145,7 +145,8 @@ impl<T: NNVFloat, D: Dimension> StarNode<T, D> {
 }
 
 impl<T: NNVFloat> StarNode<T, Ix2> {
-    pub fn try_get_gaussian_distribution(&self) -> Option<&PolytopeInputDistribution<T>> {
+    /// None indicates that the distribution hasn't been calculated/constructed
+    pub fn try_get_gaussian_distribution(&self) -> Option<&GaussianDistribution<T>> {
         self.gaussian_distribution.as_ref()
     }
 
@@ -154,19 +155,21 @@ impl<T: NNVFloat> StarNode<T, Ix2> {
         loc: &Array1<T>,
         scale: &Array2<T>,
         max_accept_reject_iters: usize,
-        input_bounds: &Option<Bounds1<T>>,
         stability_eps: T,
-    ) -> &mut PolytopeInputDistribution<T> {
+    ) -> &mut GaussianDistribution<T> {
         if self.gaussian_distribution.is_none() {
             self.gaussian_distribution = self.star.get_input_trunc_gaussian(
                 loc,
                 scale,
                 max_accept_reject_iters,
-                input_bounds,
                 stability_eps,
             );
-            debug_assert!(!self.gaussian_distribution.is_none(), "explicit panic");
-            // really, we just want to use a general gaussian here
+            if self.gaussian_distribution.is_none() {
+                self.gaussian_distribution = Some(GaussianDistribution::Gaussian {
+                    loc: loc.clone(),
+                    scale: scale.diag().to_owned(),
+                });
+            }
         }
         self.gaussian_distribution.as_mut().unwrap()
     }
@@ -194,14 +197,13 @@ impl<T: NNVFloat> StarNode<T, Ix2> {
         sigma: &Array2<T>,
         n: usize,
         max_iters: usize,
-        input_bounds: &Option<Bounds1<T>>,
         rng: &mut R,
         stability_eps: T,
     ) -> T {
         self.star_cdf.map_or_else(
             || {
                 let cdf: T = self
-                    .get_gaussian_distribution(mu, sigma, max_iters, input_bounds, stability_eps)
+                    .get_gaussian_distribution(mu, sigma, max_iters, stability_eps)
                     .cdf(n, rng);
                 debug_assert!(cdf.is_sign_positive());
                 self.star_cdf = Some(cdf);
@@ -222,22 +224,20 @@ impl<T: NNVFloat> StarNode<T, Ix2> {
         sigma: &Array2<T>,
         n: usize,
         max_iters: usize,
-        input_bounds: &Option<Bounds1<T>>,
         tilting_initialization: Option<TiltingSolution>,
         stability_eps: T,
     ) -> Vec<Array1<T>> {
-        let distribution =
-            self.get_gaussian_distribution(mu, sigma, max_iters, input_bounds, stability_eps);
+        let distribution = self.get_gaussian_distribution(mu, sigma, max_iters, stability_eps);
         distribution.get_tilting_solution(tilting_initialization.as_ref());
         distribution.sample_n(n, rng)
     }
 
-    pub fn try_get_local_bounds(&self) -> &Option<Bounds1<T>> {
+    pub fn try_calculate_star_local_bounds(&self) -> &Option<Bounds1<T>> {
         &self.local_bounds
     }
 
     /// # Panics
-    pub fn get_local_bounds(&mut self) -> &Bounds1<T> {
+    pub fn calculate_star_local_bounds(&mut self) -> &Bounds1<T> {
         if self.local_bounds.is_none() {
             self.local_bounds = Some(self.star.calculate_axis_aligned_bounding_box());
             debug_assert!(
@@ -254,6 +254,10 @@ impl<T: NNVFloat> StarNode<T, Ix2> {
         self.local_bounds.as_ref().unwrap()
     }
 
+    pub fn get_input_bounds(&self) -> Option<&Bounds1<T>> {
+        self.star.get_input_bounds()
+    }
+
     /// # Panics
     pub fn get_output_bounds(
         &mut self,
@@ -263,7 +267,10 @@ impl<T: NNVFloat> StarNode<T, Ix2> {
         if self.output_bounds.is_none() {
             trace!("get_output_bounds on star {:?}", self.star);
             let dnn_iter = DNNIterator::new(dnn, self.dnn_index);
-            self.output_bounds = Some(output_fn(deep_poly(self.get_local_bounds(), dnn_iter)));
+            self.output_bounds = Some(output_fn(deep_poly(
+                self.calculate_star_local_bounds(),
+                dnn_iter,
+            )));
         }
         self.output_bounds.unwrap()
     }
@@ -272,7 +279,7 @@ impl<T: NNVFloat> StarNode<T, Ix2> {
 /// Testing getters and setters
 #[cfg(test)]
 impl<T: NNVFloat> StarNode<T, Ix2> {
-    pub fn get_local_bounds_direct(&self) -> Option<&Bounds1<T>> {
+    pub fn calculate_star_local_bounds_direct(&self) -> Option<&Bounds1<T>> {
         self.local_bounds.as_ref()
     }
 

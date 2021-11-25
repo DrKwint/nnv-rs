@@ -140,8 +140,10 @@ impl<'a, T: NNVFloat> Asterism<'a, T, Ix2> {
                     return Some((vec![safe_sample], path_logp, total_infeasible_cdf));
                 }
                 Err((unsafe_sample, val)) => {
-                    best_sample = Some(unsafe_sample);
-                    best_sample_val = val;
+                    if val < best_sample_val {
+                        best_sample = Some(unsafe_sample);
+                        best_sample_val = val;
+                    }
                 }
             };
             // check feasibility of current node
@@ -269,16 +271,14 @@ impl<'a, T: NNVFloat> Asterism<'a, T, Ix2> {
             stability_eps,
         );
         let unsafe_len = unsafe_sample[0].len();
-        let fixed_input_part: Option<Array1<T>> = {
-            self.constellation
-                .get_input_bounds()
-                .as_ref()
-                .map(|bounds| {
-                    let fixed_bounds: Bounds1<T> = bounds.split_at(unsafe_len).1;
-                    let fixed_array: Array1<T> = fixed_bounds.lower().to_owned();
-                    fixed_array
-                })
-        };
+        let fixed_input_part: Option<Array1<T>> = self
+            .constellation
+            .get_node_input_bounds(current_node)
+            .map(|bounds| {
+                let fixed_bounds: Bounds1<T> = bounds.split_at(unsafe_len).1;
+                let fixed_array: Array1<T> = fixed_bounds.lower().to_owned();
+                fixed_array
+            });
         let dnn_idx = self.constellation.get_node_dnn_index(current_node);
         let mut best_sample = Array1::zeros(1);
         let mut best_val = T::infinity();
@@ -340,7 +340,6 @@ impl<'a, T: NNVFloat> Asterism<'a, T, Ix2> {
         rng: &mut R,
         stability_eps: T,
     ) -> Option<(usize, T)> {
-        let input_bounds = self.constellation.get_input_bounds();
         debug_assert!(self
             .constellation
             .try_get_gaussian_distribution(current_node)

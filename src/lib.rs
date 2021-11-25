@@ -9,7 +9,6 @@ extern crate approx;
 #[cfg(feature = "openblas-system")]
 extern crate blas_src;
 extern crate env_logger;
-extern crate good_lp;
 extern crate itertools;
 extern crate ndarray;
 extern crate ndarray_linalg;
@@ -28,7 +27,9 @@ pub mod bounds;
 pub mod constellation;
 pub mod deeppoly;
 pub mod dnn;
+pub mod gaussian;
 pub mod inequality;
+pub mod lp;
 pub mod polytope;
 pub mod star;
 pub mod star_node;

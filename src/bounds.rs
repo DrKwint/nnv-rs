@@ -6,6 +6,7 @@ use crate::NNVFloat;
 use ndarray::concatenate;
 use ndarray::iter::{Lanes, LanesMut};
 use ndarray::Array2;
+use ndarray::ArrayView1;
 use ndarray::Axis;
 use ndarray::Ix2;
 use ndarray::RemoveAxis;
@@ -15,6 +16,7 @@ use ndarray::{ArrayView, ArrayViewMut, ArrayViewMut1};
 use rand::distributions::Uniform;
 use rand::rngs::StdRng;
 use std::fmt::Display;
+use std::ops::{Mul, MulAssign};
 
 pub type Bounds1<T> = Bounds<T, Ix2>;
 
@@ -112,10 +114,27 @@ impl<T: NNVFloat, D: Dimension + ndarray::RemoveAxis> Bounds<T, D> {
 }
 
 impl<T: NNVFloat> Bounds1<T> {
+    pub fn new_by_dim(dim_bounds: &[ArrayView1<T>]) -> Self {
+        let dims: Vec<_> = dim_bounds
+            .into_iter()
+            .map(|x| x.insert_axis(Axis(0)))
+            .collect();
+        Self {
+            data: concatenate(Axis(0), &dims).unwrap(),
+        }
+    }
+
     pub fn default(dim: usize) -> Self {
         Self {
             data: Array2::default([2, dim]),
         }
+    }
+
+    pub fn trivial(dim: usize) -> Self {
+        Self::new(
+            Array::from_elem(dim, T::neg_infinity()).view(),
+            Array::from_elem(dim, T::infinity()).view(),
+        )
     }
 
     pub fn affine_map(&self, aff: &Affine2<T>) -> Self {
@@ -136,23 +155,6 @@ impl<T: NNVFloat> Bounds1<T> {
         )
     }
 
-    pub fn drop_idxs<I: Iterator<Item = bool>>(&self, idxs: I) -> Self {
-        Self {
-            data: concatenate(
-                Axis(1),
-                &self
-                    .data
-                    .columns()
-                    .into_iter()
-                    .zip(idxs)
-                    .filter(|(_dim, drop)| !drop)
-                    .map(|(dim, _drop)| dim.insert_axis(Axis(0)))
-                    .collect::<Vec<_>>(),
-            )
-            .unwrap(),
-        }
-    }
-
     /// # Panics
     pub fn append(mut self, other: &Self) -> Self {
         self.data.append(Axis(1), other.data.view()).unwrap();
@@ -161,6 +163,34 @@ impl<T: NNVFloat> Bounds1<T> {
 
     pub fn index_mut(&mut self, index: usize) -> ArrayViewMut1<T> {
         self.data.index_axis_mut(Axis(1), index)
+    }
+
+    pub fn get_ith_bounds(&self, index: usize) -> Self {
+        Bounds {
+            data: self
+                .data
+                .index_axis(Axis(1), index)
+                .to_owned()
+                .insert_axis(Axis(0)),
+        }
+    }
+}
+
+/// Scale by scalar
+impl<T: NNVFloat, D: Dimension> Mul<T> for Bounds<T, D> {
+    type Output = Self;
+
+    fn mul(self, rhs: T) -> Self {
+        Self {
+            data: self.data * rhs,
+        }
+    }
+}
+
+/// Scale by scalar
+impl<T: NNVFloat, D: Dimension> MulAssign<T> for Bounds<T, D> {
+    fn mul_assign(&mut self, rhs: T) {
+        self.data *= rhs;
     }
 }
 

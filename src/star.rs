@@ -3,12 +3,12 @@
 //! for representing affine transformed sets
 use crate::affine::{Affine, Affine2, Affine4};
 use crate::bounds::Bounds1;
+use crate::gaussian::GaussianDistribution;
 use crate::inequality::Inequality;
+use crate::lp::solve;
+use crate::lp::LinearSolution;
 use crate::polytope::Polytope;
-use crate::polytope::PolytopeInputDistribution;
 use crate::tensorshape::TensorShape;
-use crate::util::solve;
-use crate::util::LinearSolution;
 use crate::NNVFloat;
 use ndarray::Array4;
 use ndarray::ArrayView1;
@@ -111,18 +111,11 @@ impl<T: NNVFloat> Star2<T> {
         mu: &Array1<T>,
         sigma: &Array2<T>,
         max_accept_reject_iters: usize,
-        input_bounds: &Option<Bounds1<T>>,
         stability_eps: T,
-    ) -> Option<PolytopeInputDistribution<T>> {
+    ) -> Option<GaussianDistribution<T>> {
         self.constraints
             .as_ref()
-            .and_then(|x| {
-                if let Some(bounds) = input_bounds {
-                    x.reduce_fixed_inputs(bounds)
-                } else {
-                    Some(x.clone())
-                }
-            })
+            .and_then(|poly| poly.reduce_fixed_inputs())
             .map(|poly| {
                 poly.get_truncnorm_distribution(mu, sigma, max_accept_reject_iters, stability_eps)
             })
@@ -172,6 +165,10 @@ impl<T: NNVFloat> Star2<T> {
 }
 
 impl<T: NNVFloat> Star2<T> {
+    pub fn get_input_bounds(&self) -> Option<&Bounds1<T>> {
+        self.constraints.as_ref().map(|x| x.get_bounds())
+    }
+
     pub fn with_input_bounds(mut self, input_bounds: Bounds1<T>) -> Self {
         if self.constraints.is_some() {
             self.constraints = self.constraints.map(|x| x.with_input_bounds(input_bounds));
@@ -277,11 +274,15 @@ impl<T: NNVFloat> Star2<T> {
                 poly.coeffs().rows(),
                 poly.ubs(),
                 eqn.basis().index_axis(Axis(0), 0),
+                poly.get_bounds(),
             );
             if let LinearSolution::Solution(_, val) = solved {
                 eqn.shift()[0] + val.into()
             } else {
-                panic!()
+                println!("A: {:?}", poly.coeffs());
+                println!("b: {:?}", poly.ubs());
+                println!("coeffs: {:?}", eqn.basis());
+                panic!("Solution: {:?}", solved)
             }
         } else {
             T::neg_infinity()
@@ -330,6 +331,7 @@ impl<T: NNVFloat> Star2<T> {
                 poly.coeffs().rows(),
                 poly.ubs(),
                 eqn.basis().index_axis(Axis(0), 0),
+                poly.get_bounds(),
             );
             if let LinearSolution::Solution(_, val) = solved {
                 shift - val.into()
@@ -353,91 +355,6 @@ impl<T: NNVFloat> Star2<T> {
             .as_ref()
             .map_or(false, crate::polytope::Polytope::is_empty)
     }
-
-    /*
-    /// # Returns
-    ///
-    /// (cdf estimate, estimate error, cdf upper bound)
-    ///
-    /// # Panics
-    pub fn trunc_gaussian_cdf<R: Rng>(
-        &self,
-        mu: &Array1<T>,
-        sigma: &Array2<T>,
-        n: usize,
-        max_iters: usize,
-        input_bounds: &Option<Bounds1<T>>,
-        rng: &mut R,
-    ) -> (f64, f64, f64) {
-        // remove fixed dimensions from mu and sigma
-        debug!(
-            "mu shape: {:?} sigma shape: {:?}",
-            mu.shape(),
-            sigma.shape()
-        );
-        if let Some(poly) = &self.constraints {
-            if let Some(bounds) = input_bounds {
-                let lbs = bounds.lower();
-                let ubs = bounds.upper();
-                debug_assert!(!poly.any_nan());
-                if let Some((mut reduced_poly, (_reduced_lbs, _reduced_ubs))) =
-                    poly.reduce_fixed_inputs(&lbs, &ubs)
-                {
-                    reduced_poly.filter_trivial();
-                    debug_assert!(!reduced_poly.any_nan());
-                    reduced_poly.gaussian_cdf(mu, sigma, n, max_iters, rng)
-                } else {
-                    (1., 0., 1.)
-                }
-            } else {
-                poly.gaussian_cdf(mu, sigma, n, max_iters, rng)
-            }
-        } else {
-            // Unbounded sums to 1
-            (1., 0., 1.)
-        }
-    }
-    */
-
-    /*
-    /// # Panics
-    ///
-    /// # Returns
-    /// Vec<(samples, pdf of sample)>
-    ///
-    ///
-    // Allow if_let_else because rng is used in both branches, so closures don't work
-    #[allow(clippy::too_many_lines, clippy::option_if_let_else)]
-    pub fn gaussian_sample<R: Rng>(
-        &self,
-        rng: &mut R,
-        mu: &Array1<T>,
-        sigma: &Array2<T>,
-        n: usize,
-        max_iters: usize,
-        input_bounds: &Option<Bounds1<T>>,
-    ) -> Vec<(Array1<f64>, f64)> {
-        // remove fixed dimensions from mu and sigma
-        if let Some(poly) = &self.constraints {
-            if let Some(bounds) = input_bounds {
-                let lbs = bounds.lower();
-                let ubs = bounds.upper();
-                if let Some((reduced_poly, (_reduced_lbs, _reduced_ubs))) =
-                    poly.reduce_fixed_inputs(&lbs, &ubs)
-                {
-                    reduced_poly.gaussian_sample(rng, mu, sigma, n, max_iters)
-                } else {
-                    vec![]
-                }
-            } else {
-                poly.gaussian_sample(rng, mu, sigma, n, max_iters)
-            }
-        } else {
-            // Unbounded sample from Gaussian
-            todo!()
-        }
-    }
-    */
 }
 
 impl<T: NNVFloat> Star4<T> {

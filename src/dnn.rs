@@ -8,7 +8,6 @@ use crate::star_node::StarNodeOp;
 use crate::tensorshape::TensorShape;
 use crate::NNVFloat;
 use log::trace;
-use ndarray::Array;
 use ndarray::Array1;
 use ndarray::ArrayD;
 use ndarray::Ix1;
@@ -121,9 +120,7 @@ impl<T: NNVFloat> Layer<T> {
     /// Give the concrete output shape that results from giving an input with the specified shape
     ///
     /// # Panics
-    pub fn calculate_output_shape(&self, _input_shape: &TensorShape) -> TensorShape {
-        todo!();
-    }
+    // pub fn calculate_output_shape(&self, _input_shape: &TensorShape) -> TensorShape {
 
     pub fn forward1(&self, input: Array1<T>) -> Array1<T> {
         match self {
@@ -134,11 +131,6 @@ impl<T: NNVFloat> Layer<T> {
             Layer::ReLU(_) => input.mapv(|x| if x.lt(&T::zero()) { T::zero() } else { x }),
             _ => panic!(),
         }
-    }
-
-    /// # Panics
-    pub fn forward2(&self, _input: &Array<T, Ix2>) -> Array<T, Ix2> {
-        todo!();
     }
 
     /// # Panics
@@ -328,7 +320,7 @@ impl<T: NNVFloat> Iterator for DNNIterator<'_, T> {
                 Some(Layer::ReLU(_)) => {
                     panic!();
                 }
-                _ => todo!(),
+                _ => panic!(),
             }
         }
     }
