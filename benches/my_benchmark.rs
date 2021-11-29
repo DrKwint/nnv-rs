@@ -66,7 +66,6 @@ fn bench(c: &mut Criterion) {
             let mut constellation = Constellation::new(
                 root_star.clone(),
                 dnn.clone(),
-                Some(bounds.clone()),
                 loc.clone(),
                 scale.clone(),
             );
@@ -79,7 +78,6 @@ fn bench(c: &mut Criterion) {
             let mut constellation = Constellation::new(
                 root_star.clone(),
                 dnn.clone(),
-                Some(bounds.clone()),
                 loc.clone(),
                 scale.clone(),
             );
@@ -92,7 +90,6 @@ fn bench(c: &mut Criterion) {
             let mut constellation = Constellation::new(
                 root_star.clone(),
                 dnn.clone(),
-                Some(bounds.clone()),
                 loc.clone(),
                 scale.clone(),
             );
