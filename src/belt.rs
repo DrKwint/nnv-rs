@@ -109,7 +109,6 @@ mod test {
             // let mut belt = Belt::new(&mut constellation);
             // (0..10).for_each(|_| {
             //     belt.expand(&mut rng, 1e-4);
-            //     println!("Belt: {:?}", belt);
             //     belt.importance_sample(100., 1e-4);
             // });
         }

@@ -106,8 +106,6 @@ impl<T: NNVFloat> Polytope<T> {
             let sigma: Array2<f64> = constraint_coeffs.dot(&sigma.dot(&constraint_coeffs.t()));
             let diag_addn: Array2<f64> =
                 Array2::from_diag(&Array1::from_elem(sigma.nrows(), stability_eps.into()));
-            //println!("sigma cond before stability: {:?}", util::matrix_cond(&sigma, &sigma.inv().unwrap()));
-            //println!("sigma cond after stability: {:?}", util::matrix_cond(&(&sigma + &diag_addn), &(&sigma + &diag_addn).inv().unwrap()));
             sigma + diag_addn
         };
         let sq_ub = ub;
@@ -122,7 +120,6 @@ impl<T: NNVFloat> Polytope<T> {
             max_accept_reject_iters,
         );
         let inv_coeffs: Array2<T> = util::pinv(&constraint_coeffs).mapv(Into::into);
-        // println!("coeffs cond: {:?}", util::matrix_cond(&constraint_coeffs, &inv_coeffs.mapv(|x| x.into())));
         GaussianDistribution::TruncGaussian {
             distribution,
             inv_coeffs,
@@ -197,12 +194,6 @@ impl<T: NNVFloat> Polytope<T> {
             self.halfspaces.rhs(),
             c.view(),
             self.get_bounds(),
-        );
-
-        println!("Solved: {:?}", solved);
-        println!(
-            "output: {:?}",
-            !matches!(solved, LinearSolution::Solution(_, _))
         );
 
         !matches!(solved, LinearSolution::Solution(_, _))
