@@ -94,7 +94,7 @@ prop_compose! {
         let ubs = loc.clone() + 3.5 * scale_diag.clone();
         let input_bounds = Bounds1::new(lbs.view(), ubs.view());
         let star = Star2::new(Array2::eye(input_size), Array1::zeros(input_size)).with_input_bounds(input_bounds.clone());
-        Constellation::new(star, dnn, Some(input_bounds), loc, Array2::from_diag(&scale_diag).to_owned())
+        Constellation::new(star, dnn, loc, Array2::from_diag(&scale_diag).to_owned())
     }
 }
 
@@ -157,7 +157,7 @@ prop_compose! {
         ) -> Polytope<f64> {
             // Make a box bigger than possible inner inequalities
             let box_coeffs = Array2::eye(num_dims);
-            let mut box_rhs = Array1::ones(num_dims);
+            let mut box_rhs: Array1<f64> = Array1::ones(num_dims);
             box_rhs *= 20.;
 
             let upper_box_ineq = Inequality::new(box_coeffs.clone(), box_rhs.clone());
@@ -199,7 +199,7 @@ prop_compose! {
             // Make a box bigger than possible inner inequalities
             let box_coeffs = Array2::eye(num_dims);
             let mut box_rhs = Array1::ones(num_dims);
-            box_rhs *= 20.;
+            box_rhs *= 20._f64;
 
             let upper_box_ineq = Inequality::new(box_coeffs.clone(), box_rhs.clone());
             let lower_box_ineq = Inequality::new(-1. * box_coeffs, box_rhs);

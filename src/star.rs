@@ -477,7 +477,7 @@ mod test {
             let num_dims = 2;
             let box_coeffs = Array2::eye(num_dims);
             let mut box_rhs = Array1::ones(num_dims);
-            box_rhs *= 20.;
+            box_rhs *= 20._f64;
 
             let mut box_ineq = Inequality::new(box_coeffs.clone(), box_rhs.clone());
             let lower_box_ineq = Inequality::new(-1. * box_coeffs, box_rhs);
@@ -498,7 +498,7 @@ mod test {
         fn test_get_max_box_polytope(basis in array2(2, 2)) {
             let num_dims = 2;
             let box_coeffs = Array2::eye(num_dims);
-            let mut box_rhs = Array1::ones(num_dims);
+            let mut box_rhs: Array1<f64> = Array1::ones(num_dims);
             box_rhs *= 20.;
 
             let mut box_ineq = Inequality::new(box_coeffs.clone(), box_rhs.clone());

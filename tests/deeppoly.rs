@@ -1,12 +1,9 @@
 use ndarray::Array1;
 use ndarray::Ix1;
-use nnv_rs::affine::Affine2;
 use nnv_rs::bounds::Bounds;
 use nnv_rs::deeppoly::deep_poly;
 use nnv_rs::dnn::DNNIndex;
 use nnv_rs::dnn::DNNIterator;
-use nnv_rs::dnn::Layer;
-use nnv_rs::dnn::DNN;
 
 mod common;
 

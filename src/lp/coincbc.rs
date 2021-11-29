@@ -1,7 +1,8 @@
-use crate::good_lp::Solution;
+use crate::bounds::Bounds1;
 use crate::lp::LinearSolution;
 use crate::NNVFloat;
 use good_lp::solvers::coin_cbc::coin_cbc;
+use good_lp::Solution;
 use good_lp::{variable, ResolutionError, SolverModel};
 use good_lp::{Expression, IntoAffineExpression, ProblemVariables, Variable};
 use ndarray::{Array1, ArrayView1};
@@ -23,7 +24,12 @@ impl IntoAffineExpression for LinearExpression {
 
 /// Minimizes the expression `c` given the constraint `Ax < b`.
 /// # Panics
-pub fn solve<'a, I, T: 'a + NNVFloat>(A: I, b: ArrayView1<T>, c: ArrayView1<T>) -> LinearSolution
+pub fn solve<'a, I, T: 'a + NNVFloat>(
+    A: I,
+    b: ArrayView1<T>,
+    var_coeffs: ArrayView1<T>,
+    var_bounds: &Bounds1<T>,
+) -> LinearSolution
 where
     I: IntoIterator<Item = ArrayView1<'a, T>>,
 {
@@ -34,12 +40,12 @@ where
         _shh_err = shh::stderr().unwrap();
     }
     let mut problem = ProblemVariables::new();
-    let vars = problem.add_vector(variable(), c.len());
+    let vars = problem.add_vector(variable(), var_coeffs.len());
     let c_expression = LinearExpression {
         coefficients: vars
             .iter()
             .copied()
-            .zip(c.iter().map(|x| (*x).into()))
+            .zip(var_coeffs.iter().map(|x| (*x).into()))
             .collect(),
     };
     let mut unsolved = problem.minimise(c_expression.clone()).using(coin_cbc);
@@ -73,7 +79,7 @@ where
             }
         }
         Err(ResolutionError::Infeasible) => LinearSolution::Infeasible,
-        Err(ResolutionError::Unbounded) => LinearSolution::Unbounded,
+        Err(ResolutionError::Unbounded) => LinearSolution::Unbounded(Array1::zeros(1)),
         _ => panic!(),
     }
 }

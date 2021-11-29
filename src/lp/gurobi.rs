@@ -8,6 +8,7 @@ use grb::expr::{
     LinExpr,
 };
 use grb::prelude::{add_var, attr, param, ConstrSense, Model, Status};
+use grb::Env;
 use grb::VarType::Continuous;
 use ndarray::{Array1, ArrayView1};
 
@@ -22,7 +23,11 @@ where
     I: IntoIterator<Item = ArrayView1<'a, T>>,
 {
     // Create model
-    let mut model = Model::new("").unwrap();
+    let mut env = Env::empty().unwrap();
+    env.set(param::OutputFlag, 0).unwrap();
+    env.set(param::LogFile, "".to_string()).unwrap();
+    let env = env.start().unwrap();
+    let mut model = Model::with_env("", &env).unwrap();
 
     // Add variables
     let vars: Vec<_> = var_coeffs

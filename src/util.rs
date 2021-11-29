@@ -9,14 +9,6 @@ use std::cmp::max;
 use std::fmt::Debug;
 use std::iter::Sum;
 
-/*
-pub fn matrix_cond(A: &Array2<f64>, A_inv: &Array2<f64>) -> f64 {
-    let (_, sigma, _) = A.svd(false, false).unwrap();
-    let (_, inv_sigma, _) = A_inv.svd(false, false).unwrap();
-    return sigma.max_skipnan() * inv_sigma.max_skipnan()
-}
-*/
-
 pub fn l2_norm(x: ArrayView1<f64>) -> f64 {
     x.dot(&x).sqrt()
 }
