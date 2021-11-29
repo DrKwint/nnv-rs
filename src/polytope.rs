@@ -199,6 +199,12 @@ impl<T: NNVFloat> Polytope<T> {
             self.get_bounds(),
         );
 
+        println!("Solved: {:?}", solved);
+        println!(
+            "output: {:?}",
+            !matches!(solved, LinearSolution::Solution(_, _))
+        );
+
         !matches!(solved, LinearSolution::Solution(_, _))
     }
 }
