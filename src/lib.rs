@@ -37,6 +37,14 @@ pub mod tensorshape;
 pub mod test_util;
 pub mod util;
 
+cfg_if::cfg_if! {
+    if #[cfg(feature = "blas_intel-mkl")] {
+    } else if #[cfg(feature = "blas_openblas-system")] {
+    } else {
+        compile_error!("Must enable one of \"blas_{{intel_mkl,optblas-system}}\"");
+    }
+}
+
 pub trait NNVFloat = 'static
     + num::Float
     + std::convert::From<f64>

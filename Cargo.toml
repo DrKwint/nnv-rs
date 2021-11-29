@@ -16,8 +16,8 @@ exclude = [
 lp_coincbc = ["good_lp/coin_cbc"]
 lp_gurobi = ["grb"]
 rayon = ["ndarray/rayon", "truncnorm/rayon"]
-intel-mkl = ["ndarray-linalg/intel-mkl", "truncnorm/intel-mkl"]
-openblas-system = ["ndarray/blas", "blas-src", "openblas-src", "ndarray-linalg/openblas-system", "truncnorm/openblas-system"]
+blas_intel-mkl = ["ndarray-linalg/intel-mkl", "truncnorm/intel-mkl"]
+blas_openblas-system = ["ndarray/blas", "blas-src", "openblas-src", "ndarray-linalg/openblas-system", "truncnorm/openblas-system"]
 
 [lib]
 name = "nnv_rs"

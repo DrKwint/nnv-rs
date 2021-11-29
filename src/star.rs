@@ -444,7 +444,7 @@ mod test {
 
         #[test]
         fn test_get_min_infeasible(star in empty_star(2,1)) {
-            prop_assert!(star.input_space_polytope().unwrap().is_empty(), "Polytope is empty");
+            prop_assert!(star.input_space_polytope().unwrap().is_empty(), "Polytope is not empty");
             prop_assert!(star.is_empty(), "Empty star is not empty");
             let result = panic::catch_unwind(|| {
                 star.get_min(0)
