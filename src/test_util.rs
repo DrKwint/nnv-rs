@@ -112,7 +112,8 @@ prop_compose! {
                 }
             });
 
-            Inequality::new(coeffs, rhs)
+            let dim = rhs.len();
+            Inequality::new(coeffs, rhs, Bounds1::trivial(dim))
         }
 }
 
@@ -122,7 +123,8 @@ prop_compose! {
             let zero = Array1::zeros(num_dims);
             let mut inequality = Inequality::new(
                 Array2::zeros((0, num_dims)),
-                Array1::zeros(0)
+                Array1::zeros(0),
+                Bounds1::trivial(0)
             );
             (0..ineq.num_constraints())
                 .into_iter()
@@ -133,7 +135,8 @@ prop_compose! {
                     } else {
                         let new_coeffs = -1. * eqn.coeffs().to_owned();
                         let new_rhs = -1. * eqn.rhs().to_owned();
-                        let eqn = Inequality::new(new_coeffs, new_rhs);
+                        let dim = new_rhs.len();
+                        let eqn = Inequality::new(new_coeffs, new_rhs, Bounds1::trivial(dim));
                         inequality.add_eqns(&eqn, true);
                     }
                 });
@@ -151,21 +154,14 @@ prop_compose! {
 prop_compose! {
     pub fn non_empty_polytope(num_dims: usize, num_constraints: usize)
         (
-            mut ineq in inequality_including_zero(num_dims, num_constraints)
+            ineq in inequality_including_zero(num_dims, num_constraints)
                 .prop_filter("Non-zero intercepts",
                              |i| !i.rhs().iter().any(|x| *x == 0.0_f64))
         ) -> Polytope<f64> {
             // Make a box bigger than possible inner inequalities
-            let box_coeffs = Array2::eye(num_dims);
-            let mut box_rhs: Array1<f64> = Array1::ones(num_dims);
-            box_rhs *= 20.;
-
-            let upper_box_ineq = Inequality::new(box_coeffs.clone(), box_rhs.clone());
-            let lower_box_ineq = Inequality::new(-1. * box_coeffs, box_rhs);
-
-            ineq.add_eqns(&upper_box_ineq, true);
-            ineq.add_eqns(&lower_box_ineq, true);
-            Polytope::from_halfspaces(ineq)
+            let box_bounds: Bounds1<f64> = Bounds1::new(Array1::from_elem(num_dims, -20.).view(), Array1::from_elem(num_dims, -20.).view());
+            let box_ineq = Inequality::new(Array2::zeros([1, num_dims]), Array1::zeros(1), box_bounds);
+            Polytope::from_halfspaces(box_ineq)
         }
 }
 
@@ -192,23 +188,14 @@ prop_compose! {
             // across the origin.
             let inverse_ineq = Inequality::new(
                 ineq.coeffs().to_owned() * -1.,
-                ineq.rhs().to_owned()
+                ineq.rhs().to_owned(), Bounds1::trivial(ineq.num_dims())
             );
             ineq.add_eqns(&inverse_ineq, true);
-
-            // Make a box bigger than possible inner inequalities
-            let box_coeffs = Array2::eye(num_dims);
-            let mut box_rhs = Array1::ones(num_dims);
-            box_rhs *= 20._f64;
-
-            let upper_box_ineq = Inequality::new(box_coeffs.clone(), box_rhs.clone());
-            let lower_box_ineq = Inequality::new(-1. * box_coeffs, box_rhs);
-
-            ineq.add_eqns(&upper_box_ineq, true);
-            ineq.add_eqns(&lower_box_ineq, true);
+            let box_bounds: Bounds1<f64> = Bounds1::new(Array1::from_elem(num_dims, -20.).view(), Array1::from_elem(num_dims, -20.).view());
+            let box_ineq = Inequality::new(Array2::zeros([1, num_dims]), Array1::zeros(1), box_bounds);
 
             // Construct the empty polytope.
-            Polytope::from_halfspaces(ineq)
+            Polytope::from_halfspaces(box_ineq)
         }
 }
 

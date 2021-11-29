@@ -475,14 +475,8 @@ mod test {
         #[test]
         fn test_get_min_box_polytope(basis in array2(2, 2)) {
             let num_dims = 2;
-            let box_coeffs = Array2::eye(num_dims);
-            let mut box_rhs = Array1::ones(num_dims);
-            box_rhs *= 20._f64;
-
-            let mut box_ineq = Inequality::new(box_coeffs.clone(), box_rhs.clone());
-            let lower_box_ineq = Inequality::new(-1. * box_coeffs, box_rhs);
-
-            box_ineq.add_eqns(&lower_box_ineq, true);
+            let box_bounds: Bounds1<f64> = Bounds1::new(Array1::from_elem(num_dims, -20.).view(), Array1::from_elem(num_dims, -20.).view());
+            let box_ineq = Inequality::new(Array2::zeros([1, num_dims]), Array1::zeros(1), box_bounds);
             let poly = Polytope::from_halfspaces(box_ineq);
 
             let center = arr1(&[0.0, 0.0]);
@@ -497,14 +491,8 @@ mod test {
         #[test]
         fn test_get_max_box_polytope(basis in array2(2, 2)) {
             let num_dims = 2;
-            let box_coeffs = Array2::eye(num_dims);
-            let mut box_rhs: Array1<f64> = Array1::ones(num_dims);
-            box_rhs *= 20.;
-
-            let mut box_ineq = Inequality::new(box_coeffs.clone(), box_rhs.clone());
-            let lower_box_ineq = Inequality::new(-1. * box_coeffs, box_rhs);
-
-            box_ineq.add_eqns(&lower_box_ineq, true);
+            let box_bounds: Bounds1<f64> = Bounds1::new(Array1::from_elem(num_dims, -20.).view(), Array1::from_elem(num_dims, -20.).view());
+            let box_ineq = Inequality::new(Array2::zeros([1, num_dims]), Array1::zeros(1), box_bounds);
             let poly = Polytope::from_halfspaces(box_ineq);
 
             let center = arr1(&[0.0, 0.0]);
