@@ -105,7 +105,8 @@ impl<T: crate::NNVFloat> Constellation<T, Ix2> {
             let parent_distr = self.arena[parent_id]
                 .try_get_gaussian_distribution()
                 .unwrap();
-            debug_assert!(parent_distr.try_get_tilting_solution().is_some());
+            // This isn't always the case because the parent may be unconstrained (if it's the root)
+            //debug_assert!(parent_distr.try_get_tilting_solution().is_some());
             parent_distr.try_get_tilting_solution().cloned()
         };
         let child_distr = self.arena[node_id].get_gaussian_distribution(

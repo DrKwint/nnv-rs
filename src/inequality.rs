@@ -221,7 +221,11 @@ impl<T: NNVFloat> Inequality<T> {
 
         let final_coeffs: Array2<T> = concatenate(Axis(0), &nontrivial_coeffs).unwrap();
         let final_rhs = Array1::from_vec(nontrivial_rhs);
-        let final_bounds = Bounds1::new_by_dim(nontrivial_bounds.as_slice());
+        let final_bounds = if nontrivial_bounds.is_empty() {
+            Bounds1::trivial(0)
+        } else {
+            Bounds1::new_by_dim(nontrivial_bounds.as_slice())
+        };
 
         Some(Self::new(final_coeffs, final_rhs, final_bounds))
     }
