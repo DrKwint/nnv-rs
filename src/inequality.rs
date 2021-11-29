@@ -71,13 +71,12 @@ impl<T: NNVFloat> Inequality<T> {
         );
         let val: f64 = match solved {
             LinearSolution::Solution(_, val) => val,
-            LinearSolution::Infeasible => return true,
-            LinearSolution::Unbounded(_) => return true,
+            LinearSolution::Infeasible | LinearSolution::Unbounded(_) => return true,
         };
         val > rhs.into()
     }
 
-    /// check_redundant is currently disabled
+    /// `check_redundant` is currently disabled
     /// # Panics
     pub fn add_eqns(&mut self, eqns: &Self, check_redundant: bool) {
         if check_redundant && false {
@@ -180,14 +179,13 @@ impl<T: NNVFloat> Inequality<T> {
             concatenate(Axis(1), &filtered_cols).unwrap()
         };
 
-        let filtered_bounds: Vec<ArrayView1<T>> = self
+        let filtered_bounds_iter = self
             .bounds()
             .bounds_iter()
             .into_iter()
             .zip(&fixed_idxs)
             .filter(|(_, &is_fixed)| !is_fixed)
-            .map(|(dim, _drop)| dim)
-            .collect();
+            .map(|(dim, _drop)| dim);
 
         // Remove trivial constraints (i.e. all zero coeffs on LHS)
         let is_nontrivial: Vec<bool> = filtered_coeffs
@@ -215,8 +213,7 @@ impl<T: NNVFloat> Inequality<T> {
             .filter(|(_, &is_nontrivial)| is_nontrivial)
             .map(|(val, _)| val)
             .collect();
-        let nontrivial_bounds: Vec<ArrayView1<T>> = filtered_bounds
-            .into_iter()
+        let nontrivial_bounds: Vec<ArrayView1<T>> = filtered_bounds_iter
             .zip(is_nontrivial.iter())
             .filter(|(_, &is_nontrivial)| is_nontrivial)
             .map(|(val, _)| val)

@@ -114,11 +114,9 @@ impl<T: NNVFloat, D: Dimension + ndarray::RemoveAxis> Bounds<T, D> {
 }
 
 impl<T: NNVFloat> Bounds1<T> {
+    /// # Panics
     pub fn new_by_dim(dim_bounds: &[ArrayView1<T>]) -> Self {
-        let dims: Vec<_> = dim_bounds
-            .into_iter()
-            .map(|x| x.insert_axis(Axis(0)))
-            .collect();
+        let dims: Vec<_> = dim_bounds.iter().map(|x| x.insert_axis(Axis(0))).collect();
         Self {
             data: concatenate(Axis(0), &dims).unwrap(),
         }
@@ -166,7 +164,7 @@ impl<T: NNVFloat> Bounds1<T> {
     }
 
     pub fn get_ith_bounds(&self, index: usize) -> Self {
-        Bounds {
+        Self {
             data: self
                 .data
                 .index_axis(Axis(1), index)

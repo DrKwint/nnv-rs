@@ -3,12 +3,7 @@ use crate::constellation::Constellation;
 use crate::star_node::StarNodeType;
 use crate::NNVFloat;
 use log::{debug, info};
-use ndarray::concatenate;
-use ndarray::s;
-use ndarray::Array1;
-use ndarray::Axis;
-use ndarray::Dimension;
-use ndarray::Ix2;
+use ndarray::{concatenate, s, Array1, Axis, Dimension, Ix2};
 use rand::distributions::{Bernoulli, Distribution};
 use rand::Rng;
 use std::iter;
@@ -106,9 +101,13 @@ impl<'a, T: NNVFloat> Asterism<'a, T, Ix2> {
                         .add_node_cdf(x, T::neg(T::one()) * infeas_cdf);
                 } else {
                     me.set_feasible(x, false);
-                    infeas_cdf =
-                        me.constellation
-                            .get_node_cdf(x, cdf_samples, max_iters, rng, stability_eps)
+                    infeas_cdf = me.constellation.get_node_cdf(
+                        x,
+                        cdf_samples,
+                        max_iters,
+                        rng,
+                        stability_eps,
+                    );
                 }
             });
             *total_infeasible_cdf += infeas_cdf;
@@ -149,10 +148,10 @@ impl<'a, T: NNVFloat> Asterism<'a, T, Ix2> {
             // check feasibility of current node
             {
                 // makes the assumption that bounds are on 0th dimension of output
-                let output_bounds = if current_node != 0 {
-                    self.constellation.get_node_output_bounds(current_node)
-                } else {
+                let output_bounds = if current_node == 0 {
                     (T::neg_infinity(), T::infinity())
+                } else {
+                    self.constellation.get_node_output_bounds(current_node)
                 };
                 debug!("Output bounds: {:?}", output_bounds);
                 debug_assert!(self
@@ -279,7 +278,6 @@ impl<'a, T: NNVFloat> Asterism<'a, T, Ix2> {
                 let fixed_array: Array1<T> = fixed_bounds.lower().to_owned();
                 fixed_array
             });
-        let dnn_idx = self.constellation.get_node_dnn_index(current_node);
         let mut best_sample = Array1::zeros(1);
         let mut best_val = T::infinity();
         let sample_opt: Option<(Array1<T>, T)> = if let Some(fixed_input_part) = fixed_input_part {
@@ -295,7 +293,7 @@ impl<'a, T: NNVFloat> Asterism<'a, T, Ix2> {
                 } else {
                     if output[[0]] < best_val {
                         best_sample = x;
-                        best_val = output[[0]]
+                        best_val = output[[0]];
                     }
                     None
                 }
@@ -310,7 +308,7 @@ impl<'a, T: NNVFloat> Asterism<'a, T, Ix2> {
                 } else {
                     if output[[0]] < best_val {
                         best_sample = x;
-                        best_val = output[[0]]
+                        best_val = output[[0]];
                     }
                     None
                 }
@@ -327,8 +325,8 @@ impl<'a, T: NNVFloat> Asterism<'a, T, Ix2> {
     /// Given a node, samples one of its children and returns the log probability
     ///
     /// Returns:
-    ///     child_idx (usize): The child that was reached in the sampling procedure
-    ///     path_logp (T): The log probability of reaching the child from the root node
+    ///     `child_idx` (usize): The child that was reached in the sampling procedure
+    ///     `path_logp` (T): The log probability of reaching the child from the root node
     ///
     /// # Panics
     fn select_safe_child<R: Rng>(
@@ -354,9 +352,9 @@ impl<'a, T: NNVFloat> Asterism<'a, T, Ix2> {
             }
             StarNodeType::Affine { child_idx } => Some((child_idx, path_logp)),
             StarNodeType::StepRelu {
-                dim,
                 fst_child_idx,
                 snd_child_idx,
+                ..
             } => {
                 let mut children = vec![fst_child_idx];
                 if let Some(snd_child) = snd_child_idx {
@@ -371,13 +369,6 @@ impl<'a, T: NNVFloat> Asterism<'a, T, Ix2> {
                     0 => None,
                     1 => Some((children[0], path_logp)),
                     2 => {
-                        let parent_cdf = self.constellation.get_node_cdf(
-                            current_node,
-                            cdf_samples * 4,
-                            max_iters,
-                            rng,
-                            stability_eps,
-                        );
                         let fst_cdf = self.constellation.get_node_cdf(
                             children[0],
                             cdf_samples * 4,
@@ -385,7 +376,6 @@ impl<'a, T: NNVFloat> Asterism<'a, T, Ix2> {
                             rng,
                             stability_eps,
                         );
-                        //let snd_cdf = parent_cdf - fst_cdf;
                         let snd_cdf = self.constellation.get_node_cdf(
                             children[1],
                             cdf_samples,
@@ -464,11 +454,11 @@ impl<'a, T: NNVFloat> Asterism<'a, T, Ix2> {
                 }
             }
             StarNodeType::StepReluDropOut {
-                dim,
                 dropout_prob,
                 fst_child_idx,
                 snd_child_idx,
                 trd_child_idx,
+                ..
             } => {
                 let dropout_dist = Bernoulli::new(dropout_prob.into()).unwrap();
                 if dropout_dist.sample(rng) {

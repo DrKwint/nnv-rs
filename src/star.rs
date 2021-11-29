@@ -115,7 +115,7 @@ impl<T: NNVFloat> Star2<T> {
     ) -> Option<GaussianDistribution<T>> {
         self.constraints
             .as_ref()
-            .and_then(|poly| poly.reduce_fixed_inputs())
+            .and_then(Polytope::reduce_fixed_inputs)
             .map(|poly| {
                 poly.get_truncnorm_distribution(mu, sigma, max_accept_reject_iters, stability_eps)
             })
@@ -166,7 +166,7 @@ impl<T: NNVFloat> Star2<T> {
 
 impl<T: NNVFloat> Star2<T> {
     pub fn get_input_bounds(&self) -> Option<&Bounds1<T>> {
-        self.constraints.as_ref().map(|x| x.get_bounds())
+        self.constraints.as_ref().map(Polytope::get_bounds)
     }
 
     pub fn with_input_bounds(mut self, input_bounds: Bounds1<T>) -> Self {
@@ -269,24 +269,25 @@ impl<T: NNVFloat> Star2<T> {
     pub fn get_min(&self, idx: usize) -> T {
         let eqn = self.representation.get_eqn(idx);
 
-        if let Some(ref poly) = self.constraints {
-            let solved = solve(
-                poly.coeffs().rows(),
-                poly.ubs(),
-                eqn.basis().index_axis(Axis(0), 0),
-                poly.get_bounds(),
-            );
-            if let LinearSolution::Solution(_, val) = solved {
-                eqn.shift()[0] + val.into()
-            } else {
-                println!("A: {:?}", poly.coeffs());
-                println!("b: {:?}", poly.ubs());
-                println!("coeffs: {:?}", eqn.basis());
-                panic!("Solution: {:?}", solved)
-            }
-        } else {
-            T::neg_infinity()
-        }
+        self.constraints.as_ref().map_or_else(
+            || T::neg_infinity(),
+            |poly| {
+                let solved = solve(
+                    poly.coeffs().rows(),
+                    poly.ubs(),
+                    eqn.basis().index_axis(Axis(0), 0),
+                    poly.get_bounds(),
+                );
+                if let LinearSolution::Solution(_, val) = solved {
+                    eqn.shift()[0] + val.into()
+                } else {
+                    println!("A: {:?}", poly.coeffs());
+                    println!("b: {:?}", poly.ubs());
+                    println!("coeffs: {:?}", eqn.basis());
+                    panic!("Solution: {:?}", solved)
+                }
+            },
+        )
     }
 
     #[cfg(feature = "rayon")]
@@ -326,21 +327,22 @@ impl<T: NNVFloat> Star2<T> {
         let shift = eqn.shift()[0];
         eqn *= neg_one;
 
-        if let Some(ref poly) = self.constraints {
-            let solved = solve(
-                poly.coeffs().rows(),
-                poly.ubs(),
-                eqn.basis().index_axis(Axis(0), 0),
-                poly.get_bounds(),
-            );
-            if let LinearSolution::Solution(_, val) = solved {
-                shift - val.into()
-            } else {
-                panic!()
-            }
-        } else {
-            T::infinity()
-        }
+        self.constraints.as_ref().map_or_else(
+            || T::infinity(),
+            |poly| {
+                let solved = solve(
+                    poly.coeffs().rows(),
+                    poly.ubs(),
+                    eqn.basis().index_axis(Axis(0), 0),
+                    poly.get_bounds(),
+                );
+                if let LinearSolution::Solution(_, val) = solved {
+                    shift - val.into()
+                } else {
+                    panic!()
+                }
+            },
+        )
     }
 
     pub fn calculate_axis_aligned_bounding_box(&self) -> Bounds1<T> {

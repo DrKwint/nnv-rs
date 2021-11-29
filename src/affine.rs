@@ -3,15 +3,10 @@
 use crate::bounds::Bounds1;
 use crate::tensorshape::TensorShape;
 use crate::NNVFloat;
-use ndarray::concatenate;
-use ndarray::iter::Lanes;
-use ndarray::ShapeError;
-use ndarray::Zip;
-use ndarray::{Array, Array1, Array2, Array4};
-use ndarray::{ArrayView1, ArrayView2};
-use ndarray::{ArrayViewMut0, ArrayViewMut1, ArrayViewMut2};
-use ndarray::{Axis, Dimension};
-use ndarray::{Ix1, Ix2, Ix4, IxDyn};
+use ndarray::{
+    concatenate, iter::Lanes, Array, Array1, Array2, Array4, ArrayView1, ArrayView2, ArrayViewMut0,
+    ArrayViewMut1, ArrayViewMut2, Axis, Dimension, Ix1, Ix2, Ix4, IxDyn, ShapeError, Zip,
+};
 use std::convert::TryFrom;
 use std::fmt::{Debug, Display};
 use std::ops::{Add, AddAssign, Mul, MulAssign};
@@ -218,7 +213,7 @@ impl<T: NNVFloat> Affine2<T> {
             .for_each(|mut row, shift, &x| {
                 row.assign(&(&row * x));
                 *shift *= x;
-            })
+            });
     }
 }
 

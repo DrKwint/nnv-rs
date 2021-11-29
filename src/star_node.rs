@@ -119,7 +119,7 @@ impl<T: NNVFloat, D: Dimension> StarNode<T, D> {
     }
 
     pub fn set_feasible(&mut self, val: bool) {
-        self.is_feasible = val
+        self.is_feasible = val;
     }
 
     pub fn set_cdf(&mut self, val: T) {
@@ -150,6 +150,7 @@ impl<T: NNVFloat> StarNode<T, Ix2> {
         self.gaussian_distribution.as_ref()
     }
 
+    /// # Panics
     pub fn get_gaussian_distribution(
         &mut self,
         loc: &Array1<T>,
@@ -224,11 +225,11 @@ impl<T: NNVFloat> StarNode<T, Ix2> {
         sigma: &Array2<T>,
         n: usize,
         max_iters: usize,
-        tilting_initialization: Option<TiltingSolution>,
+        tilting_initialization: &Option<TiltingSolution>,
         stability_eps: T,
     ) -> Vec<Array1<T>> {
         let distribution = self.get_gaussian_distribution(mu, sigma, max_iters, stability_eps);
-        distribution.get_tilting_solution(tilting_initialization.as_ref());
+        distribution.populate_tilting_solution(tilting_initialization.as_ref());
         distribution.sample_n(n, rng)
     }
 

@@ -1,11 +1,8 @@
 use crate::constellation::Constellation;
 use crate::NNVFloat;
-use ndarray::Array1;
-use ndarray::Dimension;
-use ndarray::Ix2;
+use ndarray::{Array1, Dimension, Ix2};
 use ordered_float::OrderedFloat;
-use rand::thread_rng;
-use rand::Rng;
+use rand::{thread_rng, Rng};
 use std::collections::BinaryHeap;
 use std::convert::TryInto;
 
@@ -40,7 +37,7 @@ impl<'a, T: crate::NNVFloat> Belt<'a, T, Ix2> {
     pub fn expand<R: Rng>(&mut self, rng: &mut R, stability_eps: T) -> bool {
         if let Some((_weight, next)) = self.frontier.pop() {
             let children = self.constellation.get_node_child_ids(next, stability_eps);
-            children.into_iter().for_each(|idx| {
+            for idx in children {
                 let cdf = self
                     .constellation
                     .get_node_cdf(idx, 10, 10, rng, stability_eps);
@@ -52,7 +49,7 @@ impl<'a, T: crate::NNVFloat> Belt<'a, T, Ix2> {
                 } else {
                     self.frontier.push(entry);
                 }
-            });
+            }
             true
         } else {
             false
@@ -63,7 +60,7 @@ impl<'a, T: crate::NNVFloat> Belt<'a, T, Ix2> {
     ///
     ///
     /// Returns:
-    ///     E_{N(mu, sigma)}[f] where f is the underlying DNN, i.e. the expected value of the output
+    ///     `E_{N(mu, sigma)}[f]` where `f` is the underlying DNN, i.e. the expected value of the output
     pub fn importance_sample(&mut self, n_samples: T, stability_eps: T) -> T {
         let mut rng = thread_rng();
         let total_weight: T = self

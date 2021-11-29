@@ -2,6 +2,8 @@ use crate::NNVFloat;
 use ndarray::Array1;
 use ndarray::Array2;
 use ndarray::Ix2;
+use ndarray_rand::rand_distr::StandardNormal;
+use ndarray_rand::RandomExt;
 use rand::Rng;
 use truncnorm::distributions::MultivariateTruncatedNormal;
 use truncnorm::tilting::TiltingSolution;
@@ -29,10 +31,16 @@ impl<T: NNVFloat> GaussianDistribution<T> {
                 sample_arr
                     .rows()
                     .into_iter()
-                    .map(|x| (inv_coeffs.dot(&x.mapv(|x| x.into()))))
+                    .map(|x| (inv_coeffs.dot(&x.mapv(Into::into))))
                     .collect()
             }
-            GaussianDistribution::Gaussian { .. } => todo!(),
+            GaussianDistribution::Gaussian { ref loc, ref scale } => {
+                let samples = (Array2::random((n, loc.len()), StandardNormal)
+                    .mapv(|x: f64| x.into())
+                    * scale)
+                    + loc;
+                samples.rows().into_iter().map(|x| x.to_owned()).collect()
+            }
         }
     }
 
@@ -42,7 +50,7 @@ impl<T: NNVFloat> GaussianDistribution<T> {
                 let (est, _rel_err, _upper_bound) = distribution.cdf(n, rng);
                 est.into()
             }
-            _ => todo!(),
+            GaussianDistribution::Gaussian { .. } => T::one(),
         }
     }
 
@@ -51,19 +59,13 @@ impl<T: NNVFloat> GaussianDistribution<T> {
             GaussianDistribution::TruncGaussian { distribution, .. } => {
                 distribution.try_get_tilting_solution()
             }
-            _ => todo!(),
+            GaussianDistribution::Gaussian { .. } => None,
         }
     }
 
-    pub fn get_tilting_solution(
-        &mut self,
-        initialization: Option<&TiltingSolution>,
-    ) -> &TiltingSolution {
-        match self {
-            GaussianDistribution::TruncGaussian { distribution, .. } => {
-                distribution.get_tilting_solution(initialization)
-            }
-            _ => todo!(),
+    pub fn populate_tilting_solution(&mut self, initialization: Option<&TiltingSolution>) {
+        if let GaussianDistribution::TruncGaussian { distribution, .. } = self {
+            distribution.get_tilting_solution(initialization);
         }
     }
 }

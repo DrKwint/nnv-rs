@@ -61,7 +61,7 @@ impl<T: NNVFloat, D: Dimension> Constellation<T, D> {
     pub fn reset_input_distribution(&mut self, loc: Array1<T>, scale: Array2<T>) {
         self.loc = loc;
         self.scale = scale;
-        self.arena.iter_mut().for_each(|x| x.reset_cdf());
+        self.arena.iter_mut().for_each(StarNode::reset_cdf);
     }
 
     pub fn reset_with_star(&mut self, input_star: Star<T, D>) {
@@ -86,11 +86,13 @@ impl<T: crate::NNVFloat> Constellation<T, Ix2> {
         let other_child_idx = self.node_type.new_node(None);
         let other_other_child_idx = self.parents.new_node(Some(parent_id));
         debug_assert_eq!(child_idx, other_child_idx);
+        debug_assert_eq!(child_idx, other_other_child_idx);
         debug_assert!(self.try_get_gaussian_distribution(parent_id).is_some());
         self.initialize_node_tilting_from_parent(child_idx, parent_id, 20, stability_eps);
         child_idx
     }
 
+    /// # Panics
     pub fn initialize_node_tilting_from_parent(
         &mut self,
         node_id: usize,
@@ -104,7 +106,7 @@ impl<T: crate::NNVFloat> Constellation<T, Ix2> {
                 .try_get_gaussian_distribution()
                 .unwrap();
             debug_assert!(parent_distr.try_get_tilting_solution().is_some());
-            parent_distr.try_get_tilting_solution().unwrap().clone()
+            parent_distr.try_get_tilting_solution().cloned()
         };
         let child_distr = self.arena[node_id].get_gaussian_distribution(
             &self.loc,
@@ -112,7 +114,7 @@ impl<T: crate::NNVFloat> Constellation<T, Ix2> {
             max_accept_reject_iters,
             stability_eps,
         );
-        child_distr.get_tilting_solution(Some(&parent_tilting_soln));
+        child_distr.populate_tilting_solution(parent_tilting_soln.as_ref());
     }
 
     pub fn try_get_gaussian_distribution(
@@ -179,7 +181,7 @@ impl<T: crate::NNVFloat> Constellation<T, Ix2> {
             &self.scale,
             n,
             max_iters,
-            None,
+            &None,
             stability_eps,
         )
         .into_iter()
@@ -187,6 +189,7 @@ impl<T: crate::NNVFloat> Constellation<T, Ix2> {
         .collect()
     }
 
+    /// # Panics
     pub fn sample_gaussian_node<R: Rng>(
         &mut self,
         node_id: usize,
@@ -195,13 +198,12 @@ impl<T: crate::NNVFloat> Constellation<T, Ix2> {
         max_iters: usize,
         stability_eps: T,
     ) -> Vec<Array1<T>> {
-        let initialization_opt = self.parents[node_id].map(|x| {
+        let initialization_opt = self.parents[node_id].and_then(|x| {
             self.arena[x]
                 .try_get_gaussian_distribution()
                 .unwrap()
                 .try_get_tilting_solution()
-                .unwrap()
-                .clone()
+                .cloned()
         });
         self.arena[node_id].gaussian_sample(
             rng,
@@ -209,11 +211,12 @@ impl<T: crate::NNVFloat> Constellation<T, Ix2> {
             &self.scale,
             n,
             max_iters,
-            initialization_opt,
+            &initialization_opt,
             stability_eps,
         )
     }
 
+    /// # Panics
     pub fn sample_gaussian_node_safe<R: Rng>(
         &mut self,
         node_id: usize,
@@ -238,7 +241,7 @@ impl<T: crate::NNVFloat> Constellation<T, Ix2> {
             &self.scale,
             n,
             max_iters,
-            initialization_opt,
+            &initialization_opt,
             stability_eps,
         )
     }
@@ -290,11 +293,10 @@ impl<T: crate::NNVFloat> Constellation<T, Ix2> {
                 child_ids
             }
             StarNodeType::StepReluDropOut {
-                dim,
-                dropout_prob,
                 fst_child_idx,
                 snd_child_idx,
                 trd_child_idx,
+                ..
             } => {
                 let mut child_ids: Vec<usize> = vec![*fst_child_idx];
                 if let Some(idx) = snd_child_idx {

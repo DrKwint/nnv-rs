@@ -26,7 +26,7 @@ impl<T: NNVFloat> DNN<T> {
     }
 
     pub fn add_layer(&mut self, layer: Layer<T>) {
-        self.layers.push(layer)
+        self.layers.push(layer);
     }
 
     pub fn get_layer(&self, idx: usize) -> Option<&Layer<T>> {
@@ -44,14 +44,16 @@ impl<T: NNVFloat> DNN<T> {
     }
 
     pub fn forward1(&self, input: Array1<T>) -> Array1<T> {
-        self.layers.iter().fold(input, |x, layer| layer.forward1(x))
+        self.layers
+            .iter()
+            .fold(input, |x, layer| layer.forward1(&x))
     }
 
     pub fn forward_suffix1(&self, input: Array1<T>, position: &DNNIndex) -> Array1<T> {
         self.layers
             .iter()
             .skip(position.get_layer())
-            .fold(input, |x, layer| layer.forward1(x))
+            .fold(input, |x, layer| layer.forward1(&x))
     }
 }
 
@@ -122,7 +124,7 @@ impl<T: NNVFloat> Layer<T> {
     /// # Panics
     // pub fn calculate_output_shape(&self, _input_shape: &TensorShape) -> TensorShape {
 
-    pub fn forward1(&self, input: Array1<T>) -> Array1<T> {
+    pub fn forward1(&self, input: &Array1<T>) -> Array1<T> {
         match self {
             Layer::Dense(aff) => {
                 debug_assert_eq!(input.ndim(), 1);
@@ -238,7 +240,7 @@ impl DNNIndex {
             }
 
             if let Some(Layer::ReLU(ndims)) = dnn.get_layer(self.layer.unwrap()) {
-                self.remaining_steps = Some(*ndims - 1)
+                self.remaining_steps = Some(*ndims - 1);
             } else {
                 self.remaining_steps = None;
             }

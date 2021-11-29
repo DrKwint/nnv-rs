@@ -56,7 +56,7 @@ impl<T: NNVFloat> Polytope<T> {
     }
 
     pub fn add_constraints(&mut self, constraints: &Inequality<T>, check_redundant: bool) {
-        self.halfspaces.add_eqns(constraints, check_redundant)
+        self.halfspaces.add_eqns(constraints, check_redundant);
     }
 
     pub fn num_constraints(&self) -> usize {
@@ -68,7 +68,7 @@ impl<T: NNVFloat> Polytope<T> {
     }
 
     pub fn filter_trivial(&mut self) {
-        self.halfspaces.filter_trivial()
+        self.halfspaces.filter_trivial();
     }
 
     pub fn is_member(&self, point: &ArrayView1<T>) -> bool {
@@ -121,8 +121,7 @@ impl<T: NNVFloat> Polytope<T> {
             sq_constr_ub,
             max_accept_reject_iters,
         );
-        let inv_coeffs: Array2<T> =
-            util::pinv(&constraint_coeffs.mapv(|x| x.into())).mapv(|x| x.into());
+        let inv_coeffs: Array2<T> = util::pinv(&constraint_coeffs).mapv(Into::into);
         // println!("coeffs cond: {:?}", util::matrix_cond(&constraint_coeffs, &inv_coeffs.mapv(|x| x.into())));
         GaussianDistribution::TruncGaussian {
             distribution,

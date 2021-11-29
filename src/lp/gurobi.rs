@@ -3,12 +3,15 @@ use crate::bounds::Bounds1;
 use crate::lp::LinearSolution;
 use crate::NNVFloat;
 use grb::constr::IneqExpr;
-use grb::expr::Expr::{Constant, Linear};
-use grb::expr::LinExpr;
-use grb::prelude::*;
-use ndarray::Array1;
-use ndarray::ArrayView1;
+use grb::expr::{
+    Expr::{Constant, Linear},
+    LinExpr,
+};
+use grb::prelude::{add_var, attr, param, ConstrSense, Model, Status};
+use grb::VarType::Continuous;
+use ndarray::{Array1, ArrayView1};
 
+/// # Panics
 pub fn solve<'a, I, T: 'a + NNVFloat>(
     A: I,
     b: ArrayView1<T>,
@@ -24,9 +27,10 @@ where
     // Add variables
     let vars: Vec<_> = var_coeffs
         .iter()
+        .zip(var_bounds.bounds_iter())
         .enumerate()
-        .map(|(i, c)| {
-            add_var!(model, Continuous, obj: (*c).into(), name: &format!("v{}", i)).unwrap()
+        .map(|(i, (c, b))| {
+            add_var!(model, Continuous, obj: (*c).into(), name: &format!("v{}", i), bounds: b[[0]].into()..b[[1]].into()).unwrap()
         })
         .collect();
 
@@ -42,15 +46,15 @@ where
         let rhs = Constant((*b_i).into());
         IneqExpr { lhs, sense, rhs }
     });
-    let constrs: Vec<_> = (0..b.len())
+    let _constrs: Vec<_> = (0..b.len())
         .map(|i| format!("r{}", i))
         .zip(ineqs)
         .map(|(name, constr)| model.add_constr(&name, constr))
         .collect();
 
     // Optimize and get status
-    model.set_param(param::InfUnbdInfo, 1);
-    model.optimize();
+    model.set_param(param::InfUnbdInfo, 1).unwrap();
+    model.optimize().unwrap();
     let status = model.status().unwrap();
     let output = match status {
         Status::Optimal => LinearSolution::Solution(
