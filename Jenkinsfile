@@ -17,10 +17,10 @@ pipeline {
 
         stage('Bench') {
             steps {
-                sh 'cargo bench --features lp_coincbc,blas_intel-mkl'
                 sh 'cargo bench --features lp_gurobi,blas_intel-mkl'
-                sh 'RUST_LOG=trace cargo bench --features lp_coincbc,blas_intel-mkl'
+                sh 'cargo bench --features lp_coincbc,blas_intel-mkl'
                 sh 'RUST_LOG=trace cargo bench --features lp_gurobi,blas_intel-mkl'
+                sh 'RUST_LOG=trace cargo bench --features lp_coincbc,blas_intel-mkl'
             }
         }
     }

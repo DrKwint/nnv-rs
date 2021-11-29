@@ -40,7 +40,11 @@ where
         _shh_err = shh::stderr().unwrap();
     }
     let mut problem = ProblemVariables::new();
-    let vars = problem.add_vector(variable(), var_coeffs.len());
+    let vars: Vec<_> = var_bounds
+        .bounds_iter()
+        .into_iter()
+        .map(|b| problem.add(variable().bounds(b[[0]]..b[[1]])))
+        .collect();
     let c_expression = LinearExpression {
         coefficients: vars
             .iter()
