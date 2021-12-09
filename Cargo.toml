@@ -64,3 +64,4 @@ features = ["run-for-all", "precommit-hook", "run-cargo-check", "run-cargo-fmt"]
 lto = true
 codegen-units = 1
 panic = "abort"
+target-cpu = "native"

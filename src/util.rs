@@ -1,13 +1,43 @@
 //! Utility functions
 #![allow(non_snake_case)]
+use crate::NNVFloat;
 use itertools::iproduct;
 use ndarray::{s, Axis, Slice};
 use ndarray::{Array1, Array2, ArrayView1, ArrayView2};
+use ndarray_linalg::Scalar;
 use ndarray_linalg::SVD;
+use ndarray_stats::QuantileExt;
 use num::Float;
+use rand::Rng;
 use std::cmp::max;
 use std::fmt::Debug;
 use std::iter::Sum;
+
+pub fn gaussian_logp(x: &ArrayView1<f64>, mu: &ArrayView1<f64>, std: &ArrayView1<f64>) -> f64 {
+    let pre_sum: Array1<f64> = ((&(x - mu) / &(std + f64::epsilon())).mapv(f64::square)
+        + std.mapv(f64::ln) * (2.)
+        + std::f64::consts::TAU.ln())
+        * (-0.5);
+    pre_sum.sum()
+}
+
+pub fn diag_gaussian_accept_reject<R: Rng>(
+    x: &ArrayView1<f64>,
+    mu: &ArrayView1<f64>,
+    sigma: &ArrayView1<f64>,
+    rng: &mut R,
+) -> bool {
+    let likelihood = gaussian_logp(x, mu, sigma).exp();
+    let sample: f64 = rng.gen();
+    sample < likelihood
+    //(0..n_rounds).map(|_| rng.gen()).all(|x: f64| x < likelihood)
+}
+
+pub fn matrix_cond(A: &Array2<f64>, A_inv: &Array2<f64>) -> f64 {
+    let (_, sigma, _) = A.svd(false, false).unwrap();
+    let (_, inv_sigma, _) = A_inv.svd(false, false).unwrap();
+    return sigma.max_skipnan() * inv_sigma.max_skipnan();
+}
 
 pub fn l2_norm(x: ArrayView1<f64>) -> f64 {
     x.dot(&x).sqrt()

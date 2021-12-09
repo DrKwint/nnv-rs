@@ -21,6 +21,7 @@ use rand::Rng;
 use rand::SeedableRng;
 use rand_pcg::Pcg64;
 use std::process::Command;
+use std::time::Duration;
 
 fn build_dnn<R: Rng>(input_size: usize, rng: &mut R) -> DNN<f64> {
     let dense1 = Layer::new_dense(Affine2::new(
@@ -77,6 +78,8 @@ fn bench(c: &mut Criterion) {
     });
 
     let mut group = c.benchmark_group("constellation");
+    group.warm_up_time(Duration::from_secs(10));
+    group.measurement_time(Duration::from_secs(300));
     let mut local_rng = Pcg64::from_rng(&mut rng).unwrap();
     group.bench_function("constellation::sample_safe_star::random_net@0", |b| {
         b.iter_batched(
@@ -105,14 +108,14 @@ fn bench(c: &mut Criterion) {
         )
     });
     group.sample_size(10);
-    group.bench_function("constellation::sample_safe_star::random_net@-1000", |b| {
+    group.bench_function("constellation::sample_safe_star::random_net@-100", |b| {
         b.iter_batched(
             || {
                 let dnn = build_dnn(input_size, &mut local_rng);
                 Constellation::new(root_star.clone(), dnn, loc.clone(), scale.clone())
             },
             |mut constellation: Constellation<f64, Ix2>| {
-                let mut asterism = Asterism::new(&mut constellation, -1000.);
+                let mut asterism = Asterism::new(&mut constellation, -100.);
                 asterism.sample_safe_star(1, &mut rng, 100, 20, None, 1e-4);
             },
             criterion::BatchSize::SmallInput,

@@ -1,6 +1,8 @@
 use crate::bounds::Bounds1;
 use crate::constellation::Constellation;
 use crate::star_node::StarNodeType;
+use crate::util::diag_gaussian_accept_reject;
+use crate::util::gaussian_logp;
 use crate::NNVFloat;
 use log::{debug, info};
 use ndarray::{concatenate, s, Array1, Axis, Dimension, Ix2};
@@ -83,7 +85,7 @@ impl<'a, T: NNVFloat> Asterism<'a, T, Ix2> {
                                 total_infeasible_cdf: &mut T,
                                 rng: &mut R|
          -> usize {
-            info!("Infeasible reset!");
+            info!("Infeasible reset at depth {}!", path.len());
             me.set_feasible(x, false);
             let mut infeas_cdf =
                 me.constellation
@@ -131,19 +133,20 @@ impl<'a, T: NNVFloat> Asterism<'a, T, Ix2> {
             match safe_sample_opt {
                 Ok((safe_sample, est_cost)) => {
                     info!(
-                        "Safe sample with value {} less than {} at depth {:?}",
+                        "Safe sample with value {} less than {} at depth {}",
                         est_cost,
                         self.safe_value,
                         path.len()
                     );
                     return Some((vec![safe_sample], path_logp, total_infeasible_cdf));
                 }
-                Err((unsafe_sample, val)) => {
+                Err(Some((unsafe_sample, val))) => {
                     if val < best_sample_val {
                         best_sample = Some(unsafe_sample);
                         best_sample_val = val;
                     }
                 }
+                Err(None) => {}
             };
             // check feasibility of current node
             {
@@ -212,7 +215,7 @@ impl<'a, T: NNVFloat> Asterism<'a, T, Ix2> {
             if let Some(time_limit) = time_limit_opt {
                 if start_time.elapsed() >= time_limit {
                     info!(
-                        "Unsafe sample after timeout with value with value {:?} at depth {}",
+                        "Unsafe sample after timeout with value {:?} at depth {}",
                         best_sample_val,
                         path.len()
                     );
@@ -261,7 +264,7 @@ impl<'a, T: NNVFloat> Asterism<'a, T, Ix2> {
         num_samples: usize,
         max_iters: usize,
         stability_eps: T,
-    ) -> Result<(Array1<T>, T), (Array1<T>, T)> {
+    ) -> Result<(Array1<T>, T), Option<(Array1<T>, T)>> {
         let unsafe_sample = self.constellation.sample_gaussian_node(
             current_node,
             rng,
@@ -269,22 +272,56 @@ impl<'a, T: NNVFloat> Asterism<'a, T, Ix2> {
             max_iters,
             stability_eps,
         );
+        let input_set = self
+            .constellation
+            .get_node_reduced_input_polytope(current_node);
         let unsafe_len = unsafe_sample[0].len();
         let fixed_input_part: Option<Array1<T>> = self
             .constellation
             .get_node_input_bounds(current_node)
             .map(|bounds| {
-                let fixed_bounds: Bounds1<T> = bounds.split_at(unsafe_len).1;
+                let fixed_bounds: Bounds1<T> = bounds.split_at(bounds.ndim() - unsafe_len).0;
                 let fixed_array: Array1<T> = fixed_bounds.lower().to_owned();
                 fixed_array
             });
-        let mut best_sample = Array1::zeros(1);
+        let mut rng = rand::thread_rng();
+        let mut best_sample = None;
         let mut best_val = T::infinity();
         let sample_opt: Option<(Array1<T>, T)> = if let Some(fixed_input_part) = fixed_input_part {
             let mut input_iter = unsafe_sample
                 .into_iter()
+                .filter(|x| match &input_set {
+                    Some(poly) => poly.is_member(&x.view()),
+                    None => true,
+                })
+                .filter(|x| {
+                    /*
+                    diag_gaussian_accept_reject(
+                        &x.mapv(|x| x.into()).view(),
+                        &self.constellation.get_loc().mapv(|x| x.into()).view(),
+                        &self
+                            .constellation
+                            .get_scale()
+                            .diag()
+                            .mapv(|x| x.into())
+                            .view(),
+                        &mut rng,
+                    )
+                    */
+                    let logp = gaussian_logp(
+                        &x.mapv(|x| x.into()).view(),
+                        &self.constellation.get_loc().mapv(|x| x.into()).view(),
+                        &self
+                            .constellation
+                            .get_scale()
+                            .diag()
+                            .mapv(|x| x.into())
+                            .view(),
+                    );
+                    logp > -2.5
+                })
                 .zip(iter::repeat(fixed_input_part))
-                .map(|(unfix, fix)| concatenate(Axis(0), &[unfix.view(), fix.view()]).unwrap());
+                .map(|(unfix, fix)| concatenate(Axis(0), &[fix.view(), unfix.view()]).unwrap());
             input_iter.find_map(|x| {
                 let output = self.constellation.get_dnn().forward1(x.clone());
                 debug_assert_eq!(output.len(), 1);
@@ -292,7 +329,7 @@ impl<'a, T: NNVFloat> Asterism<'a, T, Ix2> {
                     Some((x, output[[0]]))
                 } else {
                     if output[[0]] < best_val {
-                        best_sample = x;
+                        best_sample = Some(x);
                         best_val = output[[0]];
                     }
                     None
@@ -307,7 +344,7 @@ impl<'a, T: NNVFloat> Asterism<'a, T, Ix2> {
                     Some((x, output[[0]]))
                 } else {
                     if output[[0]] < best_val {
-                        best_sample = x;
+                        best_sample = Some(x);
                         best_val = output[[0]];
                     }
                     None
@@ -316,10 +353,12 @@ impl<'a, T: NNVFloat> Asterism<'a, T, Ix2> {
         };
         sample_opt
             .map(|(sample, est_cost)| {
-                let unfixed = sample.slice(s![..unsafe_len]).to_owned();
+                let unfixed = sample.slice(s![-(unsafe_len as isize)..]).to_owned();
                 (unfixed, est_cost)
             })
-            .ok_or_else(|| (best_sample.slice(s![..unsafe_len]).to_owned(), best_val))
+            .ok_or_else(|| {
+                (best_sample.map(|x| (x.slice(s![-(unsafe_len as isize)..]).to_owned(), best_val)))
+            })
     }
 
     /// Given a node, samples one of its children and returns the log probability

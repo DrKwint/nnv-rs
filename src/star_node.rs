@@ -6,9 +6,11 @@ use crate::dnn::DNNIndex;
 use crate::dnn::DNNIterator;
 use crate::dnn::DNN;
 use crate::gaussian::GaussianDistribution;
+use crate::polytope::Polytope;
 use crate::star::Star;
 use crate::NNVFloat;
 use log::trace;
+use ndarray::ArrayView1;
 use ndarray::Dimension;
 use ndarray::Ix2;
 use ndarray::{Array1, Array2};
@@ -145,6 +147,19 @@ impl<T: NNVFloat, D: Dimension> StarNode<T, D> {
 }
 
 impl<T: NNVFloat> StarNode<T, Ix2> {
+    pub fn is_input_member(&self, point: &ArrayView1<T>) -> bool {
+        match self.star.input_space_polytope() {
+            Some(poly) => poly.is_member(point),
+            None => true,
+        }
+    }
+
+    pub fn get_reduced_input_polytope(&self) -> Option<Polytope<T>> {
+        self.star
+            .input_space_polytope()
+            .and_then(Polytope::reduce_fixed_inputs)
+    }
+
     /// None indicates that the distribution hasn't been calculated/constructed
     pub fn try_get_gaussian_distribution(&self) -> Option<&GaussianDistribution<T>> {
         self.gaussian_distribution.as_ref()

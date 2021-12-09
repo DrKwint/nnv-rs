@@ -3,12 +3,14 @@ use crate::bounds::Bounds1;
 use crate::dnn::DNNIterator;
 use crate::dnn::{DNNIndex, DNN};
 use crate::gaussian::GaussianDistribution;
+use crate::polytope::Polytope;
 use crate::star::Star;
 use crate::star_node::StarNode;
 use crate::star_node::StarNodeOp;
 use crate::star_node::StarNodeType;
 use crate::util::ArenaLike;
 use crate::NNVFloat;
+use ndarray::ArrayView1;
 use ndarray::Dimension;
 use ndarray::Ix2;
 use ndarray::{Array1, Array2};
@@ -68,6 +70,7 @@ impl<T: NNVFloat, D: Dimension> Constellation<T, D> {
         let star_node = StarNode::default(input_star, None);
         self.arena = vec![star_node];
         self.node_type = vec![None];
+        self.parents = vec![None];
     }
 }
 
@@ -139,6 +142,14 @@ impl<T: crate::NNVFloat> Constellation<T, Ix2> {
 
     pub fn is_node_leaf(&mut self, id: usize, stability_eps: T) -> bool {
         *self.get_node_type(id, stability_eps) == StarNodeType::Leaf
+    }
+
+    pub fn get_node_reduced_input_polytope(&self, node_id: usize) -> Option<Polytope<T>> {
+        self.arena[node_id].get_reduced_input_polytope()
+    }
+
+    pub fn is_node_member(&self, node_id: usize, point: &ArrayView1<T>) -> bool {
+        self.arena[node_id].is_input_member(point)
     }
 
     pub fn get_node_cdf<R: Rng>(
