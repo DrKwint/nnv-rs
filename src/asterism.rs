@@ -1,7 +1,6 @@
 use crate::bounds::Bounds1;
 use crate::constellation::Constellation;
 use crate::star_node::StarNodeType;
-use crate::util::diag_gaussian_accept_reject;
 use crate::util::gaussian_logp;
 use crate::NNVFloat;
 use log::{debug, info};
@@ -357,7 +356,7 @@ impl<'a, T: NNVFloat> Asterism<'a, T, Ix2> {
                 (unfixed, est_cost)
             })
             .ok_or_else(|| {
-                (best_sample.map(|x| (x.slice(s![-(unsafe_len as isize)..]).to_owned(), best_val)))
+                best_sample.map(|x| (x.slice(s![-(unsafe_len as isize)..]).to_owned(), best_val))
             })
     }
 
