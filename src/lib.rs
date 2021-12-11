@@ -58,3 +58,22 @@ pub trait NNVFloat = 'static
     + std::iter::Sum
     + approx::AbsDiffEq
     + rand::distributions::uniform::SampleUniform;
+
+pub mod trunks {
+    use ndarray::{Array1, Array2, Axis};
+    use crate::polytope::Polytope;
+    use crate::bounds::Bounds1;
+
+    pub fn halfspace_gaussian_cdf(coeffs: Array1<f64>, rhs: f64, mu: Array1<f64>, sigma: Array1<f64>) -> f64 {
+        let mut rng = rand::thread_rng();
+        let bounds = Bounds1::trivial(coeffs.len());
+        let polytope = Polytope::new(coeffs.insert_axis(Axis(0)), Array1::from_vec(vec![rhs]), bounds);
+        let mut truncnorm = polytope.get_truncnorm_distribution(
+            &mu,
+            &Array2::from_diag(&sigma),
+            3,
+            1e-10,
+        );
+        truncnorm.cdf(1000, &mut rng)
+    }
+}

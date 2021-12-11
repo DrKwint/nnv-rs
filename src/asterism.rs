@@ -317,7 +317,7 @@ impl<'a, T: NNVFloat> Asterism<'a, T, Ix2> {
                             .mapv(|x| x.into())
                             .view(),
                     );
-                    logp > -2.5
+                    logp > -1.8
                 })
                 .zip(iter::repeat(fixed_input_part))
                 .map(|(unfix, fix)| concatenate(Axis(0), &[fix.view(), unfix.view()]).unwrap());
