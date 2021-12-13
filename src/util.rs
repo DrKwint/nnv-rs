@@ -1,6 +1,5 @@
 //! Utility functions
 #![allow(non_snake_case)]
-use crate::NNVFloat;
 use itertools::iproduct;
 use ndarray::{s, Axis, Slice};
 use ndarray::{Array1, Array2, ArrayView1, ArrayView2};

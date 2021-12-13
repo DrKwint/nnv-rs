@@ -13,43 +13,49 @@ use ndarray::ArrayD;
 use ndarray::Ix1;
 use ndarray::Ix2;
 use ndarray::Ix4;
+use num::Zero;
+use serde::{Deserialize, Serialize};
 use std::fmt;
 
-#[derive(Default, Clone, Debug)]
-pub struct DNN<T: NNVFloat> {
-    layers: Vec<Layer<T>>,
+#[derive(Default, Clone, Debug, Serialize, Deserialize)]
+pub struct DNN {
+    layers: Vec<Layer>,
 }
 
-impl<T: NNVFloat> DNN<T> {
-    pub fn new(layers: Vec<Layer<T>>) -> Self {
+impl DNN {
+    pub fn new(layers: Vec<Layer>) -> Self {
         Self { layers }
     }
 
-    pub fn add_layer(&mut self, layer: Layer<T>) {
+    pub fn add_layer(&mut self, layer: Layer) {
         self.layers.push(layer);
     }
 
-    pub fn get_layer(&self, idx: usize) -> Option<&Layer<T>> {
+    pub fn get_layer(&self, idx: usize) -> Option<&Layer> {
         self.layers.get(idx)
     }
 
-    pub fn get_layers(&self) -> &[Layer<T>] {
+    pub fn get_layers(&self) -> &[Layer] {
         &self.layers
     }
 }
 
-impl<T: NNVFloat> DNN<T> {
-    pub fn forward(&self, input: ArrayD<T>) -> ArrayD<T> {
+impl DNN {
+    pub fn forward(&self, input: ArrayD<NNVFloat>) -> ArrayD<NNVFloat> {
         self.layers.iter().fold(input, |x, layer| layer.forward(x))
     }
 
-    pub fn forward1(&self, input: Array1<T>) -> Array1<T> {
+    pub fn forward1(&self, input: Array1<NNVFloat>) -> Array1<NNVFloat> {
         self.layers
             .iter()
             .fold(input, |x, layer| layer.forward1(&x))
     }
 
-    pub fn forward_suffix1(&self, input: Array1<T>, position: &DNNIndex) -> Array1<T> {
+    pub fn forward_suffix1(
+        &self,
+        input: Array1<NNVFloat>,
+        position: &DNNIndex,
+    ) -> Array1<NNVFloat> {
         self.layers
             .iter()
             .skip(position.get_layer())
@@ -57,36 +63,36 @@ impl<T: NNVFloat> DNN<T> {
     }
 }
 
-impl<T: NNVFloat> DNN<T> {
+impl DNN {
     pub fn input_shape(&self) -> TensorShape {
         self.layers[0].input_shape()
     }
 }
 
-impl<T: NNVFloat> fmt::Display for DNN<T> {
+impl fmt::Display for DNN {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let layers: Vec<String> = self.layers.iter().map(|x| format!("{}", x)).collect();
         write!(f, "Input {} => {}", self.input_shape(), layers.join(" => "))
     }
 }
 
-#[derive(Clone, Debug)]
-pub enum Layer<T: NNVFloat> {
-    Dense(Affine<T, Ix2>),
-    Conv(Affine<T, Ix4>),
-    BatchNorm(Affine<T, Ix2>),
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub enum Layer {
+    Dense(Affine<Ix2>),
+    Conv(Affine<Ix4>),
+    BatchNorm(Affine<Ix2>),
     MaxPooling2D(usize),
     Flatten,
     ReLU(usize),
-    Dropout(T),
+    Dropout(NNVFloat),
 }
 
-impl<T: NNVFloat> Layer<T> {
-    pub fn new_dense(aff: Affine2<T>) -> Self {
+impl Layer {
+    pub fn new_dense(aff: Affine2) -> Self {
         Self::Dense(aff)
     }
 
-    pub fn new_conv(aff: Affine4<T>) -> Self {
+    pub fn new_conv(aff: Affine4) -> Self {
         Self::Conv(aff)
     }
 
@@ -99,7 +105,7 @@ impl<T: NNVFloat> Layer<T> {
     }
 }
 
-impl<T: NNVFloat> Layer<T> {
+impl Layer {
     /// # Panics
     pub fn input_shape(&self) -> TensorShape {
         match self {
@@ -124,32 +130,44 @@ impl<T: NNVFloat> Layer<T> {
     /// # Panics
     // pub fn calculate_output_shape(&self, _input_shape: &TensorShape) -> TensorShape {
 
-    pub fn forward1(&self, input: &Array1<T>) -> Array1<T> {
+    pub fn forward1(&self, input: &Array1<NNVFloat>) -> Array1<NNVFloat> {
         match self {
             Layer::Dense(aff) => {
                 debug_assert_eq!(input.ndim(), 1);
                 aff.apply(&input.view())
             }
-            Layer::ReLU(_) => input.mapv(|x| if x.lt(&T::zero()) { T::zero() } else { x }),
+            Layer::ReLU(_) => input.mapv(|x| {
+                if x.lt(&NNVFloat::zero()) {
+                    NNVFloat::zero()
+                } else {
+                    x
+                }
+            }),
             _ => panic!(),
         }
     }
 
     /// # Panics
-    pub fn forward(&self, input: ArrayD<T>) -> ArrayD<T> {
+    pub fn forward(&self, input: ArrayD<NNVFloat>) -> ArrayD<NNVFloat> {
         match self {
             Layer::Dense(aff) => {
                 debug_assert_eq!(input.ndim(), 1);
                 aff.apply(&input.into_dimensionality::<Ix1>().unwrap().view())
                     .into_dyn()
             }
-            Layer::ReLU(_) => input.mapv(|x| if x.lt(&T::zero()) { T::zero() } else { x }),
+            Layer::ReLU(_) => input.mapv(|x| {
+                if x.lt(&NNVFloat::zero()) {
+                    NNVFloat::zero()
+                } else {
+                    x
+                }
+            }),
             _ => panic!(),
         }
     }
 
     /// # Panics
-    pub fn apply_star2(&self, star: &Star<T, Ix2>) -> Star<T, Ix2> {
+    pub fn apply_star2(&self, star: &Star<Ix2>) -> Star<Ix2> {
         match self {
             Layer::Dense(aff) => star.affine_map2(aff),
             _ => panic!(),
@@ -157,14 +175,14 @@ impl<T: NNVFloat> Layer<T> {
     }
 }
 
-impl<T: NNVFloat> Layer<T> {
+impl Layer {
     /// # Panics
     pub fn apply_bounds(
         &self,
-        lower_aff: &Affine2<T>,
-        upper_aff: &Affine2<T>,
-        bounds: &Bounds1<T>,
-    ) -> (Bounds1<T>, (Affine2<T>, Affine2<T>)) {
+        lower_aff: &Affine2,
+        upper_aff: &Affine2,
+        bounds: &Bounds1,
+    ) -> (Bounds1, (Affine2, Affine2)) {
         match self {
             Layer::Dense(aff) => {
                 let new_lower = aff.signed_compose(lower_aff, upper_aff);
@@ -194,7 +212,7 @@ impl<T: NNVFloat> Layer<T> {
     }
 }
 
-impl<T: NNVFloat> fmt::Display for Layer<T> {
+impl fmt::Display for Layer {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             Layer::Dense(aff) => write!(f, "Dense {}", aff.output_dim()),
@@ -207,7 +225,7 @@ impl<T: NNVFloat> fmt::Display for Layer<T> {
     }
 }
 
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy, Default, Deserialize, Serialize)]
 /// Indicated which operations have already been run
 pub struct DNNIndex {
     layer: Option<usize>,
@@ -219,7 +237,7 @@ impl DNNIndex {
         self.layer.map_or(0, |x| x + 1)
     }
 
-    fn increment<T: NNVFloat>(&mut self, dnn: &DNN<T>) {
+    fn increment(&mut self, dnn: &DNN) {
         // Decrement active relu
         let mut advance_layer_flag = false;
         if let Some(ref mut step) = self.remaining_steps {
@@ -249,13 +267,13 @@ impl DNNIndex {
 }
 
 #[derive(Debug, Clone)]
-pub struct DNNIterator<'a, T: NNVFloat> {
-    dnn: &'a DNN<T>,
+pub struct DNNIterator<'a> {
+    dnn: &'a DNN,
     idx: DNNIndex,
     finished: bool,
 }
 
-impl<'a, T: NNVFloat> fmt::Display for DNNIterator<'a, T> {
+impl<'a> fmt::Display for DNNIterator<'a> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(
             f,
@@ -265,8 +283,8 @@ impl<'a, T: NNVFloat> fmt::Display for DNNIterator<'a, T> {
     }
 }
 
-impl<'a, T: NNVFloat> DNNIterator<'a, T> {
-    pub fn new(dnn: &'a DNN<T>, idx: DNNIndex) -> Self {
+impl<'a> DNNIterator<'a> {
+    pub fn new(dnn: &'a DNN, idx: DNNIndex) -> Self {
         Self {
             dnn,
             idx,
@@ -279,8 +297,8 @@ impl<'a, T: NNVFloat> DNNIterator<'a, T> {
     }
 }
 
-impl<T: NNVFloat> Iterator for DNNIterator<'_, T> {
-    type Item = StarNodeOp<T>;
+impl Iterator for DNNIterator<'_> {
+    type Item = StarNodeOp;
 
     fn next(&mut self) -> Option<Self::Item> {
         trace!("dnn iterator idx {:?}", self.get_idx());
@@ -336,7 +354,7 @@ mod tests {
 
     #[test]
     fn test_dnn_index_increment() {
-        let mut dnn = DNN::<f64>::default();
+        let mut dnn = DNN::default();
         dnn.add_layer(Layer::new_relu(4));
 
         let mut idx = DNNIndex {

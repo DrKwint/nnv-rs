@@ -1,21 +1,21 @@
 use crate::constellation::Constellation;
+use crate::num::One;
 use crate::NNVFloat;
 use ndarray::{Array1, Dimension, Ix2};
 use ordered_float::OrderedFloat;
 use rand::{thread_rng, Rng};
 use std::collections::BinaryHeap;
-use std::convert::TryInto;
 
 /// Frontier contains pairs of weight and index into the constellation arena
 #[derive(Debug)]
-struct Belt<'a, T: NNVFloat, D: Dimension> {
-    constellation: &'a mut Constellation<T, D>,
-    frontier: BinaryHeap<(OrderedFloat<T>, usize)>, // Tuples are ordered lexicographically
-    leaves: Vec<(OrderedFloat<T>, usize)>,
+struct Belt<'a, D: Dimension> {
+    constellation: &'a mut Constellation<D>,
+    frontier: BinaryHeap<(OrderedFloat<NNVFloat>, usize)>, // Tuples are ordered lexicographically
+    leaves: Vec<(OrderedFloat<NNVFloat>, usize)>,
 }
 
-impl<'a, T: NNVFloat, D: Dimension> Belt<'a, T, D> {
-    pub fn new(constellation: &'a mut Constellation<T, D>) -> Self {
+impl<'a, D: Dimension> Belt<'a, D> {
+    pub fn new(constellation: &'a mut Constellation<D>) -> Self {
         let root_id = constellation.get_root_id();
         Self {
             constellation,
@@ -25,7 +25,7 @@ impl<'a, T: NNVFloat, D: Dimension> Belt<'a, T, D> {
     }
 }
 
-impl<'a, T: crate::NNVFloat> Belt<'a, T, Ix2> {
+impl<'a> Belt<'a, Ix2> {
     /// Expansion criteria: in importance sampling, it is optimal to choose $q$
     /// that maximizes $p|f|$. So in this first iteration, our strategy will be
     /// to choose a weighting that overapproximates by using the cdf for $p$ as
@@ -34,7 +34,7 @@ impl<'a, T: crate::NNVFloat> Belt<'a, T, Ix2> {
     /// We'll always choose the node with greatest weight as the next to expand
     ///
     /// I'm so meta, even this acronym -XKCD
-    pub fn expand<R: Rng>(&mut self, rng: &mut R, stability_eps: T) -> bool {
+    pub fn expand<R: Rng>(&mut self, rng: &mut R, stability_eps: NNVFloat) -> bool {
         if let Some((_weight, next)) = self.frontier.pop() {
             let children = self.constellation.get_node_child_ids(next, stability_eps);
             for idx in children {
@@ -61,13 +61,13 @@ impl<'a, T: crate::NNVFloat> Belt<'a, T, Ix2> {
     ///
     /// Returns:
     ///     `E_{N(mu, sigma)}[f]` where `f` is the underlying DNN, i.e. the expected value of the output
-    pub fn importance_sample(&mut self, n_samples: T, stability_eps: T) -> T {
+    pub fn importance_sample(&mut self, n_samples: NNVFloat, stability_eps: NNVFloat) -> NNVFloat {
         let mut rng = thread_rng();
-        let total_weight: T = self
+        let total_weight: NNVFloat = self
             .frontier
             .iter()
             .map(|(weight, _idx)| weight)
-            .sum::<OrderedFloat<T>>()
+            .sum::<OrderedFloat<NNVFloat>>()
             .0;
         self.frontier
             .clone()
@@ -75,17 +75,17 @@ impl<'a, T: crate::NNVFloat> Belt<'a, T, Ix2> {
             .chain(self.leaves.clone().iter())
             .map(|(weight, idx)| {
                 let star_prob = weight.0 / total_weight;
-                let n_local_samples = ((star_prob * n_samples).into() as u64).try_into().unwrap();
-                let local_samples: Vec<Array1<T>> = self
+                let n_local_samples: usize = (star_prob * n_samples) as usize;
+                let local_samples: Vec<Array1<NNVFloat>> = self
                     .constellation
                     .sample_gaussian_node_output(*idx, &mut rng, n_local_samples, 10, stability_eps)
                     .into_iter()
                     .collect();
-                let local_sum: T = local_samples.iter().map(|x| x[[0]]).sum();
-                let local_mean: T = local_sum / (local_samples.len() as f64).into();
+                let local_sum: NNVFloat = local_samples.iter().map(|x| x[[0]]).sum();
+                let local_mean: NNVFloat = local_sum / (local_samples.len() as NNVFloat);
                 local_mean * weight.0
             })
-            .sum::<T>()
+            .sum::<NNVFloat>()
             / total_weight
     }
 }

@@ -16,10 +16,12 @@ use ndarray::Dimension;
 use ndarray::Ix4;
 use ndarray::{Array1, Array2};
 use ndarray::{Axis, Ix2};
+use num::Float;
+use serde::{Deserialize, Serialize};
 use std::fmt::Debug;
 
-pub type Star2<A> = Star<A, Ix2>;
-pub type Star4<A> = Star<A, Ix4>;
+pub type Star2 = Star<Ix2>;
+pub type Star4 = Star<Ix4>;
 
 /// Representation of a set acted on by a deep neural network (DNN)
 ///
@@ -39,36 +41,36 @@ pub type Star4<A> = Star<A, Ix4>;
 /// Based on: Tran, Hoang-Dung, et al. "Star-based reachability analysis of
 /// deep neural networks." International Symposium on Formal Methods. Springer,
 /// Cham, 2019.
-#[derive(Clone, Debug)]
-pub struct Star<T: NNVFloat, D: Dimension> {
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct Star<D: Dimension> {
     /// `representation` is the concatenation of [basis center] (where
     /// center is a column vector) and captures information about the
     /// transformed set
-    representation: Affine<T, D>,
+    representation: Affine<D>,
     /// `constraints` is the concatenation of [coeffs upper_bounds]
     /// and is a representation of the input polyhedron
-    constraints: Option<Polytope<T>>,
+    constraints: Option<Polytope>,
 }
 
-impl<T: NNVFloat, D: Dimension> Star<T, D> {
+impl<D: Dimension> Star<D> {
     pub fn ndim(&self) -> usize {
         self.representation.ndim()
     }
 
-    pub fn input_space_polytope(&self) -> Option<&Polytope<T>> {
+    pub fn input_space_polytope(&self) -> Option<&Polytope> {
         self.constraints.as_ref()
     }
 
-    pub fn center(&self) -> ArrayView1<T> {
+    pub fn center(&self) -> ArrayView1<NNVFloat> {
         self.representation.shift()
     }
 
-    pub fn get_representation(&self) -> &Affine<T, D> {
+    pub fn get_representation(&self) -> &Affine<D> {
         &self.representation
     }
 }
 
-impl<T: NNVFloat, D: Dimension> Star<T, D> {
+impl<D: Dimension> Star<D> {
     pub fn num_constraints(&self) -> usize {
         match &self.constraints {
             Some(polytope) => polytope.num_constraints(),
@@ -78,11 +80,7 @@ impl<T: NNVFloat, D: Dimension> Star<T, D> {
 
     /// Add constraints to restrict the input set. Each row represents a
     /// constraint and the last column represents the upper bounds.
-    pub fn add_constraints(
-        mut self,
-        new_constraints: &Inequality<T>,
-        check_redundant: bool,
-    ) -> Self {
+    pub fn add_constraints(mut self, new_constraints: &Inequality, check_redundant: bool) -> Self {
         if let Some(ref mut constrs) = self.constraints {
             constrs.add_constraints(new_constraints, check_redundant);
         } else {
@@ -92,27 +90,27 @@ impl<T: NNVFloat, D: Dimension> Star<T, D> {
     }
 }
 
-impl<T: NNVFloat> Star2<T> {
-    pub fn get_constraint_coeffs(&self) -> Option<Array2<T>> {
+impl Star2 {
+    pub fn get_constraint_coeffs(&self) -> Option<Array2<NNVFloat>> {
         self.constraints.as_ref().map(|x| x.coeffs().to_owned())
     }
 
-    pub fn get_safe_subset(&self, safe_value: T) -> Self {
+    pub fn get_safe_subset(&self, safe_value: NNVFloat) -> Self {
         let subset = self.clone();
-        let mut new_constr: Inequality<T> = self.representation.clone().into();
+        let mut new_constr: Inequality = self.representation.clone().into();
         let mut rhs = new_constr.rhs_mut();
-        rhs *= T::neg(T::one());
+        rhs *= -1.;
         rhs += safe_value;
         subset.add_constraints(&new_constr, false)
     }
 
     pub fn get_input_trunc_gaussian(
         &self,
-        mu: &Array1<T>,
-        sigma: &Array2<T>,
+        mu: &Array1<NNVFloat>,
+        sigma: &Array2<NNVFloat>,
         max_accept_reject_iters: usize,
-        stability_eps: T,
-    ) -> Option<GaussianDistribution<T>> {
+        stability_eps: NNVFloat,
+    ) -> Option<GaussianDistribution> {
         self.constraints
             .as_ref()
             .and_then(Polytope::reduce_fixed_inputs)
@@ -139,7 +137,7 @@ impl<T: NNVFloat> Star2<T> {
     /// Create a new Star with given basis vector and center.
     ///
     /// By default this Star covers the space because it has no constraints. To add constraints call `.add_constraints`.
-    pub fn new(basis: Array2<T>, center: Array1<T>) -> Self {
+    pub fn new(basis: Array2<NNVFloat>, center: Array1<NNVFloat>) -> Self {
         Self {
             representation: Affine2::new(basis, center),
             constraints: None,
@@ -147,7 +145,7 @@ impl<T: NNVFloat> Star2<T> {
     }
 
     /// # Panics
-    pub fn with_constraints(mut self, constraints: Polytope<T>) -> Self {
+    pub fn with_constraints(mut self, constraints: Polytope) -> Self {
         debug_assert!(!self.constraints.is_some(), "explicit panic");
         self.constraints = Some(constraints);
         self
@@ -164,12 +162,12 @@ impl<T: NNVFloat> Star2<T> {
     }
 }
 
-impl<T: NNVFloat> Star2<T> {
-    pub fn get_input_bounds(&self) -> Option<&Bounds1<T>> {
+impl Star2 {
+    pub fn get_input_bounds(&self) -> Option<&Bounds1> {
         self.constraints.as_ref().map(Polytope::get_bounds)
     }
 
-    pub fn with_input_bounds(mut self, input_bounds: Bounds1<T>) -> Self {
+    pub fn with_input_bounds(mut self, input_bounds: Bounds1) -> Self {
         if self.constraints.is_some() {
             self.constraints = self.constraints.map(|x| x.with_input_bounds(input_bounds));
         } else {
@@ -179,9 +177,9 @@ impl<T: NNVFloat> Star2<T> {
     }
 }
 
-impl<T: NNVFloat> Star2<T> {
+impl Star2 {
     /// Apply an affine transformation to the representation
-    pub fn affine_map2(&self, affine: &Affine<T, Ix2>) -> Self {
+    pub fn affine_map2(&self, affine: &Affine<Ix2>) -> Self {
         Self {
             representation: affine * &self.representation,
             constraints: self.constraints.clone(),
@@ -189,11 +187,11 @@ impl<T: NNVFloat> Star2<T> {
     }
 }
 
-impl<T: NNVFloat> Star2<T> {
+impl Star2 {
     pub fn step_relu2(&self, index: usize) -> (Option<Self>, Option<Self>) {
-        let neg_one: T = std::convert::From::from(-1.);
+        let neg_one: NNVFloat = std::convert::From::from(-1.);
 
-        let mut new_constr: Inequality<T> = {
+        let mut new_constr: Inequality = {
             let mut aff = self.representation.get_eqn(index);
             let neg_basis_part = &aff.basis() * neg_one;
             aff.basis_mut().assign(&neg_basis_part);
@@ -232,7 +230,7 @@ impl<T: NNVFloat> Star2<T> {
     }
 
     #[cfg(feature = "rayon")]
-    pub fn par_get_min(&self, idx: usize) -> T {
+    pub fn par_get_min(&self, idx: usize) -> NNVFloat {
         let eqn = self.representation.get_eqn(idx);
 
         if let Some(ref poly) = self.constraints {
@@ -247,7 +245,7 @@ impl<T: NNVFloat> Star2<T> {
                 panic!()
             }
         } else {
-            T::neg_infinity()
+            NNVFloat::neg_infinity()
         }
     }
 
@@ -266,11 +264,11 @@ impl<T: NNVFloat> Star2<T> {
     /// solve function. Currently this is way too hard to do, so we
     /// panic instead. We have an assumption that we start with a
     /// bounded box and therefore should never be unbounded.
-    pub fn get_min(&self, idx: usize) -> T {
+    pub fn get_min(&self, idx: usize) -> NNVFloat {
         let eqn = self.representation.get_eqn(idx);
 
         self.constraints.as_ref().map_or_else(
-            || T::neg_infinity(),
+            || NNVFloat::neg_infinity(),
             |poly| {
                 let solved = solve(
                     poly.coeffs().rows(),
@@ -279,7 +277,7 @@ impl<T: NNVFloat> Star2<T> {
                     poly.get_bounds(),
                 );
                 if let LinearSolution::Solution(_, val) = solved {
-                    eqn.shift()[0] + val.into()
+                    eqn.shift()[0] + val
                 } else {
                     panic!("Solution: {:?}", solved)
                 }
@@ -288,8 +286,8 @@ impl<T: NNVFloat> Star2<T> {
     }
 
     #[cfg(feature = "rayon")]
-    pub fn par_get_max(&self, idx: usize) -> T {
-        let neg_one: T = std::convert::From::from(-1.);
+    pub fn par_get_max(&self, idx: usize) -> NNVFloat {
+        let neg_one: NNVFloat = std::convert::From::from(-1.);
         let mut eqn = self.representation.get_eqn(idx);
         let shift = eqn.shift()[0];
         eqn *= neg_one;
@@ -306,7 +304,7 @@ impl<T: NNVFloat> Star2<T> {
                 panic!()
             }
         } else {
-            T::infinity()
+            NNVFloat::infinity()
         }
     }
 
@@ -318,14 +316,14 @@ impl<T: NNVFloat> Star2<T> {
     ///
     /// # Panics
     /// TODO: Change output type to Option<T>
-    pub fn get_max(&self, idx: usize) -> T {
-        let neg_one: T = std::convert::From::from(-1.);
+    pub fn get_max(&self, idx: usize) -> NNVFloat {
+        let neg_one: NNVFloat = std::convert::From::from(-1.);
         let mut eqn = self.representation.get_eqn(idx);
         let shift = eqn.shift()[0];
         eqn *= neg_one;
 
         self.constraints.as_ref().map_or_else(
-            || T::infinity(),
+            || NNVFloat::infinity(),
             |poly| {
                 let solved = solve(
                     poly.coeffs().rows(),
@@ -334,7 +332,7 @@ impl<T: NNVFloat> Star2<T> {
                     poly.get_bounds(),
                 );
                 if let LinearSolution::Solution(_, val) = solved {
-                    shift - val.into()
+                    shift - val
                 } else {
                     panic!()
                 }
@@ -342,7 +340,7 @@ impl<T: NNVFloat> Star2<T> {
         )
     }
 
-    pub fn calculate_axis_aligned_bounding_box(&self) -> Bounds1<T> {
+    pub fn calculate_axis_aligned_bounding_box(&self) -> Bounds1 {
         let lbs = Array1::from_iter((0..self.representation_space_dim()).map(|x| self.get_min(x)));
         let ubs = Array1::from_iter((0..self.representation_space_dim()).map(|x| self.get_max(x)));
         Bounds1::new(lbs.view(), ubs.view())
@@ -356,7 +354,7 @@ impl<T: NNVFloat> Star2<T> {
     }
 }
 
-impl<T: NNVFloat> Star4<T> {
+impl Star4 {
     /// Create a new Star with given dimension.
     ///
     /// By default this Star covers the space because it has no constraints. To add constraints call `.add_constraints`.

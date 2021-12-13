@@ -12,34 +12,39 @@ use ndarray::Array2;
 use ndarray::ArrayView1;
 use ndarray::ArrayView2;
 use ndarray::Ix2;
+use serde::{Deserialize, Serialize};
 use std::fmt::Debug;
 use truncnorm::distributions::MultivariateTruncatedNormal;
 
 /// H-representation polytope
-#[derive(Clone, Debug)]
-pub struct Polytope<T: NNVFloat> {
-    halfspaces: Inequality<T>,
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct Polytope {
+    halfspaces: Inequality,
 }
 
-impl<T: NNVFloat> Polytope<T> {
-    pub fn new(constraint_coeffs: Array2<T>, upper_bounds: Array1<T>, bounds: Bounds1<T>) -> Self {
+impl Polytope {
+    pub fn new(
+        constraint_coeffs: Array2<NNVFloat>,
+        upper_bounds: Array1<NNVFloat>,
+        bounds: Bounds1,
+    ) -> Self {
         Self {
             halfspaces: Inequality::new(constraint_coeffs, upper_bounds, bounds),
         }
     }
 
-    pub fn from_halfspaces(halfspaces: Inequality<T>) -> Self {
+    pub fn from_halfspaces(halfspaces: Inequality) -> Self {
         Self { halfspaces }
     }
 
     /// # Panics
-    pub fn with_input_bounds(mut self, input_bounds: Bounds1<T>) -> Self {
+    pub fn with_input_bounds(mut self, input_bounds: Bounds1) -> Self {
         let item = Self::from(input_bounds);
         self.halfspaces.add_eqns(&item.halfspaces, false);
         self
     }
 
-    pub fn coeffs(&self) -> ArrayView2<T> {
+    pub fn coeffs(&self) -> ArrayView2<NNVFloat> {
         self.halfspaces.coeffs()
     }
 
@@ -47,15 +52,15 @@ impl<T: NNVFloat> Polytope<T> {
         self.halfspaces.coeffs().ncols()
     }
 
-    pub fn ubs(&self) -> ArrayView1<T> {
+    pub fn ubs(&self) -> ArrayView1<NNVFloat> {
         self.halfspaces.rhs()
     }
 
-    pub fn get_bounds(&self) -> &Bounds1<T> {
+    pub fn get_bounds(&self) -> &Bounds1 {
         self.halfspaces.bounds()
     }
 
-    pub fn add_constraints(&mut self, constraints: &Inequality<T>, check_redundant: bool) {
+    pub fn add_constraints(&mut self, constraints: &Inequality, check_redundant: bool) {
         self.halfspaces.add_eqns(constraints, check_redundant);
     }
 
@@ -71,17 +76,17 @@ impl<T: NNVFloat> Polytope<T> {
         self.halfspaces.filter_trivial();
     }
 
-    pub fn is_member(&self, point: &ArrayView1<T>) -> bool {
+    pub fn is_member(&self, point: &ArrayView1<NNVFloat>) -> bool {
         self.halfspaces.is_member(point)
     }
 
     pub fn get_truncnorm_distribution(
         &self,
-        mu: &Array1<T>,
-        sigma: &Array2<T>,
+        mu: &Array1<NNVFloat>,
+        sigma: &Array2<NNVFloat>,
         max_accept_reject_iters: usize,
-        stability_eps: T,
-    ) -> GaussianDistribution<T> {
+        stability_eps: NNVFloat,
+    ) -> GaussianDistribution {
         // convert T to f64 in inputs
         let mu = mu.mapv(std::convert::Into::into);
         let sigma = sigma.mapv(std::convert::Into::into);
@@ -119,7 +124,7 @@ impl<T: NNVFloat> Polytope<T> {
             sq_constr_ub,
             max_accept_reject_iters,
         );
-        let inv_coeffs: Array2<T> = util::pinv(&constraint_coeffs).mapv(Into::into);
+        let inv_coeffs: Array2<NNVFloat> = util::pinv(&constraint_coeffs).mapv(Into::into);
         GaussianDistribution::TruncGaussian {
             distribution,
             inv_coeffs,
@@ -179,7 +184,7 @@ impl<T: NNVFloat> Polytope<T> {
     }
 }
 
-impl<T: NNVFloat> Polytope<T> {
+impl Polytope {
     /// Check whether the Star set is empty.
     ///
     /// This method assumes that the constraints bound each dimension,
@@ -196,16 +201,18 @@ impl<T: NNVFloat> Polytope<T> {
             self.get_bounds(),
         );
 
+        println!("{:?}", solved);
+
         !matches!(solved, LinearSolution::Solution(_, _))
     }
 }
 
 // Allow a technically fallible from because we're matching array shapes in the fn body
 #[allow(clippy::fallible_impl_from)]
-impl<T: NNVFloat> From<Bounds1<T>> for Polytope<T> {
-    fn from(item: Bounds1<T>) -> Self {
-        let coeffs = Array2::zeros((1, item.ndim()));
-        let rhs = Array1::zeros(1);
+impl From<Bounds1> for Polytope {
+    fn from(item: Bounds1) -> Self {
+        let coeffs: Array2<NNVFloat> = Array2::zeros((1, item.ndim()));
+        let rhs: Array1<NNVFloat> = Array1::zeros(1);
         let halfspaces = Inequality::new(coeffs, rhs, item);
         Self { halfspaces }
     }

@@ -43,13 +43,13 @@ prop_compose! {
 
 prop_compose! {
     pub fn affine2(in_dim: usize, out_dim: usize)
-        (basis in array2(out_dim, in_dim), shift in array1(out_dim)) -> Affine2<f64> {
+        (basis in array2(out_dim, in_dim), shift in array1(out_dim)) -> Affine2 {
             Affine2::new(basis, shift)
         }
 }
 
 prop_compose! {
-    pub fn bounds1(len: usize)(mut lower in array1(len), mut upper in array1(len)) -> Bounds1<f64> {
+    pub fn bounds1(len: usize)(mut lower in array1(len), mut upper in array1(len)) -> Bounds1 {
         Zip::from(&mut lower).and(&mut upper).for_each(|l, u| if *l > *u {mem::swap(l, u)});
         assert!(Zip::from(&lower).and(&upper).all(|l, u| l <= u));
         Bounds::new(lower.view(), upper.view())
@@ -57,7 +57,7 @@ prop_compose! {
 }
 
 prop_compose! {
-    pub fn bounds1_sample(bounds: Bounds1<f64>)(seed in any::<u64>()) -> Array1<f64> {
+    pub fn bounds1_sample(bounds: Bounds1)(seed in any::<u64>()) -> Array1<f64> {
         bounds.sample_uniform(seed)
     }
 }
@@ -75,7 +75,7 @@ prop_compose! {
             let pairs = repr_sizes.iter()
                 .zip(repr_sizes.iter().skip(1));
             pairs.map(|(&x, &y)| affine2(x,y)).collect::<Vec<_>>()}
-        ) -> DNN<f64> {
+        ) -> DNN {
             let mut dnn = DNN::default();
             for aff in affines {
                     let output_dim = aff.output_dim();
@@ -88,7 +88,7 @@ prop_compose! {
 
 prop_compose! {
     pub fn constellation(input_size: usize, output_size: usize, nlayers: usize, max_layer_width: usize)
-        (loc in array1(input_size), scale_diag in pos_def_array1(input_size), dnn in fc_dnn(input_size, output_size, nlayers, max_layer_width)) -> Constellation<f64, Ix2>
+        (loc in array1(input_size), scale_diag in pos_def_array1(input_size), dnn in fc_dnn(input_size, output_size, nlayers, max_layer_width)) -> Constellation<Ix2>
     {
         let lbs = loc.clone() - 3.5 * scale_diag.clone();
         let ubs = loc.clone() + 3.5 * scale_diag.clone();
@@ -103,7 +103,7 @@ prop_compose! {
         (
             mut coeffs in array2(num_constraints, num_dims),
             rhs in array1(num_constraints)
-        ) -> Inequality<f64> {
+        ) -> Inequality {
             coeffs.rows_mut().into_iter().for_each(|mut row| {
                 if row.iter().all(|x| *x == 0.0_f64) {
                     let mut rng = rand::thread_rng();
@@ -119,12 +119,12 @@ prop_compose! {
 
 prop_compose! {
     pub fn inequality_including_zero(num_dims: usize, num_constraints: usize)
-        (ineq in inequality(num_dims, num_constraints)) -> Inequality<f64> {
+        (ineq in inequality(num_dims, num_constraints)) -> Inequality {
             let zero = Array1::zeros(num_dims);
             let mut inequality = Inequality::new(
                 Array2::zeros((0, num_dims)),
                 Array1::zeros(0),
-                Bounds1::trivial(0)
+                Bounds1::trivial(num_dims)
             );
             (0..ineq.num_constraints())
                 .into_iter()
@@ -135,8 +135,7 @@ prop_compose! {
                     } else {
                         let new_coeffs = -1. * eqn.coeffs().to_owned();
                         let new_rhs = -1. * eqn.rhs().to_owned();
-                        let dim = new_rhs.len();
-                        let eqn = Inequality::new(new_coeffs, new_rhs, Bounds1::trivial(dim));
+                        let eqn = Inequality::new(new_coeffs, new_rhs, Bounds1::trivial(num_dims));
                         inequality.add_eqns(&eqn, true);
                     }
                 });
@@ -146,7 +145,7 @@ prop_compose! {
 
 prop_compose! {
     pub fn polytope(num_dims: usize, num_constraints: usize)
-        (ineq in inequality(num_dims, num_constraints)) -> Polytope<f64> {
+        (ineq in inequality(num_dims, num_constraints)) -> Polytope {
             Polytope::from_halfspaces(ineq)
         }
 }
@@ -157,9 +156,9 @@ prop_compose! {
             ineq in inequality_including_zero(num_dims, num_constraints)
                 .prop_filter("Non-zero intercepts",
                              |i| !i.rhs().iter().any(|x| *x == 0.0_f64))
-        ) -> Polytope<f64> {
+        ) -> Polytope {
             // Make a box bigger than possible inner inequalities
-            let box_bounds: Bounds1<f64> = Bounds1::new(Array1::from_elem(num_dims, -20.).view(), Array1::from_elem(num_dims, -20.).view());
+            let box_bounds: Bounds1 = Bounds1::new(Array1::from_elem(num_dims, -20.).view(), Array1::from_elem(num_dims, -20.).view());
             let box_ineq = Inequality::new(Array2::zeros([1, num_dims]), Array1::zeros(1), box_bounds);
             Polytope::from_halfspaces(box_ineq)
         }
@@ -180,7 +179,7 @@ prop_compose! {
             mut ineq in inequality_including_zero(num_dims, num_constraints)
                 .prop_filter("Cannot pass through origin",
                              |eq| !eq.rhs().iter().any(|x| *x == 0.0_f64))
-        ) -> Polytope<f64> {
+        ) -> Polytope {
             // Invert the sign of the inequality
             ineq *= -1.0;
 
@@ -221,7 +220,7 @@ prop_compose! {
                              !b.iter().any(|x| *x == 0.0_f64)),
             center in array1(num_dims),
             constraints in non_empty_polytope(num_dims, num_constraints)
-        ) -> Star2<f64> {
+        ) -> Star2 {
             let star = Star2::new(basis, center).with_constraints(constraints);
             assert!(!star.is_empty());
             star
@@ -240,7 +239,7 @@ prop_compose! {
                              !b.iter().any(|x| *x == 0.0_f64)),
             center in array1(num_dims),
             constraints in empty_polytope(num_dims, num_constraints)
-        ) -> Star2<f64> {
+        ) -> Star2 {
             Star2::new(basis, center).with_constraints(constraints)
         }
 }
@@ -248,7 +247,7 @@ prop_compose! {
 prop_compose! {
     pub fn generic_bounds1(max_len: usize)
         (dim in 1..max_len)
-        (bounds in bounds1(dim)) -> Bounds1<f64> {
+        (bounds in bounds1(dim)) -> Bounds1 {
             bounds
         }
 }
@@ -256,7 +255,7 @@ prop_compose! {
 prop_compose! {
     pub fn generic_inequality_including_zero(max_dims: usize, max_constraints: usize)
         (dim in 1..max_dims, constraints in 1..max_constraints)
-        (ineq in inequality_including_zero(dim, constraints)) -> Inequality<f64> {
+        (ineq in inequality_including_zero(dim, constraints)) -> Inequality {
             ineq
         }
 }
@@ -264,7 +263,7 @@ prop_compose! {
 prop_compose! {
     pub fn generic_empty_polytope(max_dims: usize, max_constraints: usize)
         (dim in 1..max_dims, constraints in 1..max_constraints)
-        (poly in empty_polytope(dim, constraints)) -> Polytope<f64> {
+        (poly in empty_polytope(dim, constraints)) -> Polytope {
             poly
         }
 }
@@ -272,7 +271,7 @@ prop_compose! {
 prop_compose! {
     pub fn generic_non_empty_polytope(max_dims: usize, max_constraints: usize)
         (dim in 1..max_dims, constraints in 1..max_constraints)
-        (poly in non_empty_polytope(dim, constraints)) -> Polytope<f64> {
+        (poly in non_empty_polytope(dim, constraints)) -> Polytope {
             poly
         }
 }
@@ -280,7 +279,7 @@ prop_compose! {
 prop_compose! {
     pub fn generic_empty_star(max_dims: usize, max_constraints: usize)
         (dim in 1..max_dims, constraints in 1..max_constraints)
-        (star in empty_star(dim, constraints)) -> Star2<f64> {
+        (star in empty_star(dim, constraints)) -> Star2 {
             star
         }
 }
@@ -288,7 +287,7 @@ prop_compose! {
 prop_compose! {
     pub fn generic_non_empty_star(max_dims: usize, max_constraints: usize)
         (dim in 1..max_dims, constraints in 1..max_constraints)
-        (star in non_empty_star(dim, constraints)) -> Star2<f64> {
+        (star in non_empty_star(dim, constraints)) -> Star2 {
             star
         }
 }
@@ -296,7 +295,7 @@ prop_compose! {
 prop_compose! {
     pub fn generic_fc_dnn(max_input_size: usize, max_output_size: usize, max_nlayers: usize, max_layer_width: usize)
         (input_size in 1..max_input_size, output_size in 1..max_output_size, nlayers in 1..max_nlayers)
-        (dnn in fc_dnn(input_size, output_size, nlayers, max_layer_width)) -> DNN<f64>
+        (dnn in fc_dnn(input_size, output_size, nlayers, max_layer_width)) -> DNN
     {
         dnn
     }
@@ -305,7 +304,7 @@ prop_compose! {
 prop_compose! {
     pub fn generic_constellation(max_input_size: usize, max_output_size: usize, max_nlayers: usize, max_layer_width: usize)
         (input_size in 1..max_input_size, output_size in 1..max_output_size, nlayers in 1..max_nlayers)
-        (constellation in constellation(input_size, output_size, nlayers, max_layer_width)) -> Constellation<f64, Ix2>
+        (constellation in constellation(input_size, output_size, nlayers, max_layer_width)) -> Constellation<Ix2>
         {
             constellation
         }

@@ -10,21 +10,24 @@ use ndarray::Slice;
 use ndarray::Zip;
 use ndarray::{Array1, Array2};
 use ndarray::{ArrayView1, ArrayView2, ArrayViewMut1};
+use num::Zero;
+use serde::{Deserialize, Serialize};
 use std::convert::TryFrom;
 use std::iter;
 use std::ops::Mul;
 use std::ops::MulAssign;
 
-#[derive(Clone, Debug)]
-pub struct Inequality<T: NNVFloat> {
-    coeffs: Array2<T>, // Assume rows correspond to equations and cols are vars, i.e. Ax < b
-    rhs: Array1<T>,
-    bounds: Bounds1<T>,
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct Inequality {
+    coeffs: Array2<NNVFloat>, // Assume rows correspond to equations and cols are vars, i.e. Ax < b
+    rhs: Array1<NNVFloat>,
+    bounds: Bounds1,
 }
 
-impl<T: NNVFloat> Inequality<T> {
-    pub fn new(coeffs: Array2<T>, rhs: Array1<T>, bounds: Bounds1<T>) -> Self {
+impl Inequality {
+    pub fn new(coeffs: Array2<NNVFloat>, rhs: Array1<NNVFloat>, bounds: Bounds1) -> Self {
         debug_assert_eq!(coeffs.nrows(), rhs.len());
+        debug_assert_eq!(coeffs.ncols(), bounds.ndim());
         Self {
             coeffs,
             rhs,
@@ -32,15 +35,15 @@ impl<T: NNVFloat> Inequality<T> {
         }
     }
 
-    pub fn coeffs(&self) -> ArrayView2<T> {
+    pub fn coeffs(&self) -> ArrayView2<NNVFloat> {
         self.coeffs.view()
     }
 
-    pub fn rhs(&self) -> ArrayView1<T> {
+    pub fn rhs(&self) -> ArrayView1<NNVFloat> {
         self.rhs.view()
     }
 
-    pub fn rhs_mut(&mut self) -> ArrayViewMut1<T> {
+    pub fn rhs_mut(&mut self) -> ArrayViewMut1<NNVFloat> {
         self.rhs.view_mut()
     }
 
@@ -52,14 +55,13 @@ impl<T: NNVFloat> Inequality<T> {
         self.rhs.len()
     }
 
-    pub fn bounds(&self) -> &Bounds1<T> {
+    pub fn bounds(&self) -> &Bounds1 {
         &self.bounds
     }
 
-    pub fn check_redundant(&self, coeffs: ArrayView1<T>, rhs: T) -> bool {
-        let neg_one: T = std::convert::From::from(-1.);
-        let maximize_eqn = &coeffs * neg_one;
-        let maximize_rhs = rhs + T::one();
+    pub fn check_redundant(&self, coeffs: ArrayView1<NNVFloat>, rhs: NNVFloat) -> bool {
+        let maximize_eqn = &coeffs * -1.;
+        let maximize_rhs = rhs + 1.;
         let solved = solve(
             self.coeffs()
                 .rows()
@@ -102,12 +104,12 @@ impl<T: NNVFloat> Inequality<T> {
 
     /// # Panics
     pub fn filter_trivial(&mut self) {
-        let (coeffs, rhs): (Vec<ArrayView1<T>>, Vec<_>) = self
+        let (coeffs, rhs): (Vec<ArrayView1<NNVFloat>>, Vec<_>) = self
             .coeffs
             .rows()
             .into_iter()
             .zip(self.rhs().iter())
-            .filter(|(coeffs, _rhs)| !coeffs.iter().all(|x| *x == T::zero()))
+            .filter(|(coeffs, _rhs)| !coeffs.iter().all(|x| *x == 0.))
             .unzip();
         self.coeffs = ndarray::stack(Axis(0), &coeffs).unwrap();
         self.rhs = Array1::from_vec(rhs);
@@ -130,7 +132,7 @@ impl<T: NNVFloat> Inequality<T> {
     }
 
     /// Returns whether a given point is in the set represented by the `Inequality`
-    pub fn is_member(&self, point: &ArrayView1<T>) -> bool {
+    pub fn is_member(&self, point: &ArrayView1<NNVFloat>) -> bool {
         let vals = self.coeffs.dot(point);
         Zip::from(&self.rhs)
             .and(&vals)
@@ -153,7 +155,7 @@ impl<T: NNVFloat> Inequality<T> {
     /// Only if the underlying struct is malformed
     pub fn reduce_with_values(
         &self,
-        x: ArrayView1<T>,
+        x: ArrayView1<NNVFloat>,
         fixed_idxs: ArrayView1<bool>,
     ) -> Option<Self> {
         // Check if every dimension is fixed
@@ -162,12 +164,12 @@ impl<T: NNVFloat> Inequality<T> {
         }
 
         // Reduce the rhs of each constraint (but don't filter cuz no rows are removed)
-        let reduced_rhs: Array1<T> = &self.rhs - self.coeffs.dot(&x);
+        let reduced_rhs: Array1<NNVFloat> = &self.rhs - self.coeffs.dot(&x);
 
         // Remove the variables that are fixed
         let filtered_coeffs = {
             // Specifically, remove columns
-            let filtered_cols: Vec<ArrayView2<T>> = self
+            let filtered_cols: Vec<ArrayView2<NNVFloat>> = self
                 .coeffs
                 .columns()
                 .into_iter()
@@ -200,26 +202,26 @@ impl<T: NNVFloat> Inequality<T> {
             return None;
         }
 
-        let nontrivial_coeffs: Vec<ArrayView2<T>> = filtered_coeffs
+        let nontrivial_coeffs: Vec<ArrayView2<NNVFloat>> = filtered_coeffs
             .rows()
             .into_iter()
             .zip(is_nontrivial.iter())
             .filter(|(_, &is_nontrivial)| is_nontrivial)
             .map(|(row, _)| row.insert_axis(Axis(0)))
             .collect();
-        let nontrivial_rhs: Vec<T> = reduced_rhs
+        let nontrivial_rhs: Vec<NNVFloat> = reduced_rhs
             .into_iter()
             .zip(is_nontrivial.iter())
             .filter(|(_, &is_nontrivial)| is_nontrivial)
             .map(|(val, _)| val)
             .collect();
-        let nontrivial_bounds: Vec<ArrayView1<T>> = filtered_bounds_iter
+        let nontrivial_bounds: Vec<ArrayView1<NNVFloat>> = filtered_bounds_iter
             .zip(is_nontrivial.iter())
             .filter(|(_, &is_nontrivial)| is_nontrivial)
             .map(|(val, _)| val)
             .collect();
 
-        let final_coeffs: Array2<T> = concatenate(Axis(0), &nontrivial_coeffs).unwrap();
+        let final_coeffs: Array2<NNVFloat> = concatenate(Axis(0), &nontrivial_coeffs).unwrap();
         let final_rhs = Array1::from_vec(nontrivial_rhs);
         let final_bounds = if nontrivial_bounds.is_empty() {
             Bounds1::trivial(0)
@@ -232,10 +234,10 @@ impl<T: NNVFloat> Inequality<T> {
 }
 
 /// Scale by scalar
-impl<T: NNVFloat> Mul<T> for Inequality<T> {
+impl Mul<NNVFloat> for Inequality {
     type Output = Self;
 
-    fn mul(self, rhs: T) -> Self {
+    fn mul(self, rhs: NNVFloat) -> Self {
         Self {
             coeffs: self.coeffs * rhs,
             rhs: self.rhs * rhs,
@@ -245,16 +247,16 @@ impl<T: NNVFloat> Mul<T> for Inequality<T> {
 }
 
 /// Scale by scalar
-impl<T: NNVFloat> MulAssign<T> for Inequality<T> {
-    fn mul_assign(&mut self, rhs: T) {
+impl MulAssign<NNVFloat> for Inequality {
+    fn mul_assign(&mut self, rhs: NNVFloat) {
         self.coeffs *= rhs;
         self.rhs *= rhs;
         self.bounds *= rhs;
     }
 }
 
-impl<T: NNVFloat> From<Affine2<T>> for Inequality<T> {
-    fn from(aff: Affine2<T>) -> Self {
+impl From<Affine2> for Inequality {
+    fn from(aff: Affine2) -> Self {
         Self {
             coeffs: aff.basis().to_owned(),
             rhs: aff.shift().to_owned(),

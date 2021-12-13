@@ -4,24 +4,26 @@ use ndarray::Array2;
 use ndarray::Ix2;
 use ndarray_rand::rand_distr::StandardNormal;
 use ndarray_rand::RandomExt;
+use num::One;
 use rand::Rng;
+use serde::{Deserialize, Serialize};
 use truncnorm::distributions::MultivariateTruncatedNormal;
 use truncnorm::tilting::TiltingSolution;
 
-#[derive(Debug, Clone)]
-pub enum GaussianDistribution<T> {
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub enum GaussianDistribution {
     Gaussian {
-        loc: Array1<T>,
-        scale: Array1<T>,
+        loc: Array1<NNVFloat>,
+        scale: Array1<NNVFloat>,
     },
     TruncGaussian {
         distribution: MultivariateTruncatedNormal<Ix2>,
-        inv_coeffs: Array2<T>,
+        inv_coeffs: Array2<NNVFloat>,
     },
 }
 
-impl<T: NNVFloat> GaussianDistribution<T> {
-    pub fn sample_n<R: Rng>(&mut self, n: usize, rng: &mut R) -> Vec<Array1<T>> {
+impl GaussianDistribution {
+    pub fn sample_n<R: Rng>(&mut self, n: usize, rng: &mut R) -> Vec<Array1<NNVFloat>> {
         match self {
             GaussianDistribution::TruncGaussian {
                 distribution,
@@ -44,13 +46,13 @@ impl<T: NNVFloat> GaussianDistribution<T> {
         }
     }
 
-    pub fn cdf<R: Rng>(&mut self, n: usize, rng: &mut R) -> T {
+    pub fn cdf<R: Rng>(&mut self, n: usize, rng: &mut R) -> NNVFloat {
         match self {
             GaussianDistribution::TruncGaussian { distribution, .. } => {
                 let (est, _rel_err, _upper_bound) = distribution.cdf(n, rng);
                 est.into()
             }
-            GaussianDistribution::Gaussian { .. } => T::one(),
+            GaussianDistribution::Gaussian { .. } => NNVFloat::one(),
         }
     }
 

@@ -5,7 +5,7 @@ use nnv_rs::dnn::Layer;
 use nnv_rs::dnn::DNN;
 use rand::Rng;
 
-pub fn affine2(in_dim: &usize, out_dim: &usize) -> Affine2<f64> {
+pub fn affine2(in_dim: &usize, out_dim: &usize) -> Affine2 {
     let mut rng = rand::thread_rng();
     let basis_vec = (0..(in_dim * out_dim)).map(|_| rng.gen()).collect();
     let shift_vec: Vec<f64> = (0..*out_dim).map(|_| rng.gen()).collect();
@@ -16,7 +16,7 @@ pub fn affine2(in_dim: &usize, out_dim: &usize) -> Affine2<f64> {
     Affine2::new(basis, shift)
 }
 
-pub fn make_dnn(shape: &Vec<usize>, num_layers: &usize) -> DNN<f64> {
+pub fn make_dnn(shape: &Vec<usize>, num_layers: &usize) -> DNN {
     assert_eq!(shape.len(), 2);
     let mut dnn = DNN::default();
 

@@ -24,14 +24,14 @@ impl IntoAffineExpression for LinearExpression {
 
 /// Minimizes the expression `c` given the constraint `Ax < b`.
 /// # Panics
-pub fn solve<'a, I, T: 'a + NNVFloat>(
+pub fn solve<'a, I>(
     A: I,
-    b: ArrayView1<T>,
-    var_coeffs: ArrayView1<T>,
-    var_bounds: &Bounds1<T>,
+    b: ArrayView1<NNVFloat>,
+    var_coeffs: ArrayView1<NNVFloat>,
+    var_bounds: &Bounds1,
 ) -> LinearSolution
 where
-    I: IntoIterator<Item = ArrayView1<'a, T>>,
+    I: IntoIterator<Item = ArrayView1<'a, NNVFloat>>,
 {
     let mut _shh_out;
     let mut _shh_err;
@@ -56,7 +56,7 @@ where
 
     A.into_iter()
         .zip(b.into_iter())
-        .for_each(|pair: (ArrayView1<T>, &T)| {
+        .for_each(|pair: (ArrayView1<NNVFloat>, &NNVFloat)| {
             let (coeffs, ub) = pair;
             let expr = LinearExpression {
                 coefficients: vars
@@ -65,8 +65,7 @@ where
                     .zip(coeffs.iter().map(|x| (*x).into()))
                     .collect(),
             };
-            let constr =
-                good_lp::constraint::leq(Expression::from_other_affine(expr), (*ub).into());
+            let constr = good_lp::constraint::leq(Expression::from_other_affine(expr), *ub);
             unsolved.add_constraint(constr);
         });
 
@@ -78,12 +77,13 @@ where
                 HasSolution => {
                     let param = Array1::from_iter(cbc_model.col_solution().into_iter().copied());
                     let fun = raw_soln.eval(c_expression);
+                    println!("Solved! {:?} and {:?}", param, fun);
                     LinearSolution::Solution(param, fun)
                 }
             }
         }
         Err(ResolutionError::Infeasible) => LinearSolution::Infeasible,
         Err(ResolutionError::Unbounded) => LinearSolution::Unbounded(Array1::zeros(1)),
-        _ => panic!(),
+        Err(e) => panic!("{:?}", e),
     }
 }

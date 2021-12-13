@@ -5,19 +5,36 @@ use crate::util::gaussian_logp;
 use crate::NNVFloat;
 use log::{debug, info};
 use ndarray::{concatenate, s, Array1, Axis, Dimension, Ix2};
+use num::Float;
+use num::{One, Zero};
 use rand::distributions::{Bernoulli, Distribution};
 use rand::Rng;
+use serde::ser::{Serialize, SerializeStruct, Serializer};
 use std::iter;
+use std::ops::Neg;
 use std::time::{Duration, Instant};
 
-pub struct Asterism<'a, T: NNVFloat, D: Dimension> {
-    constellation: &'a mut Constellation<T, D>,
-    safe_value: T,
+pub struct Asterism<'a, D: Dimension> {
+    constellation: &'a mut Constellation<D>,
+    safe_value: NNVFloat,
     is_feasible: Vec<bool>,
 }
 
-impl<'a, T: NNVFloat, D: Dimension> Asterism<'a, T, D> {
-    pub fn new(constellation: &'a mut Constellation<T, D>, safe_value: T) -> Self {
+impl<'a, D: Dimension + serde::Serialize> Serialize for Asterism<'a, D> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let mut state = serializer.serialize_struct("Asterism", 3)?;
+        state.serialize_field("constellation", &self.constellation.clone())?;
+        state.serialize_field("safe_value", &self.safe_value)?;
+        state.serialize_field("is_feasible", &self.is_feasible)?;
+        state.end()
+    }
+}
+
+impl<'a, D: Dimension> Asterism<'a, D> {
+    pub fn new(constellation: &'a mut Constellation<D>, safe_value: NNVFloat) -> Self {
         Self {
             constellation,
             safe_value,
@@ -37,7 +54,7 @@ impl<'a, T: NNVFloat, D: Dimension> Asterism<'a, T, D> {
     }
 }
 
-impl<'a, T: NNVFloat> Asterism<'a, T, Ix2> {
+impl<'a> Asterism<'a, Ix2> {
     /// Sample from a Gaussian distribution with an upper bound on the output value
     ///
     /// This function uses a two step sampling process. It first walks the Constellation's binary
@@ -68,20 +85,20 @@ impl<'a, T: NNVFloat> Asterism<'a, T, Ix2> {
         cdf_samples: usize,
         max_iters: usize,
         time_limit_opt: Option<Duration>,
-        stability_eps: T,
-    ) -> Option<(Vec<Array1<T>>, T, T)> {
+        stability_eps: NNVFloat,
+    ) -> Option<(Vec<Array1<NNVFloat>>, NNVFloat, NNVFloat)> {
         let start_time = Instant::now();
         let mut best_sample = None;
-        let mut best_sample_val = T::infinity();
+        let mut best_sample_val = NNVFloat::infinity();
         let mut current_node = 0;
         let mut path = vec![];
-        let mut path_logp = T::zero();
-        let mut total_infeasible_cdf = T::zero();
+        let mut path_logp = 0.;
+        let mut total_infeasible_cdf = 0.;
         let infeasible_reset = |me: &mut Self,
                                 x: usize,
                                 path: &mut Vec<usize>,
-                                path_logp: &mut T,
-                                total_infeasible_cdf: &mut T,
+                                path_logp: &mut NNVFloat,
+                                total_infeasible_cdf: &mut NNVFloat,
                                 rng: &mut R|
          -> usize {
             info!("Infeasible reset at depth {}!", path.len());
@@ -99,7 +116,7 @@ impl<'a, T: NNVFloat> Asterism<'a, T, Ix2> {
                 {
                     // if not infeasible, update CDF
                     me.constellation
-                        .add_node_cdf(x, T::neg(T::one()) * infeas_cdf);
+                        .add_node_cdf(x, NNVFloat::neg(NNVFloat::one()) * infeas_cdf);
                 } else {
                     me.set_feasible(x, false);
                     infeas_cdf = me.constellation.get_node_cdf(
@@ -112,7 +129,7 @@ impl<'a, T: NNVFloat> Asterism<'a, T, Ix2> {
                 }
             });
             *total_infeasible_cdf += infeas_cdf;
-            *path_logp = T::zero();
+            *path_logp = NNVFloat::zero();
             0
         };
         loop {
@@ -151,7 +168,7 @@ impl<'a, T: NNVFloat> Asterism<'a, T, Ix2> {
             {
                 // makes the assumption that bounds are on 0th dimension of output
                 let output_bounds = if current_node == 0 {
-                    (T::neg_infinity(), T::infinity())
+                    (NNVFloat::neg_infinity(), NNVFloat::infinity())
                 } else {
                     self.constellation.get_node_output_bounds(current_node)
                 };
@@ -262,8 +279,8 @@ impl<'a, T: NNVFloat> Asterism<'a, T, Ix2> {
         rng: &mut R,
         num_samples: usize,
         max_iters: usize,
-        stability_eps: T,
-    ) -> Result<(Array1<T>, T), Option<(Array1<T>, T)>> {
+        stability_eps: NNVFloat,
+    ) -> Result<(Array1<NNVFloat>, NNVFloat), Option<(Array1<NNVFloat>, NNVFloat)>> {
         let unsafe_sample = self.constellation.sample_gaussian_node(
             current_node,
             rng,
@@ -275,81 +292,82 @@ impl<'a, T: NNVFloat> Asterism<'a, T, Ix2> {
             .constellation
             .get_node_reduced_input_polytope(current_node);
         let unsafe_len = unsafe_sample[0].len();
-        let fixed_input_part: Option<Array1<T>> = self
+        let fixed_input_part: Option<Array1<NNVFloat>> = self
             .constellation
             .get_node_input_bounds(current_node)
             .map(|bounds| {
-                let fixed_bounds: Bounds1<T> = bounds.split_at(bounds.ndim() - unsafe_len).0;
-                let fixed_array: Array1<T> = fixed_bounds.lower().to_owned();
+                let fixed_bounds: Bounds1 = bounds.split_at(bounds.ndim() - unsafe_len).0;
+                let fixed_array: Array1<NNVFloat> = fixed_bounds.lower().to_owned();
                 fixed_array
             });
         let mut rng = rand::thread_rng();
         let mut best_sample = None;
-        let mut best_val = T::infinity();
-        let sample_opt: Option<(Array1<T>, T)> = if let Some(fixed_input_part) = fixed_input_part {
-            let mut input_iter = unsafe_sample
-                .into_iter()
-                .filter(|x| match &input_set {
-                    Some(poly) => poly.is_member(&x.view()),
-                    None => true,
-                })
-                .filter(|x| {
-                    /*
-                    diag_gaussian_accept_reject(
-                        &x.mapv(|x| x.into()).view(),
-                        &self.constellation.get_loc().mapv(|x| x.into()).view(),
-                        &self
-                            .constellation
-                            .get_scale()
-                            .diag()
-                            .mapv(|x| x.into())
-                            .view(),
-                        &mut rng,
-                    )
-                    */
-                    let logp = gaussian_logp(
-                        &x.mapv(|x| x.into()).view(),
-                        &self.constellation.get_loc().mapv(|x| x.into()).view(),
-                        &self
-                            .constellation
-                            .get_scale()
-                            .diag()
-                            .mapv(|x| x.into())
-                            .view(),
-                    );
-                    logp > -1.8
-                })
-                .zip(iter::repeat(fixed_input_part))
-                .map(|(unfix, fix)| concatenate(Axis(0), &[fix.view(), unfix.view()]).unwrap());
-            input_iter.find_map(|x| {
-                let output = self.constellation.get_dnn().forward1(x.clone());
-                debug_assert_eq!(output.len(), 1);
-                if output[[0]] < self.safe_value {
-                    Some((x, output[[0]]))
-                } else {
-                    if output[[0]] < best_val {
-                        best_sample = Some(x);
-                        best_val = output[[0]];
+        let mut best_val = NNVFloat::infinity();
+        let sample_opt: Option<(Array1<NNVFloat>, NNVFloat)> =
+            if let Some(fixed_input_part) = fixed_input_part {
+                let mut input_iter = unsafe_sample
+                    .into_iter()
+                    .filter(|x| match &input_set {
+                        Some(poly) => poly.is_member(&x.view()),
+                        None => true,
+                    })
+                    .filter(|x| {
+                        /*
+                        diag_gaussian_accept_reject(
+                            &x.mapv(|x| x.into()).view(),
+                            &self.constellation.get_loc().mapv(|x| x.into()).view(),
+                            &self
+                                .constellation
+                                .get_scale()
+                                .diag()
+                                .mapv(|x| x.into())
+                                .view(),
+                            &mut rng,
+                        )
+                        */
+                        let logp = gaussian_logp(
+                            &x.mapv(|x| x.into()).view(),
+                            &self.constellation.get_loc().mapv(|x| x.into()).view(),
+                            &self
+                                .constellation
+                                .get_scale()
+                                .diag()
+                                .mapv(|x| x.into())
+                                .view(),
+                        );
+                        logp > -1.8
+                    })
+                    .zip(iter::repeat(fixed_input_part))
+                    .map(|(unfix, fix)| concatenate(Axis(0), &[fix.view(), unfix.view()]).unwrap());
+                input_iter.find_map(|x| {
+                    let output = self.constellation.get_dnn().forward1(x.clone());
+                    debug_assert_eq!(output.len(), 1);
+                    if output[[0]] < self.safe_value {
+                        Some((x, output[[0]]))
+                    } else {
+                        if output[[0]] < best_val {
+                            best_sample = Some(x);
+                            best_val = output[[0]];
+                        }
+                        None
                     }
-                    None
-                }
-            })
-        } else {
-            let mut input_iter = unsafe_sample.into_iter();
-            input_iter.find_map(|x| {
-                let output = self.constellation.get_dnn().forward1(x.clone());
-                debug_assert_eq!(output.len(), 1);
-                if output[[0]] < self.safe_value {
-                    Some((x, output[[0]]))
-                } else {
-                    if output[[0]] < best_val {
-                        best_sample = Some(x);
-                        best_val = output[[0]];
+                })
+            } else {
+                let mut input_iter = unsafe_sample.into_iter();
+                input_iter.find_map(|x| {
+                    let output = self.constellation.get_dnn().forward1(x.clone());
+                    debug_assert_eq!(output.len(), 1);
+                    if output[[0]] < self.safe_value {
+                        Some((x, output[[0]]))
+                    } else {
+                        if output[[0]] < best_val {
+                            best_sample = Some(x);
+                            best_val = output[[0]];
+                        }
+                        None
                     }
-                    None
-                }
-            })
-        };
+                })
+            };
         sample_opt
             .map(|(sample, est_cost)| {
                 let unfixed = sample.slice(s![-(unsafe_len as isize)..]).to_owned();
@@ -364,18 +382,18 @@ impl<'a, T: NNVFloat> Asterism<'a, T, Ix2> {
     ///
     /// Returns:
     ///     `child_idx` (usize): The child that was reached in the sampling procedure
-    ///     `path_logp` (T): The log probability of reaching the child from the root node
+    ///     `path_logp` (NNVFloat): The log probability of reaching the child from the root node
     ///
     /// # Panics
     fn select_safe_child<R: Rng>(
         &mut self,
         current_node: usize,
-        mut path_logp: T,
+        mut path_logp: NNVFloat,
         cdf_samples: usize,
         max_iters: usize,
         rng: &mut R,
-        stability_eps: T,
-    ) -> Option<(usize, T)> {
+        stability_eps: NNVFloat,
+    ) -> Option<(usize, NNVFloat)> {
         debug_assert!(self
             .constellation
             .try_get_gaussian_distribution(current_node)
@@ -449,7 +467,7 @@ impl<'a, T: NNVFloat> Asterism<'a, T, Ix2> {
                                 // possible for the parent to have
                                 // smaller CDF than the child.
                                 if derived_fst_cdf.is_sign_negative() {
-                                    derived_fst_cdf = T::epsilon();
+                                    derived_fst_cdf = NNVFloat::epsilon();
                                 }
                                 self.constellation
                                     .set_node_cdf(children[0], derived_fst_cdf);
@@ -465,7 +483,7 @@ impl<'a, T: NNVFloat> Asterism<'a, T, Ix2> {
                                 );
                                 let mut derived_snd_cdf = parent_cdf - fst_cdf;
                                 if derived_snd_cdf.is_sign_negative() {
-                                    derived_snd_cdf = T::epsilon();
+                                    derived_snd_cdf = NNVFloat::epsilon();
                                 }
                                 self.constellation
                                     .set_node_cdf(children[1], derived_snd_cdf);
@@ -482,7 +500,7 @@ impl<'a, T: NNVFloat> Asterism<'a, T, Ix2> {
                             path_logp += fst_prob.ln();
                             Some((children[0], path_logp))
                         } else {
-                            path_logp += (T::one() - fst_prob).ln();
+                            path_logp += (NNVFloat::one() - fst_prob).ln();
                             Some((children[1], path_logp))
                         }
                     }
@@ -503,7 +521,7 @@ impl<'a, T: NNVFloat> Asterism<'a, T, Ix2> {
                     path_logp += dropout_prob.ln();
                     Some((fst_child_idx, path_logp))
                 } else {
-                    path_logp += (T::one() - dropout_prob).ln();
+                    path_logp += (NNVFloat::one() - dropout_prob).ln();
 
                     let mut children = vec![];
 
@@ -576,7 +594,7 @@ impl<'a, T: NNVFloat> Asterism<'a, T, Ix2> {
                                 path_logp += fst_prob.ln();
                                 Some((children[0], path_logp))
                             } else {
-                                path_logp += (T::one() - fst_prob).ln();
+                                path_logp += (NNVFloat::one() - fst_prob).ln();
                                 Some((children[1], path_logp))
                             }
                         }

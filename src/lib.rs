@@ -17,6 +17,7 @@ extern crate num;
 #[cfg(test)]
 extern crate proptest;
 extern crate rand;
+extern crate serde;
 extern crate shh;
 extern crate truncnorm;
 
@@ -45,19 +46,22 @@ cfg_if::cfg_if! {
     }
 }
 
-pub trait NNVFloat = 'static
-    + num::Float
-    + std::convert::From<f64>
-    + std::convert::Into<f64>
-    + ndarray::ScalarOperand
-    + std::fmt::Display
-    + std::fmt::Debug
-    + std::ops::MulAssign
-    + std::ops::AddAssign
-    + std::default::Default
-    + std::iter::Sum
-    + approx::AbsDiffEq
-    + rand::distributions::uniform::SampleUniform;
+pub type NNVFloat = f64;
+// 'static
+//     + num::Float
+//     + std::convert::From<f64>
+//     + std::convert::Into<f64>
+//     + ndarray::ScalarOperand
+//     + std::fmt::Display
+//     + std::fmt::Debug
+//     + std::ops::MulAssign
+//     + std::ops::AddAssign
+//     + std::default::Default
+//     + std::iter::Sum
+//     + approx::AbsDiffEq
+//     + rand::distributions::uniform::SampleUniform
+//     + serde::ser::Serialize
+//     + serde::de::Deserialize<'de>;
 
 pub mod trunks {
     use crate::bounds::Bounds1;
