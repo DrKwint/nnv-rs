@@ -83,6 +83,7 @@ where
         }
         Err(ResolutionError::Infeasible) => LinearSolution::Infeasible,
         Err(ResolutionError::Unbounded) => LinearSolution::Unbounded(Array1::zeros(1)),
+        Err(ResolutionError::Other(_)) => LinearSolution::Infeasible,
         Err(e) => panic!("{:?}", e),
     }
 }
