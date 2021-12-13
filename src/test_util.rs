@@ -112,8 +112,7 @@ prop_compose! {
                 }
             });
 
-            let dim = rhs.len();
-            Inequality::new(coeffs, rhs, Bounds1::trivial(dim))
+            Inequality::new(coeffs, rhs, Bounds1::trivial(num_dims))
         }
 }
 

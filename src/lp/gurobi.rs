@@ -13,14 +13,14 @@ use grb::VarType::Continuous;
 use ndarray::{Array1, ArrayView1};
 
 /// # Panics
-pub fn solve<'a, I, T: 'a + NNVFloat>(
+pub fn solve<'a, I>(
     A: I,
-    b: ArrayView1<T>,
-    var_coeffs: ArrayView1<T>,
-    var_bounds: &Bounds1<T>,
+    b: ArrayView1<NNVFloat>,
+    var_coeffs: ArrayView1<NNVFloat>,
+    var_bounds: &Bounds1,
 ) -> LinearSolution
 where
-    I: IntoIterator<Item = ArrayView1<'a, T>>,
+    I: IntoIterator<Item = ArrayView1<'a, NNVFloat>>,
 {
     // Create model
     let mut env = Env::empty().unwrap();
@@ -35,7 +35,8 @@ where
         .zip(var_bounds.bounds_iter())
         .enumerate()
         .map(|(i, (c, b))| {
-            add_var!(model, Continuous, obj: (*c).into(), name: &format!("v{}", i), bounds: b[[0]].into()..b[[1]].into()).unwrap()
+            add_var!(model, Continuous, obj: *c, name: &format!("v{}", i), bounds: b[[0]]..b[[1]])
+                .unwrap()
         })
         .collect();
 

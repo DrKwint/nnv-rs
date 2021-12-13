@@ -201,8 +201,6 @@ impl Polytope {
             self.get_bounds(),
         );
 
-        println!("{:?}", solved);
-
         !matches!(solved, LinearSolution::Solution(_, _))
     }
 }

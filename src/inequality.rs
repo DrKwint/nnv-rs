@@ -127,7 +127,7 @@ impl Inequality {
                 .rhs
                 .slice_axis(Axis(0), Slice::new(i_idx, Some(i_idx + 1), 1))
                 .to_owned(),
-            bounds: self.bounds.get_ith_bounds(idx),
+            bounds: self.bounds.clone(),
         }
     }
 
@@ -163,6 +163,12 @@ impl Inequality {
             return None;
         }
 
+        println!(
+            "lens {:?} {:?}",
+            self.coeffs().ncols(),
+            self.bounds().ndim()
+        );
+
         // Reduce the rhs of each constraint (but don't filter cuz no rows are removed)
         let reduced_rhs: Array1<NNVFloat> = &self.rhs - self.coeffs.dot(&x);
 
@@ -181,13 +187,14 @@ impl Inequality {
             concatenate(Axis(1), &filtered_cols).unwrap()
         };
 
-        let filtered_bounds_iter = self
+        let filtered_bounds: Vec<_> = self
             .bounds()
             .bounds_iter()
             .into_iter()
             .zip(&fixed_idxs)
             .filter(|(_, &is_fixed)| !is_fixed)
-            .map(|(dim, _drop)| dim);
+            .map(|(dim, _drop)| dim)
+            .collect();
 
         // Remove trivial constraints (i.e. all zero coeffs on LHS)
         let is_nontrivial: Vec<bool> = filtered_coeffs
@@ -215,19 +222,10 @@ impl Inequality {
             .filter(|(_, &is_nontrivial)| is_nontrivial)
             .map(|(val, _)| val)
             .collect();
-        let nontrivial_bounds: Vec<ArrayView1<NNVFloat>> = filtered_bounds_iter
-            .zip(is_nontrivial.iter())
-            .filter(|(_, &is_nontrivial)| is_nontrivial)
-            .map(|(val, _)| val)
-            .collect();
 
         let final_coeffs: Array2<NNVFloat> = concatenate(Axis(0), &nontrivial_coeffs).unwrap();
         let final_rhs = Array1::from_vec(nontrivial_rhs);
-        let final_bounds = if nontrivial_bounds.is_empty() {
-            Bounds1::trivial(0)
-        } else {
-            Bounds1::new_by_dim(nontrivial_bounds.as_slice())
-        };
+        let final_bounds = Bounds1::new_by_dim(filtered_bounds.as_slice());
 
         Some(Self::new(final_coeffs, final_rhs, final_bounds))
     }

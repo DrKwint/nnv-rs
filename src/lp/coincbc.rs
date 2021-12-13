@@ -77,7 +77,6 @@ where
                 HasSolution => {
                     let param = Array1::from_iter(cbc_model.col_solution().into_iter().copied());
                     let fun = raw_soln.eval(c_expression);
-                    println!("Solved! {:?} and {:?}", param, fun);
                     LinearSolution::Solution(param, fun)
                 }
             }
