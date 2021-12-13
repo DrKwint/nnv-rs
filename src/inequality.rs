@@ -163,12 +163,6 @@ impl Inequality {
             return None;
         }
 
-        println!(
-            "lens {:?} {:?}",
-            self.coeffs().ncols(),
-            self.bounds().ndim()
-        );
-
         // Reduce the rhs of each constraint (but don't filter cuz no rows are removed)
         let reduced_rhs: Array1<NNVFloat> = &self.rhs - self.coeffs.dot(&x);
 

@@ -23,7 +23,7 @@ use rand_pcg::Pcg64;
 use std::process::Command;
 use std::time::Duration;
 
-fn build_dnn<R: Rng>(input_size: usize, rng: &mut R) -> DNN<f64> {
+fn build_dnn<R: Rng>(input_size: usize, rng: &mut R) -> DNN {
     let dense1 = Layer::new_dense(Affine2::new(
         Array::random_using((64, input_size), Normal::new(0., 1.).unwrap(), rng),
         Array::random_using(64, Normal::new(0., 1.).unwrap(), rng),
@@ -70,9 +70,7 @@ fn bench(c: &mut Criterion) {
     c.bench_function("starnode::get_output_bounds from root", |b| {
         b.iter_batched(
             || build_dnn(input_size, &mut rng),
-            |dnn: DNN<f64>| {
-                root_node.get_output_bounds(&dnn, &|x| (x.lower()[[0]], x.upper()[[0]]))
-            },
+            |dnn: DNN| root_node.get_output_bounds(&dnn, &|x| (x.lower()[[0]], x.upper()[[0]])),
             criterion::BatchSize::SmallInput,
         )
     });
@@ -87,7 +85,7 @@ fn bench(c: &mut Criterion) {
                 let dnn = build_dnn(input_size, &mut local_rng);
                 Constellation::new(root_star.clone(), dnn, loc.clone(), scale.clone())
             },
-            |mut constellation: Constellation<f64, Ix2>| {
+            |mut constellation: Constellation<Ix2>| {
                 let mut asterism = Asterism::new(&mut constellation, 0.);
                 asterism.sample_safe_star(1, &mut rng, 100, 20, None, 1e-4);
             },
@@ -100,7 +98,7 @@ fn bench(c: &mut Criterion) {
                 let dnn = build_dnn(input_size, &mut local_rng);
                 Constellation::new(root_star.clone(), dnn, loc.clone(), scale.clone())
             },
-            |mut constellation: Constellation<f64, Ix2>| {
+            |mut constellation: Constellation<Ix2>| {
                 let mut asterism = Asterism::new(&mut constellation, -10.);
                 asterism.sample_safe_star(1, &mut rng, 100, 20, None, 1e-4);
             },
@@ -114,7 +112,7 @@ fn bench(c: &mut Criterion) {
                 let dnn = build_dnn(input_size, &mut local_rng);
                 Constellation::new(root_star.clone(), dnn, loc.clone(), scale.clone())
             },
-            |mut constellation: Constellation<f64, Ix2>| {
+            |mut constellation: Constellation<Ix2>| {
                 let mut asterism = Asterism::new(&mut constellation, -100.);
                 asterism.sample_safe_star(1, &mut rng, 100, 20, None, 1e-4);
             },
