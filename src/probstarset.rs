@@ -60,8 +60,11 @@ pub trait ProbStarSet2: ProbStarSet<Ix2> + StarSet2 {
 
     fn sample_root_node<R: Rng>(&self, num_samples: usize, rng: &mut R) -> Array2<NNVFloat> {
         let input_dim = self.get_loc().len();
-        Array2::random_using((num_samples, input_dim), StandardNormal, rng) * self.get_scale()
-            + self.get_loc()
+        let mut sample = Array2::random_using((num_samples, input_dim), StandardNormal, rng)
+            * self.get_scale().diag()
+            + self.get_loc();
+        sample.swap_axes(0, 1);
+        sample
     }
 
     fn get_node_gaussian_distribution(&mut self, node_id: usize) -> &mut GaussianDistribution {

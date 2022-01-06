@@ -109,13 +109,9 @@ impl<'a> Asterism<'a, Ix2> {
                     current_node_type = self.constellation.get_node_type(current_node_id).clone();
                 }
                 // For each activation
-                for activation in layer_activations.row(i) {
+                for activation in layer_activations.column(i) {
                     // Estimate output bounds and potentially stop
                     let current_output_bounds = self.get_node_output_bounds(current_node_id);
-                    println!(
-                        "Node {} output bounds: {:?}",
-                        current_node_id, current_output_bounds
-                    );
                     // Select a child node based on the activation
                     if let StarNodeType::StepRelu {
                         dim,
@@ -581,6 +577,7 @@ mod test {
     use crate::test_util::*;
     use proptest::*;
     use serde_json::{from_str, to_string};
+    use std::fs;
 
     proptest! {
         #[test]
@@ -605,7 +602,7 @@ mod test {
         }
 
         #[test]
-        fn test_serialization(mut constellation in generic_constellation(2,2,2,2)) {
+        fn test_serialization(mut constellation in constellation(2,2,2,2)) {
             let num_samples = 4;
             let cdf_samples = 100;
             let max_iters = 10;
@@ -617,9 +614,10 @@ mod test {
             asterism.dfs_samples(num_samples, &mut rng, time_limit_opt);
 
             let serial_asterism = SerializableAsterism::from(asterism);
-            let serial_str = serde_json::to_string(&serial_asterism).unwrap();
+            let serialization = serde_json::to_string(&serial_asterism).unwrap();
 
-            let new_serial_asterism: SerializableAsterism<Ix2> = serde_json::from_str(&serial_str)?;
+            let new_serial_asterism: SerializableAsterism<Ix2> = serde_json::from_str(&serialization)?;
+            fs::write("test.json", &serialization).expect("Unable to write file.");
         }
     }
 }

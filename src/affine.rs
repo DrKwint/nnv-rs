@@ -148,7 +148,7 @@ impl Affine2 {
     }
 
     pub fn apply_matrix(&self, x: &ArrayView2<NNVFloat>) -> Array2<NNVFloat> {
-        x.dot(&self.basis) + &self.shift
+        &self.basis.dot(x) + &self.shift.view().insert_axis(Axis(1))
     }
 
     pub fn split_at(&self, index: usize) -> (Self, Self) {

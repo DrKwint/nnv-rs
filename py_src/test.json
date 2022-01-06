@@ -1,0 +1,517 @@
+{
+    "constellation": {
+        "arena": [
+            {
+                "star": {
+                    "representation": {
+                        "basis": {
+                            "v": 1,
+                            "dim": [
+                                2,
+                                2
+                            ],
+                            "data": [
+                                1.0,
+                                0.0,
+                                0.0,
+                                1.0
+                            ]
+                        },
+                        "shift": {
+                            "v": 1,
+                            "dim": [
+                                2
+                            ],
+                            "data": [
+                                0.0,
+                                0.0
+                            ]
+                        }
+                    },
+                    "constraints": {
+                        "halfspaces": {
+                            "coeffs": {
+                                "v": 1,
+                                "dim": [
+                                    1,
+                                    2
+                                ],
+                                "data": [
+                                    0.0,
+                                    0.0
+                                ]
+                            },
+                            "rhs": {
+                                "v": 1,
+                                "dim": [
+                                    1
+                                ],
+                                "data": [
+                                    0.0
+                                ]
+                            },
+                            "bounds": {
+                                "data": {
+                                    "v": 1,
+                                    "dim": [
+                                        2,
+                                        2
+                                    ],
+                                    "data": [
+                                        -29.896065562512526,
+                                        -17.567251548810333,
+                                        37.6783126204325,
+                                        14.490523845661405
+                                    ]
+                                }
+                            }
+                        }
+                    }
+                },
+                "dnn_index": {
+                    "layer": null,
+                    "remaining_steps": null
+                },
+                "star_cdf": null,
+                "cdf_delta": 0.0,
+                "local_bounds": null,
+                "output_bounds": null,
+                "is_feasible": true,
+                "gaussian_distribution": {
+                    "Gaussian": {
+                        "loc": {
+                            "v": 1,
+                            "dim": [
+                                2
+                            ],
+                            "data": [
+                                3.8911235289599855,
+                                -1.5383638515744646
+                            ]
+                        },
+                        "scale": {
+                            "v": 1,
+                            "dim": [
+                                2
+                            ],
+                            "data": [
+                                9.653482597563576,
+                                4.579682199210248
+                            ]
+                        }
+                    }
+                }
+            },
+            {
+                "star": {
+                    "representation": {
+                        "basis": {
+                            "v": 1,
+                            "dim": [
+                                1,
+                                2
+                            ],
+                            "data": [
+                                -2.9390964412825316,
+                                8.261765027459113
+                            ]
+                        },
+                        "shift": {
+                            "v": 1,
+                            "dim": [
+                                1
+                            ],
+                            "data": [
+                                3.7243636104919595
+                            ]
+                        }
+                    },
+                    "constraints": {
+                        "halfspaces": {
+                            "coeffs": {
+                                "v": 1,
+                                "dim": [
+                                    1,
+                                    2
+                                ],
+                                "data": [
+                                    0.0,
+                                    0.0
+                                ]
+                            },
+                            "rhs": {
+                                "v": 1,
+                                "dim": [
+                                    1
+                                ],
+                                "data": [
+                                    0.0
+                                ]
+                            },
+                            "bounds": {
+                                "data": {
+                                    "v": 1,
+                                    "dim": [
+                                        2,
+                                        2
+                                    ],
+                                    "data": [
+                                        -29.896065562512526,
+                                        -17.567251548810333,
+                                        37.6783126204325,
+                                        14.490523845661405
+                                    ]
+                                }
+                            }
+                        }
+                    }
+                },
+                "dnn_index": {
+                    "layer": 0,
+                    "remaining_steps": null
+                },
+                "star_cdf": null,
+                "cdf_delta": 0.0,
+                "local_bounds": {
+                    "data": {
+                        "v": 1,
+                        "dim": [
+                            2,
+                            1
+                        ],
+                        "data": [
+                            -252.15233540029,
+                            211.3090866512695
+                        ]
+                    }
+                },
+                "output_bounds": [
+                    0.0,
+                    0.0
+                ],
+                "is_feasible": true,
+                "gaussian_distribution": null
+            },
+            {
+                "star": {
+                    "representation": {
+                        "basis": {
+                            "v": 1,
+                            "dim": [
+                                1,
+                                2
+                            ],
+                            "data": [
+                                0.0,
+                                0.0
+                            ]
+                        },
+                        "shift": {
+                            "v": 1,
+                            "dim": [
+                                1
+                            ],
+                            "data": [
+                                0.0
+                            ]
+                        }
+                    },
+                    "constraints": {
+                        "halfspaces": {
+                            "coeffs": {
+                                "v": 1,
+                                "dim": [
+                                    2,
+                                    2
+                                ],
+                                "data": [
+                                    0.0,
+                                    0.0,
+                                    -2.9390964412825316,
+                                    8.261765027459113
+                                ]
+                            },
+                            "rhs": {
+                                "v": 1,
+                                "dim": [
+                                    2
+                                ],
+                                "data": [
+                                    0.0,
+                                    -3.7243636104919595
+                                ]
+                            },
+                            "bounds": {
+                                "data": {
+                                    "v": 1,
+                                    "dim": [
+                                        2,
+                                        2
+                                    ],
+                                    "data": [
+                                        -29.896065562512526,
+                                        -17.567251548810333,
+                                        37.6783126204325,
+                                        14.490523845661405
+                                    ]
+                                }
+                            }
+                        }
+                    }
+                },
+                "dnn_index": {
+                    "layer": 1,
+                    "remaining_steps": 0
+                },
+                "star_cdf": null,
+                "cdf_delta": 0.0,
+                "local_bounds": {
+                    "data": {
+                        "v": 1,
+                        "dim": [
+                            2,
+                            1
+                        ],
+                        "data": [
+                            0.0,
+                            0.0
+                        ]
+                    }
+                },
+                "output_bounds": [
+                    0.0,
+                    0.0
+                ],
+                "is_feasible": true,
+                "gaussian_distribution": null
+            },
+            {
+                "star": {
+                    "representation": {
+                        "basis": {
+                            "v": 1,
+                            "dim": [
+                                1,
+                                2
+                            ],
+                            "data": [
+                                -2.9390964412825316,
+                                8.261765027459113
+                            ]
+                        },
+                        "shift": {
+                            "v": 1,
+                            "dim": [
+                                1
+                            ],
+                            "data": [
+                                3.7243636104919595
+                            ]
+                        }
+                    },
+                    "constraints": {
+                        "halfspaces": {
+                            "coeffs": {
+                                "v": 1,
+                                "dim": [
+                                    2,
+                                    2
+                                ],
+                                "data": [
+                                    0.0,
+                                    0.0,
+                                    2.9390964412825316,
+                                    -8.261765027459113
+                                ]
+                            },
+                            "rhs": {
+                                "v": 1,
+                                "dim": [
+                                    2
+                                ],
+                                "data": [
+                                    0.0,
+                                    3.7243636104919595
+                                ]
+                            },
+                            "bounds": {
+                                "data": {
+                                    "v": 1,
+                                    "dim": [
+                                        2,
+                                        2
+                                    ],
+                                    "data": [
+                                        -29.896065562512526,
+                                        -17.567251548810333,
+                                        37.6783126204325,
+                                        14.490523845661405
+                                    ]
+                                }
+                            }
+                        }
+                    }
+                },
+                "dnn_index": {
+                    "layer": 1,
+                    "remaining_steps": 0
+                },
+                "star_cdf": null,
+                "cdf_delta": 0.0,
+                "local_bounds": {
+                    "data": {
+                        "v": 1,
+                        "dim": [
+                            2,
+                            1
+                        ],
+                        "data": [
+                            0.0,
+                            211.3090866512695
+                        ]
+                    }
+                },
+                "output_bounds": null,
+                "is_feasible": true,
+                "gaussian_distribution": null
+            }
+        ],
+        "node_type": [
+            {
+                "Affine": {
+                    "child_idx": 1
+                }
+            },
+            {
+                "StepRelu": {
+                    "dim": 0,
+                    "fst_child_idx": 2,
+                    "snd_child_idx": 3
+                }
+            },
+            null,
+            null
+        ],
+        "parents": [
+            null,
+            0,
+            1,
+            1
+        ],
+        "loc": {
+            "v": 1,
+            "dim": [
+                2
+            ],
+            "data": [
+                3.8911235289599855,
+                -1.5383638515744646
+            ]
+        },
+        "scale": {
+            "v": 1,
+            "dim": [
+                2,
+                2
+            ],
+            "data": [
+                9.653482597563576,
+                0.0,
+                0.0,
+                4.579682199210248
+            ]
+        },
+        "dnn": {
+            "layers": [
+                {
+                    "Dense": {
+                        "basis": {
+                            "v": 1,
+                            "dim": [
+                                1,
+                                2
+                            ],
+                            "data": [
+                                -2.9390964412825316,
+                                8.261765027459113
+                            ]
+                        },
+                        "shift": {
+                            "v": 1,
+                            "dim": [
+                                1
+                            ],
+                            "data": [
+                                3.7243636104919595
+                            ]
+                        }
+                    }
+                },
+                {
+                    "ReLU": 1
+                },
+                {
+                    "Dense": {
+                        "basis": {
+                            "v": 1,
+                            "dim": [
+                                1,
+                                1
+                            ],
+                            "data": [
+                                -8.032818276923228
+                            ]
+                        },
+                        "shift": {
+                            "v": 1,
+                            "dim": [
+                                1
+                            ],
+                            "data": [
+                                3.279755789702051
+                            ]
+                        }
+                    }
+                },
+                {
+                    "ReLU": 1
+                },
+                {
+                    "Dense": {
+                        "basis": {
+                            "v": 1,
+                            "dim": [
+                                2,
+                                1
+                            ],
+                            "data": [
+                                -8.527402658411622,
+                                -1.3966149628255629
+                            ]
+                        },
+                        "shift": {
+                            "v": 1,
+                            "dim": [
+                                2
+                            ],
+                            "data": [
+                                -2.613564371382755,
+                                9.105025811855448
+                            ]
+                        }
+                    }
+                },
+                {
+                    "ReLU": 2
+                }
+            ]
+        },
+        "max_accept_reject_iters": 4,
+        "num_cdf_samples": 100,
+        "stability_eps": 1e-10
+    },
+    "safe_value": 1.0,
+    "is_feasible": [
+        true
+    ]
+}
