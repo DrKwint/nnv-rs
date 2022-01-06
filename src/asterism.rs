@@ -580,6 +580,7 @@ mod test {
     use super::*;
     use crate::test_util::*;
     use proptest::*;
+    use serde_json::{from_str, to_string};
 
     proptest! {
         #[test]
@@ -601,6 +602,24 @@ mod test {
             let mut rng = rand::thread_rng();
             let mut asterism = Asterism::new(&mut constellation, 1.);
             asterism.dfs_samples(num_samples, &mut rng, time_limit_opt);
+        }
+
+        #[test]
+        fn test_serialization(mut constellation in generic_constellation(2,2,2,2)) {
+            let num_samples = 4;
+            let cdf_samples = 100;
+            let max_iters = 10;
+            let time_limit_opt = None;
+            let stability_eps = 1e-10;
+
+            let mut rng = rand::thread_rng();
+            let mut asterism = Asterism::new(&mut constellation, 1.);
+            asterism.dfs_samples(num_samples, &mut rng, time_limit_opt);
+
+            let serial_asterism = SerializableAsterism::from(asterism);
+            let serial_str = serde_json::to_string(&serial_asterism).unwrap();
+
+            let new_serial_asterism: SerializableAsterism<Ix2> = serde_json::from_str(&serial_str)?;
         }
     }
 }
