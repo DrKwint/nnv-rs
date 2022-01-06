@@ -355,7 +355,7 @@ impl Iterator for DNNIterator<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test_util::{array1, fc_dnn};
+    use crate::test_util::fc_dnn;
     use proptest::prelude::*;
 
     #[test]

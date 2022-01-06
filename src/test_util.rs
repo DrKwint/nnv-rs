@@ -94,7 +94,7 @@ prop_compose! {
         let ubs = loc.clone() + 3.5 * scale_diag.clone();
         let input_bounds = Bounds1::new(lbs.view(), ubs.view());
         let star = Star2::new(Array2::eye(input_size), Array1::zeros(input_size)).with_input_bounds(input_bounds.clone());
-        Constellation::new(star, dnn, loc, Array2::from_diag(&scale_diag).to_owned())
+        Constellation::new(dnn, star, loc, Array2::from_diag(&scale_diag).to_owned(), 4, 100, 1e-10)
     }
 }
 
@@ -130,12 +130,12 @@ prop_compose! {
                 .for_each(|eqn_idx| {
                     let eqn = ineq.get_eqn(eqn_idx);
                     if eqn.is_member(&zero.view()) {
-                        inequality.add_eqns(&eqn, true);
+                        inequality.add_eqns(&eqn);
                     } else {
                         let new_coeffs = -1. * eqn.coeffs().to_owned();
                         let new_rhs = -1. * eqn.rhs().to_owned();
                         let eqn = Inequality::new(new_coeffs, new_rhs, Bounds1::trivial(num_dims));
-                        inequality.add_eqns(&eqn, true);
+                        inequality.add_eqns(&eqn);
                     }
                 });
             inequality
@@ -189,7 +189,7 @@ prop_compose! {
                 ineq.rhs().to_owned(),
                 Bounds1::trivial(num_dims)
             );
-            ineq.add_eqns(&inverse_ineq, true);
+            ineq.add_eqns(&inverse_ineq);
 
             // Make a box bigger than possible inner inequalities
             let box_coeffs = Array2::eye(num_dims);
@@ -199,8 +199,8 @@ prop_compose! {
             let upper_box_ineq = Inequality::new(box_coeffs.clone(), box_rhs.clone(), Bounds1::trivial(num_dims));
             let lower_box_ineq = Inequality::new(-1. * box_coeffs, box_rhs, Bounds1::trivial(num_dims));
 
-            ineq.add_eqns(&upper_box_ineq, true);
-            ineq.add_eqns(&lower_box_ineq, true);
+            ineq.add_eqns(&upper_box_ineq);
+            ineq.add_eqns(&lower_box_ineq);
 
             // Construct the empty polytope.
             Polytope::from_halfspaces(ineq)

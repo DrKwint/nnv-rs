@@ -24,14 +24,15 @@ impl IntoAffineExpression for LinearExpression {
 
 /// Minimizes the expression `c` given the constraint `Ax < b`.
 /// # Panics
-pub fn solve<'a, I>(
+pub fn solve<'a, I, J>(
     A: I,
-    b: ArrayView1<NNVFloat>,
+    b: J,
     var_coeffs: ArrayView1<NNVFloat>,
     var_bounds: &Bounds1,
 ) -> LinearSolution
 where
     I: IntoIterator<Item = ArrayView1<'a, NNVFloat>>,
+    J: IntoIterator<Item = &'a NNVFloat>,
 {
     let mut _shh_out;
     let mut _shh_err;

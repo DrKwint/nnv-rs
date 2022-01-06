@@ -425,12 +425,12 @@ impl Star4 {
 
 #[cfg(test)]
 mod test {
-    use super::*;
-    use crate::test_util::{array2, empty_star, non_empty_star};
-    use ndarray::arr1;
-    use proptest::prelude::*;
-    use proptest::proptest;
-    use std::panic;
+    // use super::*;
+    // use crate::test_util::{array2, empty_star, non_empty_star};
+    // use ndarray::arr1;
+    // use proptest::prelude::*;
+    // use proptest::proptest;
+    // use std::panic;
 
     /*
         #[test]

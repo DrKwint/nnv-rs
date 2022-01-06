@@ -54,7 +54,7 @@ impl GaussianDistribution {
         }
     }
 
-    pub const fn try_get_tilting_solution(&self) -> Option<&TiltingSolution> {
+    pub fn try_get_tilting_solution(&self) -> Option<&TiltingSolution> {
         match self {
             GaussianDistribution::TruncGaussian { distribution, .. } => {
                 distribution.try_get_tilting_solution()

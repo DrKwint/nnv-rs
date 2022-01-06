@@ -165,8 +165,7 @@ mod tests {
     use crate::test_util::{bounds1, fc_dnn};
     use ndarray::Array2;
     use ndarray::Axis;
-    use ndarray::Ix1;
-    use proptest::{prop_assert, proptest};
+    use proptest::proptest;
 
     #[test]
     fn test_deeppoly_concrete() {

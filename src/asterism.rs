@@ -587,20 +587,20 @@ mod test {
             let mut rng = rand::thread_rng();
             let mut asterism = Asterism::new(&mut constellation, 1.);
             let default: Array1<f64> = Array1::zeros(asterism.constellation.get_dnn().input_shape()[0].unwrap());
-            let sample = asterism.sample_safe_star(1, &mut rng, 1, 1, None, 1e-4);
+            let sample = asterism.sample_safe_star(1, &mut rng, None);
         }
 
         #[test]
         fn test_dfs_samples(mut constellation in generic_constellation(2, 2, 2, 2)) {
-                let num_samples = 4;
-                let cdf_samples = 100;
-                let max_iters = 10;
-                let time_limit_opt = None;
-                let stability_eps = 1e-10;
+            let num_samples = 4;
+            let cdf_samples = 100;
+            let max_iters = 10;
+            let time_limit_opt = None;
+            let stability_eps = 1e-10;
 
-                let mut rng = rand::thread_rng();
-                let mut asterism = Asterism::new(&mut constellation, 1.);
-                asterism.dfs_samples(num_samples, &mut rng, cdf_samples, max_iters, time_limit_opt, stability_eps);
-            }
+            let mut rng = rand::thread_rng();
+            let mut asterism = Asterism::new(&mut constellation, 1.);
+            asterism.dfs_samples(num_samples, &mut rng, time_limit_opt);
+        }
     }
 }
