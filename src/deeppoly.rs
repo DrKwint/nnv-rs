@@ -119,36 +119,37 @@ pub fn deep_poly(input_bounds: &Bounds1, dnn_iter: DNNIterator) -> Bounds1 {
     let ndim = input_bounds.ndim();
     // Affine expressing bounds on each variable in current layer as a
     // linear function of input bounds
-    let aff_bounds =
-        dnn_iter.fold(
-            // Initialize with identity
-            (
-                input_bounds.clone(),
-                (Affine2::identity(ndim), Affine2::identity(ndim)),
-            ),
-            |(bounds_concrete, (laff, uaff)), op| {
-                let out = op.apply_bounds(&bounds_concrete, &laff, &uaff);
+    let aff_bounds = dnn_iter.fold(
+        // Initialize with identity
+        (
+            input_bounds.clone(),
+            (Affine2::identity(ndim), Affine2::identity(ndim)),
+        ),
+        |(bounds_concrete, (laff, uaff)), op| {
+            let out = op.apply_bounds(&bounds_concrete, &laff, &uaff);
+            debug_assert!(
+                out.0
+                    .bounds_iter()
+                    .into_iter()
+                    .all(|x| (x[[0]] <= x[[1]]) || (x[[0]] - x[[1]]) < 1e-4),
+                "Bounds: {:?}",
+                out.0
+            );
+            if cfg!(debug_assertions) {
+                let lower_bounds = out.1 .0.signed_apply(input_bounds);
+                let upper_bounds = out.1 .1.signed_apply(input_bounds);
+                let realized_abstract_bounds =
+                    Bounds1::new(lower_bounds.lower(), upper_bounds.upper());
                 debug_assert!(
-                    out.0.bounds_iter().into_iter().all(|x| (x[[0]] <= x[[1]])
-                        || (x[[0]] - x[[1]]) < std::convert::From::from(1e-4)),
-                    "Bounds: {:?}",
-                    out.0
+                    realized_abstract_bounds.subset(&out.0),
+                    "\n\nRealized abstract: {:?}\nConcrete: {:?}\n\n",
+                    realized_abstract_bounds,
+                    bounds_concrete
                 );
-                if cfg!(debug_assertions) {
-                    let lower_bounds = out.1 .0.signed_apply(input_bounds);
-                    let upper_bounds = out.1 .1.signed_apply(input_bounds);
-                    let realized_abstract_bounds =
-                        Bounds1::new(lower_bounds.lower(), upper_bounds.upper());
-                    debug_assert!(
-                        realized_abstract_bounds.subset(&out.0),
-                        "\n\nRealized abstract: {:?}\nConcrete: {:?}\n\n",
-                        realized_abstract_bounds,
-                        bounds_concrete
-                    );
-                }
-                out
-            },
-        );
+            }
+            out
+        },
+    );
     // Final substitution to get output bounds
     let lower_bounds = aff_bounds.1 .0.signed_apply(input_bounds);
     let upper_bounds = aff_bounds.1 .1.signed_apply(input_bounds);
@@ -192,18 +193,6 @@ mod tests {
         #[test]
         fn test_deeppoly_with_dnn(dnn in fc_dnn(2, 2, 1, 2), input_bounds in bounds1(2)) {
             deep_poly(&input_bounds, DNNIterator::new(&dnn, DNNIndex::default()));
-        }
-    }
-
-    proptest! {
-        #[test]
-        fn test_deeppoly_correctness(dnn in fc_dnn(2, 2, 2, 2), input_bounds in bounds1(2)) {
-            let concrete_input = input_bounds.sample_uniform(0_u64);
-            let concrete_output = dnn.forward(concrete_input.into_dyn()).into_dimensionality::<Ix1>().unwrap();
-
-            let output_bounds = deep_poly(&input_bounds, DNNIterator::new(&dnn, DNNIndex::default()));
-
-            prop_assert!(output_bounds.is_member(&concrete_output.view()), "\n\nConcrete output: {}\nOutput bounds: {}\n\n", concrete_output, output_bounds)
         }
     }
 

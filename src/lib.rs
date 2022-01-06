@@ -1,10 +1,7 @@
 #![warn(clippy::all, clippy::pedantic, clippy::nursery, clippy::cargo)]
 #![allow(clippy::must_use_candidate)]
-#![feature(fn_traits)]
-#![feature(destructuring_assignment)]
-#![feature(unboxed_closures)]
-#![feature(trait_alias)]
-#![feature(convert_float_to_int)]
+#![feature(binary_heap_into_iter_sorted)]
+
 extern crate approx;
 #[cfg(feature = "openblas-system")]
 extern crate blas_src;
@@ -23,7 +20,8 @@ extern crate truncnorm;
 
 pub mod affine;
 pub mod asterism;
-pub mod belt;
+//pub mod belt;
+pub mod adversarial;
 pub mod bounds;
 pub mod constellation;
 pub mod deeppoly;
@@ -32,11 +30,14 @@ pub mod gaussian;
 pub mod inequality;
 pub mod lp;
 pub mod polytope;
+pub mod probstarset;
 pub mod star;
 pub mod star_node;
+pub mod starset;
 pub mod tensorshape;
 pub mod test_util;
 pub mod util;
+pub mod vecstarset;
 
 cfg_if::cfg_if! {
     if #[cfg(feature = "blas_intel-mkl")] {
@@ -47,21 +48,6 @@ cfg_if::cfg_if! {
 }
 
 pub type NNVFloat = f64;
-// 'static
-//     + num::Float
-//     + std::convert::From<f64>
-//     + std::convert::Into<f64>
-//     + ndarray::ScalarOperand
-//     + std::fmt::Display
-//     + std::fmt::Debug
-//     + std::ops::MulAssign
-//     + std::ops::AddAssign
-//     + std::default::Default
-//     + std::iter::Sum
-//     + approx::AbsDiffEq
-//     + rand::distributions::uniform::SampleUniform
-//     + serde::ser::Serialize
-//     + serde::de::Deserialize<'de>;
 
 pub mod trunks {
     use crate::bounds::Bounds1;
@@ -71,8 +57,8 @@ pub mod trunks {
     pub fn halfspace_gaussian_cdf(
         coeffs: Array1<f64>,
         rhs: f64,
-        mu: Array1<f64>,
-        sigma: Array1<f64>,
+        mu: &Array1<f64>,
+        sigma: &Array1<f64>,
     ) -> f64 {
         let mut rng = rand::thread_rng();
         let bounds = Bounds1::trivial(coeffs.len());
@@ -81,8 +67,12 @@ pub mod trunks {
             Array1::from_vec(vec![rhs]),
             bounds,
         );
-        let mut truncnorm =
-            polytope.get_truncnorm_distribution(&mu, &Array2::from_diag(&sigma), 3, 1e-10);
+        let mut truncnorm = polytope.get_truncnorm_distribution(
+            mu.view(),
+            Array2::from_diag(sigma).view(),
+            3,
+            1e-10,
+        );
         truncnorm.cdf(1000, &mut rng)
     }
 }

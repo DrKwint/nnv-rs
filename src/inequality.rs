@@ -55,7 +55,7 @@ impl Inequality {
         self.rhs.len()
     }
 
-    pub fn bounds(&self) -> &Bounds1 {
+    pub const fn bounds(&self) -> &Bounds1 {
         &self.bounds
     }
 
@@ -75,27 +75,14 @@ impl Inequality {
             LinearSolution::Solution(_, val) => val,
             LinearSolution::Infeasible | LinearSolution::Unbounded(_) => return true,
         };
-        val > rhs.into()
+        val > rhs
     }
 
     /// `check_redundant` is currently disabled
     /// # Panics
-    pub fn add_eqns(&mut self, eqns: &Self, check_redundant: bool) {
-        if check_redundant && false {
-            for (c, r) in eqns.coeffs().rows().into_iter().zip(eqns.rhs().into_iter()) {
-                if !self.check_redundant(c, *r) {
-                    self.coeffs
-                        .append(Axis(0), c.insert_axis(Axis(0)))
-                        .expect("Failed to add eqn to Inequality");
-                    self.rhs
-                        .append(Axis(0), arr1(&[*r]).view())
-                        .expect("Failed to add eqn to Inequality");
-                }
-            }
-        } else {
-            self.coeffs.append(Axis(0), eqns.coeffs()).unwrap();
-            self.rhs.append(Axis(0), eqns.rhs()).unwrap();
-        }
+    pub fn add_eqns(&mut self, eqns: &Self) {
+        self.coeffs.append(Axis(0), eqns.coeffs()).unwrap();
+        self.rhs.append(Axis(0), eqns.rhs()).unwrap();
     }
 
     pub fn any_nan(&self) -> bool {
@@ -116,6 +103,7 @@ impl Inequality {
     }
 
     /// # Panics
+    #[must_use]
     pub fn get_eqn(&self, idx: usize) -> Self {
         let i_idx: isize = isize::try_from(idx).unwrap();
         Self {

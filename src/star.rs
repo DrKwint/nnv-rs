@@ -10,11 +10,11 @@ use crate::lp::LinearSolution;
 use crate::polytope::Polytope;
 use crate::tensorshape::TensorShape;
 use crate::NNVFloat;
-use ndarray::Array4;
 use ndarray::ArrayView1;
 use ndarray::Dimension;
 use ndarray::Ix4;
 use ndarray::{Array1, Array2};
+use ndarray::{Array4, ArrayView2};
 use ndarray::{Axis, Ix2};
 use num::Float;
 use serde::{Deserialize, Serialize};
@@ -80,9 +80,10 @@ impl<D: Dimension> Star<D> {
 
     /// Add constraints to restrict the input set. Each row represents a
     /// constraint and the last column represents the upper bounds.
-    pub fn add_constraints(mut self, new_constraints: &Inequality, check_redundant: bool) -> Self {
+    #[must_use]
+    pub fn add_constraints(mut self, new_constraints: &Inequality) -> Self {
         if let Some(ref mut constrs) = self.constraints {
-            constrs.add_constraints(new_constraints, check_redundant);
+            constrs.add_constraints(new_constraints);
         } else {
             self.constraints = Some(Polytope::from_halfspaces(new_constraints.clone()));
         }
@@ -95,19 +96,20 @@ impl Star2 {
         self.constraints.as_ref().map(|x| x.coeffs().to_owned())
     }
 
+    #[must_use]
     pub fn get_safe_subset(&self, safe_value: NNVFloat) -> Self {
         let subset = self.clone();
         let mut new_constr: Inequality = self.representation.clone().into();
         let mut rhs = new_constr.rhs_mut();
         rhs *= -1.;
         rhs += safe_value;
-        subset.add_constraints(&new_constr, false)
+        subset.add_constraints(&new_constr)
     }
 
     pub fn get_input_trunc_gaussian(
         &self,
-        mu: &Array1<NNVFloat>,
-        sigma: &Array2<NNVFloat>,
+        mu: ArrayView1<NNVFloat>,
+        sigma: ArrayView2<NNVFloat>,
         max_accept_reject_iters: usize,
         stability_eps: NNVFloat,
     ) -> Option<GaussianDistribution> {
@@ -145,8 +147,9 @@ impl Star2 {
     }
 
     /// # Panics
+    #[must_use]
     pub fn with_constraints(mut self, constraints: Polytope) -> Self {
-        debug_assert!(!self.constraints.is_some(), "explicit panic");
+        debug_assert!(self.constraints.is_none(), "explicit panic");
         self.constraints = Some(constraints);
         self
     }
@@ -167,6 +170,7 @@ impl Star2 {
         self.constraints.as_ref().map(Polytope::get_bounds)
     }
 
+    #[must_use]
     pub fn with_input_bounds(mut self, input_bounds: Bounds1) -> Self {
         if self.constraints.is_some() {
             self.constraints = self.constraints.map(|x| x.with_input_bounds(input_bounds));
@@ -175,32 +179,27 @@ impl Star2 {
         }
         self
     }
-}
 
-impl Star2 {
     /// Apply an affine transformation to the representation
+    #[must_use]
     pub fn affine_map2(&self, affine: &Affine<Ix2>) -> Self {
         Self {
             representation: affine * &self.representation,
             constraints: self.constraints.clone(),
         }
     }
-}
 
-impl Star2 {
     pub fn step_relu2(&self, index: usize) -> (Option<Self>, Option<Self>) {
-        let neg_one: NNVFloat = std::convert::From::from(-1.);
-
         let mut new_constr: Inequality = {
             let mut aff = self.representation.get_eqn(index);
-            let neg_basis_part = &aff.basis() * neg_one;
+            let neg_basis_part = &aff.basis() * -1.;
             aff.basis_mut().assign(&neg_basis_part);
             aff.into()
         };
-        let upper_star = self.clone().add_constraints(&new_constr, true);
+        let upper_star = self.clone().add_constraints(&new_constr);
 
-        new_constr *= neg_one;
-        let mut lower_star = self.clone().add_constraints(&new_constr, true);
+        new_constr *= -1.;
+        let mut lower_star = self.clone().add_constraints(&new_constr);
         lower_star.representation.zero_eqn(index);
 
         let lower_star_opt = if lower_star.is_empty() {
@@ -267,9 +266,9 @@ impl Star2 {
     pub fn get_min(&self, idx: usize) -> NNVFloat {
         let eqn = self.representation.get_eqn(idx);
 
-        self.constraints.as_ref().map_or_else(
-            || NNVFloat::neg_infinity(),
-            |poly| {
+        self.constraints
+            .as_ref()
+            .map_or_else(NNVFloat::neg_infinity, |poly| {
                 let solved = solve(
                     poly.coeffs().rows(),
                     poly.ubs(),
@@ -281,8 +280,7 @@ impl Star2 {
                 } else {
                     panic!("Solution: {:?}", solved)
                 }
-            },
-        )
+            })
     }
 
     #[cfg(feature = "rayon")]
@@ -317,14 +315,13 @@ impl Star2 {
     /// # Panics
     /// TODO: Change output type to Option<T>
     pub fn get_max(&self, idx: usize) -> NNVFloat {
-        let neg_one: NNVFloat = std::convert::From::from(-1.);
         let mut eqn = self.representation.get_eqn(idx);
         let shift = eqn.shift()[0];
-        eqn *= neg_one;
+        eqn *= -1.;
 
-        self.constraints.as_ref().map_or_else(
-            || NNVFloat::infinity(),
-            |poly| {
+        self.constraints
+            .as_ref()
+            .map_or_else(NNVFloat::infinity, |poly| {
                 let solved = solve(
                     poly.coeffs().rows(),
                     poly.ubs(),
@@ -336,8 +333,57 @@ impl Star2 {
                 } else {
                     panic!()
                 }
-            },
-        )
+            })
+    }
+
+    //pub fn minimum_norm_member(&self, norm: usize) -> Array1<NNVFloat> {}
+
+    pub fn can_maximize_output_idx(&self, class_idx: usize) -> bool {
+        let class_eqn = self.representation.get_eqn(class_idx);
+        let (class_coeffs, class_shift): (ArrayView1<NNVFloat>, NNVFloat) = {
+            (
+                class_eqn.basis().remove_axis(Axis(0)),
+                class_eqn.shift()[[0]],
+            )
+        };
+        let nvars = class_coeffs.len();
+
+        if self.constraints.is_none() {
+            return true; // We should have more sophisticated handling here, but this is a stopgap
+        }
+        let poly = self.constraints.as_ref().unwrap();
+        let block_coeffs = poly.coeffs();
+        let (A, b) = (block_coeffs.rows(), poly.ubs());
+        // Add a constraint for each output class not equal to the one being maximized
+        let mut coeffs = Vec::new();
+        let mut shifts = Vec::new();
+        for idx in 0..self.representation.shift().ndim() {
+            if idx == class_idx {
+                continue;
+            } else {
+                let (diff_coeffs, diff_shift) = {
+                    let other_class_eqn = self.representation.get_eqn(idx);
+                    (
+                        &class_coeffs - &other_class_eqn.basis().row(0),
+                        class_shift - other_class_eqn.shift()[[0]],
+                    )
+                };
+                coeffs.push(diff_coeffs);
+                shifts.push(diff_shift);
+            }
+        }
+
+        let solveA = A.into_iter().chain(coeffs.iter().map(|x| x.view()));
+        let solved = solve(
+            solveA,
+            b.iter().chain(shifts.iter()),
+            Array1::ones(nvars).view(),
+            &Bounds1::trivial(nvars),
+        );
+        match solved {
+            LinearSolution::Solution(..) => true,
+            _ => false,
+        }
     }
 
     pub fn calculate_axis_aligned_bounding_box(&self) -> Bounds1 {

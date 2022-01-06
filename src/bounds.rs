@@ -138,6 +138,7 @@ impl Bounds1 {
         )
     }
 
+    #[must_use]
     pub fn affine_map(&self, aff: &Affine2) -> Self {
         let lower = aff.apply(&self.lower());
         let upper = aff.apply(&self.upper());
@@ -157,6 +158,7 @@ impl Bounds1 {
     }
 
     /// # Panics
+    #[must_use]
     pub fn append(mut self, other: &Self) -> Self {
         self.data.append(Axis(1), other.data.view()).unwrap();
         self
@@ -166,6 +168,7 @@ impl Bounds1 {
         self.data.index_axis_mut(Axis(1), index)
     }
 
+    #[must_use]
     pub fn get_ith_bounds(&self, index: usize) -> Self {
         Self {
             data: self

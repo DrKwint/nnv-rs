@@ -9,6 +9,7 @@ use ndarray_stats::QuantileExt;
 use num::Float;
 use rand::Rng;
 use std::cmp::max;
+use std::cmp::Ordering;
 use std::fmt::Debug;
 use std::iter::Sum;
 
@@ -32,6 +33,7 @@ pub fn diag_gaussian_accept_reject<R: Rng>(
     //(0..n_rounds).map(|_| rng.gen()).all(|x: f64| x < likelihood)
 }
 
+/// # Panics
 pub fn matrix_cond(A: &Array2<f64>, A_inv: &Array2<f64>) -> f64 {
     let (_, sigma, _) = A.svd(false, false).unwrap();
     let (_, inv_sigma, _) = A_inv.svd(false, false).unwrap();
@@ -144,6 +146,21 @@ impl<T> ArenaLike<T> for Vec<T> {
         let new_id = self.len();
         self.push(data);
         new_id
+    }
+}
+
+#[derive(Eq, PartialEq)]
+pub struct FstOrdTuple<A: Ord, B>(pub (A, B));
+
+impl<A: Ord, B: PartialEq> PartialOrd for FstOrdTuple<A, B> {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        self.0 .0.partial_cmp(&other.0 .0)
+    }
+}
+
+impl<A: Ord, B: Eq> Ord for FstOrdTuple<A, B> {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.0 .0.cmp(&other.0 .0)
     }
 }
 

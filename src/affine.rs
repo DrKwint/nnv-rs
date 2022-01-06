@@ -58,6 +58,7 @@ impl<D: Dimension + ndarray::RemoveAxis> Affine<D> {
     /// Get a single equation (i.e., a set of coefficients and a shift/RHS)
     ///
     /// # Panics
+    #[must_use]
     pub fn get_eqn(&self, index: usize) -> Self {
         let idx = isize::try_from(index).unwrap();
         let basis = self
@@ -146,6 +147,10 @@ impl Affine2 {
         self.basis.dot(x) + &self.shift
     }
 
+    pub fn apply_matrix(&self, x: &ArrayView2<NNVFloat>) -> Array2<NNVFloat> {
+        x.dot(&self.basis) + &self.shift
+    }
+
     pub fn split_at(&self, index: usize) -> (Self, Self) {
         let (basis_head, basis_tail) = self.basis.view().split_at(Axis(1), index);
         (
@@ -161,6 +166,7 @@ impl Affine2 {
     }
 
     /// # Panics
+    #[must_use]
     pub fn append(mut self, other: &Self) -> Self {
         self.basis.append(Axis(1), other.basis.view()).unwrap();
         self
@@ -183,6 +189,7 @@ impl Affine2 {
     }
 
     /// # Panics
+    #[must_use]
     pub fn signed_compose(&self, pos_rhs: &Self, neg_rhs: &Self) -> Self {
         debug_assert_eq!(
             self.input_dim(),
@@ -315,7 +322,7 @@ impl Mul<&Self> for Affine2 {
 }
 
 impl Affine<Ix4> {
-    pub fn new(basis: Array4<NNVFloat>, shift: Array1<NNVFloat>) -> Self {
+    pub const fn new(basis: Array4<NNVFloat>, shift: Array1<NNVFloat>) -> Self {
         Self { basis, shift }
     }
 

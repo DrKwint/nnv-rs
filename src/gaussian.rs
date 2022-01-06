@@ -37,10 +37,8 @@ impl GaussianDistribution {
                     .collect()
             }
             GaussianDistribution::Gaussian { ref loc, ref scale } => {
-                let samples = (Array2::random((n, loc.len()), StandardNormal)
-                    .mapv(|x: f64| x.into())
-                    * scale)
-                    + loc;
+                let samples =
+                    (Array2::random((n, loc.len()), StandardNormal).mapv(|x: f64| x) * scale) + loc;
                 samples.rows().into_iter().map(|x| x.to_owned()).collect()
             }
         }
@@ -50,13 +48,13 @@ impl GaussianDistribution {
         match self {
             GaussianDistribution::TruncGaussian { distribution, .. } => {
                 let (est, _rel_err, _upper_bound) = distribution.cdf(n, rng);
-                est.into()
+                est
             }
             GaussianDistribution::Gaussian { .. } => NNVFloat::one(),
         }
     }
 
-    pub fn try_get_tilting_solution(&self) -> Option<&TiltingSolution> {
+    pub const fn try_get_tilting_solution(&self) -> Option<&TiltingSolution> {
         match self {
             GaussianDistribution::TruncGaussian { distribution, .. } => {
                 distribution.try_get_tilting_solution()

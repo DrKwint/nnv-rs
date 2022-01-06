@@ -13,14 +13,15 @@ use grb::VarType::Continuous;
 use ndarray::{Array1, ArrayView1};
 
 /// # Panics
-pub fn solve<'a, I>(
+pub fn solve<'a, I, J>(
     A: I,
-    b: ArrayView1<NNVFloat>,
+    b: J,
     var_coeffs: ArrayView1<NNVFloat>,
     var_bounds: &Bounds1,
 ) -> LinearSolution
 where
     I: IntoIterator<Item = ArrayView1<'a, NNVFloat>>,
+    J: IntoIterator<Item = &'a NNVFloat>,
 {
     // Create model
     let mut env = Env::empty().unwrap();
@@ -41,21 +42,20 @@ where
         .collect();
 
     // Add constraints
-    let ineqs = A.into_iter().zip(b.iter()).map(|(A_i, b_i)| {
+    let ineqs = A.into_iter().zip(b.into_iter()).map(|(A_i, b_i)| {
         let sense = ConstrSense::Less;
         let mut lhs = LinExpr::new();
         A_i.into_iter().zip(vars.iter()).for_each(|(A_ij, v)| {
-            lhs.add_term((*A_ij).into(), *v);
+            lhs.add_term(*A_ij, *v);
         });
 
         let lhs = Linear(lhs);
-        let rhs = Constant((*b_i).into());
+        let rhs = Constant(*b_i);
         IneqExpr { lhs, sense, rhs }
     });
-    let _constrs: Vec<_> = (0..b.len())
-        .map(|i| format!("r{}", i))
-        .zip(ineqs)
-        .map(|(name, constr)| model.add_constr(&name, constr))
+    let _constrs: Vec<_> = ineqs
+        .enumerate()
+        .map(|(i, constr)| model.add_constr(&format!("r{}", i), constr))
         .collect();
 
     // Optimize and get status

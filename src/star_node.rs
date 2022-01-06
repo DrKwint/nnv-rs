@@ -11,10 +11,11 @@ use crate::polytope::Polytope;
 use crate::star::Star;
 use crate::NNVFloat;
 use log::trace;
+use ndarray::Array1;
 use ndarray::ArrayView1;
+use ndarray::ArrayView2;
 use ndarray::Dimension;
 use ndarray::Ix2;
-use ndarray::{Array1, Array2};
 use rand::Rng;
 use serde::{Deserialize, Serialize};
 use std::fmt::Debug;
@@ -79,11 +80,47 @@ pub enum StarNodeType {
     },
 }
 
+impl StarNodeType {
+    pub fn get_child_ids(&self) -> Vec<usize> {
+        match self {
+            StarNodeType::Leaf => vec![],
+            StarNodeType::Affine { child_idx } => vec![*child_idx],
+            StarNodeType::StepRelu {
+                dim: _,
+                fst_child_idx,
+                snd_child_idx,
+            } => {
+                let mut child_ids: Vec<usize> = vec![*fst_child_idx];
+                if let Some(idx) = snd_child_idx {
+                    child_ids.push(*idx);
+                }
+                child_ids
+            }
+            StarNodeType::StepReluDropOut {
+                fst_child_idx,
+                snd_child_idx,
+                trd_child_idx,
+                ..
+            } => {
+                let mut child_ids: Vec<usize> = vec![*fst_child_idx];
+                if let Some(idx) = snd_child_idx {
+                    child_ids.push(*idx);
+                }
+                if let Some(idx) = trd_child_idx {
+                    child_ids.push(*idx);
+                }
+                child_ids
+            }
+        }
+    }
+}
+
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct StarNode<D: Dimension> {
     star: Star<D>,
     dnn_index: DNNIndex,
     star_cdf: Option<NNVFloat>,
+    cdf_delta: NNVFloat,
     local_bounds: Option<Bounds1>,
     output_bounds: Option<(NNVFloat, NNVFloat)>,
     is_feasible: bool,
@@ -96,6 +133,7 @@ impl<D: Dimension> StarNode<D> {
             star,
             dnn_index: DNNIndex::default(),
             star_cdf: None,
+            cdf_delta: 0.,
             local_bounds,
             output_bounds: None,
             is_feasible: true,
@@ -103,6 +141,7 @@ impl<D: Dimension> StarNode<D> {
         }
     }
 
+    #[must_use]
     pub fn with_dnn_index(mut self, dnn_index: DNNIndex) -> Self {
         self.dnn_index = dnn_index;
         self
@@ -132,19 +171,12 @@ impl<D: Dimension> StarNode<D> {
 
     pub fn reset_cdf(&mut self) {
         self.star_cdf = None;
+        self.cdf_delta = 0.;
     }
 
     /// # Panics
     pub fn add_cdf(&mut self, add: NNVFloat) {
-        if let Some(ref mut cdf) = self.star_cdf {
-            *cdf += add;
-            // Do this test due to cdfs being approximations
-            if cdf.is_sign_negative() {
-                *cdf = NNVFloat::epsilon();
-            }
-        } else {
-            // TODO
-        }
+        self.cdf_delta += add;
     }
 }
 
@@ -163,15 +195,15 @@ impl StarNode<Ix2> {
     }
 
     /// None indicates that the distribution hasn't been calculated/constructed
-    pub fn try_get_gaussian_distribution(&self) -> Option<&GaussianDistribution> {
+    pub const fn try_get_gaussian_distribution(&self) -> Option<&GaussianDistribution> {
         self.gaussian_distribution.as_ref()
     }
 
     /// # Panics
     pub fn get_gaussian_distribution(
         &mut self,
-        loc: &Array1<NNVFloat>,
-        scale: &Array2<NNVFloat>,
+        loc: ArrayView1<NNVFloat>,
+        scale: ArrayView2<NNVFloat>,
         max_accept_reject_iters: usize,
         stability_eps: NNVFloat,
     ) -> &mut GaussianDistribution {
@@ -184,7 +216,7 @@ impl StarNode<Ix2> {
             );
             if self.gaussian_distribution.is_none() {
                 self.gaussian_distribution = Some(GaussianDistribution::Gaussian {
-                    loc: loc.clone(),
+                    loc: loc.to_owned(),
                     scale: scale.diag().to_owned(),
                 });
             }
@@ -196,12 +228,14 @@ impl StarNode<Ix2> {
         self.star.get_representation().apply(&x.view())
     }
 
+    #[must_use]
     pub fn get_safe_star(&self, safe_value: NNVFloat) -> Self {
         let safe_star = self.star.get_safe_subset(safe_value);
         Self {
             star: safe_star,
             dnn_index: self.dnn_index,
             star_cdf: None,
+            cdf_delta: 0.,
             local_bounds: None,
             output_bounds: None,
             is_feasible: true,
@@ -211,35 +245,36 @@ impl StarNode<Ix2> {
 
     pub fn gaussian_cdf<R: Rng>(
         &mut self,
-        mu: &Array1<NNVFloat>,
-        sigma: &Array2<NNVFloat>,
+        mu: ArrayView1<NNVFloat>,
+        sigma: ArrayView2<NNVFloat>,
         n: usize,
         max_iters: usize,
         rng: &mut R,
         stability_eps: NNVFloat,
     ) -> NNVFloat {
-        self.star_cdf.map_or_else(
-            || {
-                let cdf: NNVFloat = self
-                    .get_gaussian_distribution(mu, sigma, max_iters, stability_eps)
-                    .cdf(n, rng);
-                debug_assert!(cdf.is_sign_positive());
-                self.star_cdf = Some(cdf);
-                cdf
-            },
-            |cdf| {
-                debug_assert!(cdf.is_sign_positive());
-                cdf
-            },
-        )
+        let cdf = self.star_cdf.unwrap_or_else(|| {
+            let cdf: NNVFloat = self
+                .get_gaussian_distribution(mu, sigma, max_iters, stability_eps)
+                .cdf(n, rng);
+            debug_assert!(cdf.is_sign_positive());
+            self.star_cdf = Some(cdf);
+            cdf
+        });
+        let cdf_sum = cdf + self.cdf_delta;
+        // Do this test due to cdfs being approximations
+        if cdf_sum.is_sign_negative() {
+            NNVFloat::epsilon()
+        } else {
+            cdf_sum
+        }
     }
 
     /// # Panics
     pub fn gaussian_sample<R: Rng>(
         &mut self,
         rng: &mut R,
-        mu: &Array1<NNVFloat>,
-        sigma: &Array2<NNVFloat>,
+        mu: ArrayView1<NNVFloat>,
+        sigma: ArrayView2<NNVFloat>,
         n: usize,
         max_iters: usize,
         tilting_initialization: &Option<TiltingSolution>,
@@ -250,7 +285,7 @@ impl StarNode<Ix2> {
         distribution.sample_n(n, rng)
     }
 
-    pub fn try_calculate_star_local_bounds(&self) -> &Option<Bounds1> {
+    pub const fn try_calculate_star_local_bounds(&self) -> &Option<Bounds1> {
         &self.local_bounds
     }
 

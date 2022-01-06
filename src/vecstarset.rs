@@ -1,40 +1,25 @@
-use crate::dnn::{DNNIndex, DNN};
-use crate::probstarset::{ProbStarSet, ProbStarSet2};
+use crate::dnn::DNNIndex;
+use crate::dnn::DNN;
 use crate::star::Star;
 use crate::star_node::StarNode;
 use crate::star_node::StarNodeType;
-use crate::starset::{StarSet, StarSet2};
+use crate::starset::StarSet;
+use crate::starset::StarSet2;
 use crate::util::ArenaLike;
-use crate::NNVFloat;
 use ndarray::Dimension;
 use ndarray::Ix2;
-use ndarray::{Array1, Array2};
-use ndarray::{ArrayView1, ArrayView2};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Constellation<D: Dimension> {
+pub struct VecStarSet<D: Dimension> {
     arena: Vec<StarNode<D>>,
     node_type: Vec<Option<StarNodeType>>,
     parents: Vec<Option<usize>>,
-    loc: Array1<NNVFloat>,
-    scale: Array2<NNVFloat>,
     dnn: DNN,
-    max_accept_reject_iters: usize,
-    num_cdf_samples: usize,
-    stability_eps: NNVFloat,
 }
 
-impl<D: Dimension> Constellation<D> {
-    pub fn new(
-        dnn: DNN,
-        input_star: Star<D>,
-        loc: Array1<NNVFloat>,
-        scale: Array2<NNVFloat>,
-        max_accept_reject_iters: usize,
-        num_cdf_samples: usize,
-        stability_eps: NNVFloat,
-    ) -> Self {
+impl<D: Dimension> VecStarSet<D> {
+    pub fn new(dnn: DNN, input_star: Star<D>) -> Self {
         let star_node = StarNode::default(input_star, None);
         let arena = vec![star_node];
         let node_type = vec![None];
@@ -43,23 +28,18 @@ impl<D: Dimension> Constellation<D> {
             arena,
             node_type,
             parents,
-            loc,
-            scale,
             dnn,
-            max_accept_reject_iters,
-            num_cdf_samples,
-            stability_eps,
         }
     }
 }
 
-impl<D: Dimension> StarSet<D> for Constellation<D> {
+impl<D: Dimension> StarSet<D> for VecStarSet<D> {
     fn get_node(&self, node_id: usize) -> &StarNode<D> {
         &self.arena[node_id]
     }
 
     fn get_node_mut(&mut self, node_id: usize) -> &mut StarNode<D> {
-        &mut self.arena[node_id]
+        todo!()
     }
 
     fn add_node(&mut self, node: StarNode<D>, parent_id: usize) -> usize {
@@ -76,7 +56,7 @@ impl<D: Dimension> StarSet<D> for Constellation<D> {
     }
 
     fn try_get_node_parent_id(&self, node_id: usize) -> Option<usize> {
-        self.parents[node_id]
+        todo!()
     }
 
     fn get_node_dnn_index(&self, node_id: usize) -> DNNIndex {
@@ -88,18 +68,15 @@ impl<D: Dimension> StarSet<D> for Constellation<D> {
     }
 
     fn set_node_type(&mut self, node_id: usize, children: StarNodeType) {
-        self.node_type[node_id] = Some(children);
+        todo!()
     }
 
     fn reset_with_star(&mut self, input_star: Star<D>) {
-        let star_node = StarNode::default(input_star, None);
-        self.arena = vec![star_node];
-        self.node_type = vec![None];
-        self.parents = vec![None];
+        todo!()
     }
 }
 
-impl StarSet2 for Constellation<Ix2> {
+impl StarSet2 for VecStarSet<Ix2> {
     /// Returns the children of a node
     ///
     /// Lazily loads children into the arena and returns a reference to them.
@@ -128,52 +105,5 @@ impl StarSet2 for Constellation<Ix2> {
         } else {
             self.expand(node_id)
         }
-    }
-}
-
-impl<D: Dimension> ProbStarSet<D> for Constellation<D> {
-    fn reset_input_distribution(&mut self, loc: Array1<NNVFloat>, scale: Array2<NNVFloat>) {
-        self.loc = loc;
-        self.scale = scale;
-        self.arena.iter_mut().for_each(StarNode::reset_cdf);
-    }
-}
-
-impl ProbStarSet2 for Constellation<Ix2> {
-    fn get_node_mut_with_borrows(
-        &mut self,
-        node_id: usize,
-    ) -> (
-        &mut StarNode<Ix2>,
-        ArrayView1<NNVFloat>,
-        ArrayView2<NNVFloat>,
-        &DNN,
-    ) {
-        (
-            &mut self.arena[node_id],
-            self.loc.view(),
-            self.scale.view(),
-            &self.dnn,
-        )
-    }
-
-    fn get_loc(&self) -> ArrayView1<NNVFloat> {
-        self.loc.view()
-    }
-
-    fn get_scale(&self) -> ArrayView2<NNVFloat> {
-        self.scale.view()
-    }
-
-    fn get_max_accept_reject_iters(&self) -> usize {
-        self.max_accept_reject_iters
-    }
-
-    fn get_stability_eps(&self) -> NNVFloat {
-        self.stability_eps
-    }
-
-    fn get_cdf_samples(&self) -> usize {
-        self.num_cdf_samples
     }
 }

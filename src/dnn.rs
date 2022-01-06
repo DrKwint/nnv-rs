@@ -9,8 +9,7 @@ use crate::tensorshape::TensorShape;
 use crate::NNVFloat;
 use log::trace;
 use ndarray::Array1;
-use ndarray::ArrayD;
-use ndarray::Ix1;
+use ndarray::Array2;
 use ndarray::Ix2;
 use ndarray::Ix4;
 use num::Zero;
@@ -38,11 +37,22 @@ impl DNN {
     pub fn get_layers(&self) -> &[Layer] {
         &self.layers
     }
-}
 
-impl DNN {
-    pub fn forward(&self, input: ArrayD<NNVFloat>) -> ArrayD<NNVFloat> {
-        self.layers.iter().fold(input, |x, layer| layer.forward(x))
+    /// # Returns
+    /// `Vec<(num_samples, dimension)>` where each entry is a layer's activations
+    pub fn calculate_activation_pattern(&self, input: Array2<NNVFloat>) -> Vec<Array2<bool>> {
+        self.layers
+            .iter()
+            .scan(input, |state, layer| {
+                *state = layer.forward2(state);
+                let pattern_opt = match layer {
+                    Layer::ReLU(_) => Some(state.mapv(|x| x >= 0.0)),
+                    _ => None,
+                };
+                Some(pattern_opt)
+            })
+            .flatten()
+            .collect()
     }
 
     pub fn forward1(&self, input: Array1<NNVFloat>) -> Array1<NNVFloat> {
@@ -76,7 +86,7 @@ impl fmt::Display for DNN {
     }
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
 pub enum Layer {
     Dense(Affine<Ix2>),
     Conv(Affine<Ix4>),
@@ -88,19 +98,19 @@ pub enum Layer {
 }
 
 impl Layer {
-    pub fn new_dense(aff: Affine2) -> Self {
+    pub const fn new_dense(aff: Affine2) -> Self {
         Self::Dense(aff)
     }
 
-    pub fn new_conv(aff: Affine4) -> Self {
+    pub const fn new_conv(aff: Affine4) -> Self {
         Self::Conv(aff)
     }
 
-    pub fn new_maxpool(pool_size: usize) -> Self {
+    pub const fn new_maxpool(pool_size: usize) -> Self {
         Self::MaxPooling2D(pool_size)
     }
 
-    pub fn new_relu(num_dims: usize) -> Self {
+    pub const fn new_relu(num_dims: usize) -> Self {
         Self::ReLU(num_dims)
     }
 }
@@ -148,13 +158,9 @@ impl Layer {
     }
 
     /// # Panics
-    pub fn forward(&self, input: ArrayD<NNVFloat>) -> ArrayD<NNVFloat> {
+    pub fn forward2(&self, input: &Array2<NNVFloat>) -> Array2<NNVFloat> {
         match self {
-            Layer::Dense(aff) => {
-                debug_assert_eq!(input.ndim(), 1);
-                aff.apply(&input.into_dimensionality::<Ix1>().unwrap().view())
-                    .into_dyn()
-            }
+            Layer::Dense(aff) => aff.apply_matrix(&input.view()),
             Layer::ReLU(_) => input.mapv(|x| {
                 if x.lt(&NNVFloat::zero()) {
                     NNVFloat::zero()
@@ -284,7 +290,7 @@ impl<'a> fmt::Display for DNNIterator<'a> {
 }
 
 impl<'a> DNNIterator<'a> {
-    pub fn new(dnn: &'a DNN, idx: DNNIndex) -> Self {
+    pub const fn new(dnn: &'a DNN, idx: DNNIndex) -> Self {
         Self {
             dnn,
             idx,
@@ -292,7 +298,7 @@ impl<'a> DNNIterator<'a> {
         }
     }
 
-    pub fn get_idx(&self) -> DNNIndex {
+    pub const fn get_idx(&self) -> DNNIndex {
         self.idx
     }
 }
@@ -373,13 +379,6 @@ mod tests {
     }
 
     proptest! {
-        #[test]
-        fn test_relu_forward(arr in array1(4)) {
-            let relu = Layer::new_relu(4);
-            let out = relu.forward(arr.into_dyn());
-            prop_assert!(out.iter().all(|&x| x >= 0.))
-        }
-
         #[test]
         fn test_dnn_iterator_is_finite(dnn in fc_dnn(2, 2, 1, 2)) {
             let expected_steps: usize = dnn.layers.iter().enumerate().map(|(i, layer)| {

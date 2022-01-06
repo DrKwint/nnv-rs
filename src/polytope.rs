@@ -33,14 +33,15 @@ impl Polytope {
         }
     }
 
-    pub fn from_halfspaces(halfspaces: Inequality) -> Self {
+    pub const fn from_halfspaces(halfspaces: Inequality) -> Self {
         Self { halfspaces }
     }
 
     /// # Panics
+    #[must_use]
     pub fn with_input_bounds(mut self, input_bounds: Bounds1) -> Self {
         let item = Self::from(input_bounds);
-        self.halfspaces.add_eqns(&item.halfspaces, false);
+        self.halfspaces.add_eqns(&item.halfspaces);
         self
     }
 
@@ -56,12 +57,12 @@ impl Polytope {
         self.halfspaces.rhs()
     }
 
-    pub fn get_bounds(&self) -> &Bounds1 {
+    pub const fn get_bounds(&self) -> &Bounds1 {
         self.halfspaces.bounds()
     }
 
-    pub fn add_constraints(&mut self, constraints: &Inequality, check_redundant: bool) {
-        self.halfspaces.add_eqns(constraints, check_redundant);
+    pub fn add_constraints(&mut self, constraints: &Inequality) {
+        self.halfspaces.add_eqns(constraints);
     }
 
     pub fn num_constraints(&self) -> usize {
@@ -82,8 +83,8 @@ impl Polytope {
 
     pub fn get_truncnorm_distribution(
         &self,
-        mu: &Array1<NNVFloat>,
-        sigma: &Array2<NNVFloat>,
+        mu: ArrayView1<NNVFloat>,
+        sigma: ArrayView2<NNVFloat>,
         max_accept_reject_iters: usize,
         stability_eps: NNVFloat,
     ) -> GaussianDistribution {
@@ -110,7 +111,7 @@ impl Polytope {
         let sq_constr_sigma = {
             let sigma: Array2<f64> = constraint_coeffs.dot(&sigma.dot(&constraint_coeffs.t()));
             let diag_addn: Array2<f64> =
-                Array2::from_diag(&Array1::from_elem(sigma.nrows(), stability_eps.into()));
+                Array2::from_diag(&Array1::from_elem(sigma.nrows(), stability_eps));
             sigma + diag_addn
         };
         let sq_ub = ub;
