@@ -8,6 +8,7 @@ use crate::star_node::StarNode;
 use crate::star_node::StarNodeOp;
 use crate::star_node::StarNodeType;
 use crate::NNVFloat;
+use ndarray::Array1;
 use ndarray::ArrayView1;
 use ndarray::Dimension;
 use ndarray::Ix2;
@@ -17,11 +18,12 @@ pub trait StarSet<D: Dimension> {
     fn get_node_mut(&mut self, node_id: usize) -> &mut StarNode<D>;
     fn add_node(&mut self, node: StarNode<D>, parent_id: usize) -> usize;
     fn get_dnn(&self) -> &DNN;
+    fn get_input_bounds(&self) -> &Option<Bounds1>;
     fn try_get_node_parent_id(&self, node_id: usize) -> Option<usize>;
     fn get_node_dnn_index(&self, node_id: usize) -> DNNIndex;
     fn try_get_node_type(&self, node_id: usize) -> &Option<StarNodeType>;
     fn set_node_type(&mut self, node_id: usize, children: StarNodeType);
-    fn reset_with_star(&mut self, input_star: Star<D>);
+    fn reset_with_star(&mut self, input_star: Star<D>, input_bounds_opt: Option<Bounds1>);
 
     fn get_root_id(&self) -> usize {
         0
@@ -46,12 +48,9 @@ pub trait StarSet<D: Dimension> {
 pub trait StarSet2: StarSet<Ix2> {
     fn get_node_type(&mut self, node_id: usize) -> &StarNodeType;
 
-    fn get_node_input_bounds(&self, node_id: usize) -> Option<&Bounds1> {
-        self.get_node(node_id).get_input_bounds()
-    }
-
     fn get_node_reduced_input_polytope(&self, node_id: usize) -> Option<Polytope> {
-        self.get_node(node_id).get_reduced_input_polytope()
+        self.get_node(node_id)
+            .get_reduced_input_polytope(self.get_input_bounds())
     }
 
     fn is_node_member(&self, node_id: usize, point: &ArrayView1<NNVFloat>) -> bool {
@@ -60,6 +59,12 @@ pub trait StarSet2: StarSet<Ix2> {
 
     fn get_node_child_ids(&mut self, node_id: usize) -> Vec<usize> {
         self.get_node_type(node_id).get_child_ids()
+    }
+
+    fn can_node_maximize_output_idx(&self, node_id: usize, class_idx: usize) -> bool {
+        self.get_node(node_id)
+            .get_star()
+            .can_maximize_output_idx(class_idx)
     }
 
     fn expand(&mut self, node_id: usize) -> &StarNodeType {
@@ -80,7 +85,10 @@ pub trait StarSet2: StarSet<Ix2> {
                 StarNodeType::Affine { child_idx }
             }
             Some(StarNodeOp::StepRelu(dim)) => {
-                let child_stars = self.get_node(node_id).get_star().step_relu2(dim);
+                let child_stars = self
+                    .get_node(node_id)
+                    .get_star()
+                    .step_relu2(dim, self.get_input_bounds());
                 let dnn_idx = dnn_iter.get_idx();
 
                 let mut ids = vec![];
@@ -88,7 +96,7 @@ pub trait StarSet2: StarSet<Ix2> {
                 if let Some(lower_star) = child_stars.0 {
                     let mut bounds = self
                         .get_node_mut(node_id)
-                        .calculate_star_local_bounds()
+                        .get_axis_aligned_input_bounds()
                         .clone();
                     bounds.index_mut(dim)[0] = 0.;
                     bounds.index_mut(dim)[1] = 0.;
@@ -101,7 +109,7 @@ pub trait StarSet2: StarSet<Ix2> {
                 if let Some(upper_star) = child_stars.1 {
                     let mut bounds = self
                         .get_node_mut(node_id)
-                        .calculate_star_local_bounds()
+                        .get_axis_aligned_input_bounds()
                         .clone();
                     let mut lb = bounds.index_mut(dim);
                     if lb[0].is_sign_negative() {
@@ -120,14 +128,17 @@ pub trait StarSet2: StarSet<Ix2> {
                 }
             }
             Some(StarNodeOp::StepReluDropout((dropout_prob, dim))) => {
-                let child_stars = self.get_node(node_id).get_star().step_relu2_dropout(dim);
+                let child_stars = self
+                    .get_node(node_id)
+                    .get_star()
+                    .step_relu2_dropout(dim, self.get_input_bounds());
                 let dnn_idx = dnn_iter.get_idx();
                 let mut ids = vec![];
 
                 if let Some(dropout_star) = child_stars.0 {
                     let mut bounds = self
                         .get_node_mut(node_id)
-                        .calculate_star_local_bounds()
+                        .get_axis_aligned_input_bounds()
                         .clone();
                     bounds.index_mut(dim)[0] = 0.;
                     bounds.index_mut(dim)[1] = 0.;
@@ -140,7 +151,7 @@ pub trait StarSet2: StarSet<Ix2> {
                 if let Some(lower_star) = child_stars.1 {
                     let mut bounds = self
                         .get_node_mut(node_id)
-                        .calculate_star_local_bounds()
+                        .get_axis_aligned_input_bounds()
                         .clone();
                     bounds.index_mut(dim)[0] = 0.;
                     bounds.index_mut(dim)[1] = 0.;
@@ -153,7 +164,7 @@ pub trait StarSet2: StarSet<Ix2> {
                 if let Some(upper_star) = child_stars.2 {
                     let mut bounds = self
                         .get_node_mut(node_id)
-                        .calculate_star_local_bounds()
+                        .get_axis_aligned_input_bounds()
                         .clone();
                     let mut lb = bounds.index_mut(dim);
                     if lb[0].is_sign_negative() {
@@ -177,5 +188,44 @@ pub trait StarSet2: StarSet<Ix2> {
         };
         self.set_node_type(node_id, children);
         self.get_node_type(node_id)
+    }
+
+    fn run_datum_to_leaf(&mut self, datum: &Array1<NNVFloat>) -> usize {
+        // Run through the input datum
+        let mut current_node_id = self.get_root_id();
+        let mut current_node_type = self.get_node_type(current_node_id).clone();
+        let activation_pattern = self.get_dnn().calculate_activation_pattern1(datum);
+        // For each ReLU layer activation pattern
+        for layer_activations in &activation_pattern {
+            // Go through the Affine
+            if let StarNodeType::Affine { child_idx } = current_node_type {
+                current_node_id = child_idx;
+            }
+            current_node_type = self.get_node_type(current_node_id).clone();
+            // For each activation
+            for activation in layer_activations {
+                // Select a child node based on the activation
+                if let StarNodeType::StepRelu {
+                    dim,
+                    fst_child_idx,
+                    snd_child_idx,
+                } = current_node_type
+                {
+                    if *activation {
+                        current_node_id = fst_child_idx;
+                    } else {
+                        current_node_id = snd_child_idx.expect("Error selecting a second child!");
+                    }
+                } else {
+                    panic!("Expected a ReLU layer!");
+                }
+                current_node_type = self.get_node_type(current_node_id).clone();
+            }
+        }
+        if let StarNodeType::Affine { child_idx } = current_node_type {
+            current_node_id = child_idx;
+            // current_node_type = self.get_node_type(current_node_id).clone();
+        }
+        current_node_id
     }
 }

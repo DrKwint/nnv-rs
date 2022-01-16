@@ -28,7 +28,7 @@ pub fn solve<'a, I, J>(
     A: I,
     b: J,
     var_coeffs: ArrayView1<NNVFloat>,
-    var_bounds: &Bounds1,
+    var_bounds_opt: &Option<Bounds1>,
 ) -> LinearSolution
 where
     I: IntoIterator<Item = ArrayView1<'a, NNVFloat>>,
@@ -41,6 +41,11 @@ where
         _shh_err = shh::stderr().unwrap();
     }
     let mut problem = ProblemVariables::new();
+    let var_bounds = if let Some(bounds) = var_bounds_opt {
+        bounds
+    } else {
+        todo!()
+    };
     let vars: Vec<_> = var_bounds
         .bounds_iter()
         .into_iter()

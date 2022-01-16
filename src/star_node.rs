@@ -121,22 +121,20 @@ pub struct StarNode<D: Dimension> {
     dnn_index: DNNIndex,
     star_cdf: Option<NNVFloat>,
     cdf_delta: NNVFloat,
-    local_bounds: Option<Bounds1>,
+    axis_aligned_input_bounds: Option<Bounds1>,
     output_bounds: Option<(NNVFloat, NNVFloat)>,
-    is_feasible: bool,
     gaussian_distribution: Option<GaussianDistribution>,
 }
 
 impl<D: Dimension> StarNode<D> {
-    pub fn default(star: Star<D>, local_bounds: Option<Bounds1>) -> Self {
+    pub fn default(star: Star<D>, axis_aligned_input_bounds: Option<Bounds1>) -> Self {
         Self {
             star,
             dnn_index: DNNIndex::default(),
             star_cdf: None,
             cdf_delta: 0.,
-            local_bounds,
+            axis_aligned_input_bounds,
             output_bounds: None,
-            is_feasible: true,
             gaussian_distribution: None,
         }
     }
@@ -155,14 +153,6 @@ impl<D: Dimension> StarNode<D> {
 
     pub fn get_dnn_index(&self) -> DNNIndex {
         self.dnn_index
-    }
-
-    pub fn get_feasible(&self) -> bool {
-        self.is_feasible
-    }
-
-    pub fn set_feasible(&mut self, val: bool) {
-        self.is_feasible = val;
     }
 
     pub fn set_cdf(&mut self, val: NNVFloat) {
@@ -188,10 +178,10 @@ impl StarNode<Ix2> {
         }
     }
 
-    pub fn get_reduced_input_polytope(&self) -> Option<Polytope> {
+    pub fn get_reduced_input_polytope(&self, bounds: &Option<Bounds1>) -> Option<Polytope> {
         self.star
             .input_space_polytope()
-            .and_then(Polytope::reduce_fixed_inputs)
+            .and_then(|x| x.reduce_fixed_inputs(bounds))
     }
 
     /// None indicates that the distribution hasn't been calculated/constructed
@@ -206,6 +196,7 @@ impl StarNode<Ix2> {
         scale: ArrayView2<NNVFloat>,
         max_accept_reject_iters: usize,
         stability_eps: NNVFloat,
+        input_bounds_opt: &Option<Bounds1>,
     ) -> &mut GaussianDistribution {
         if self.gaussian_distribution.is_none() {
             self.gaussian_distribution = self.star.get_input_trunc_gaussian(
@@ -213,6 +204,7 @@ impl StarNode<Ix2> {
                 scale,
                 max_accept_reject_iters,
                 stability_eps,
+                input_bounds_opt,
             );
             if self.gaussian_distribution.is_none() {
                 self.gaussian_distribution = Some(GaussianDistribution::Gaussian {
@@ -236,9 +228,8 @@ impl StarNode<Ix2> {
             dnn_index: self.dnn_index,
             star_cdf: None,
             cdf_delta: 0.,
-            local_bounds: None,
+            axis_aligned_input_bounds: None,
             output_bounds: None,
-            is_feasible: true,
             gaussian_distribution: None,
         }
     }
@@ -251,10 +242,11 @@ impl StarNode<Ix2> {
         max_iters: usize,
         rng: &mut R,
         stability_eps: NNVFloat,
+        input_bounds_opt: &Option<Bounds1>,
     ) -> NNVFloat {
         let cdf = self.star_cdf.unwrap_or_else(|| {
             let cdf: NNVFloat = self
-                .get_gaussian_distribution(mu, sigma, max_iters, stability_eps)
+                .get_gaussian_distribution(mu, sigma, max_iters, stability_eps, input_bounds_opt)
                 .cdf(n, rng);
             debug_assert!(cdf.is_sign_positive());
             self.star_cdf = Some(cdf);
@@ -279,36 +271,34 @@ impl StarNode<Ix2> {
         max_iters: usize,
         tilting_initialization: &Option<TiltingSolution>,
         stability_eps: NNVFloat,
+        input_bounds_opt: &Option<Bounds1>,
     ) -> Vec<Array1<NNVFloat>> {
-        let distribution = self.get_gaussian_distribution(mu, sigma, max_iters, stability_eps);
+        let distribution =
+            self.get_gaussian_distribution(mu, sigma, max_iters, stability_eps, input_bounds_opt);
         distribution.populate_tilting_solution(tilting_initialization.as_ref());
         distribution.sample_n(n, rng)
     }
 
-    pub const fn try_calculate_star_local_bounds(&self) -> &Option<Bounds1> {
-        &self.local_bounds
+    pub const fn try_get_axis_aligned_input_bounds(&self) -> &Option<Bounds1> {
+        &self.axis_aligned_input_bounds
     }
 
     /// # Panics
-    pub fn calculate_star_local_bounds(&mut self) -> &Bounds1 {
-        if self.local_bounds.is_none() {
-            self.local_bounds = Some(self.star.calculate_axis_aligned_bounding_box());
+    pub fn get_axis_aligned_input_bounds(&mut self) -> &Bounds1 {
+        if self.axis_aligned_input_bounds.is_none() {
+            self.axis_aligned_input_bounds = Some(self.star.calculate_axis_aligned_bounding_box());
             debug_assert!(
-                self.local_bounds
+                self.axis_aligned_input_bounds
                     .clone()
                     .unwrap()
                     .bounds_iter()
                     .into_iter()
                     .all(|x| (x[[0]] <= x[[1]])),
                 "Calculated bounds are flipped! {}",
-                self.local_bounds.clone().unwrap()
+                self.axis_aligned_input_bounds.clone().unwrap()
             );
         }
-        self.local_bounds.as_ref().unwrap()
-    }
-
-    pub fn get_input_bounds(&self) -> Option<&Bounds1> {
-        self.star.get_input_bounds()
+        self.axis_aligned_input_bounds.as_ref().unwrap()
     }
 
     /// # Panics
@@ -321,22 +311,10 @@ impl StarNode<Ix2> {
             trace!("get_output_bounds on star {:?}", self.star);
             let dnn_iter = DNNIterator::new(dnn, self.dnn_index);
             self.output_bounds = Some(output_fn(deep_poly(
-                self.calculate_star_local_bounds(),
+                self.get_axis_aligned_input_bounds(),
                 dnn_iter,
             )));
         }
         self.output_bounds.unwrap()
-    }
-}
-
-/// Testing getters and setters
-#[cfg(test)]
-impl StarNode<Ix2> {
-    pub fn calculate_star_local_bounds_direct(&self) -> Option<&Bounds1> {
-        self.local_bounds.as_ref()
-    }
-
-    pub fn set_local_bounds_direct(&mut self, bounds: Option<Bounds1>) {
-        self.local_bounds = bounds
     }
 }

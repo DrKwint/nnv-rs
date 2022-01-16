@@ -10,6 +10,7 @@ use crate::NNVFloat;
 use log::trace;
 use ndarray::Array1;
 use ndarray::Array2;
+use ndarray::Axis;
 use ndarray::Ix2;
 use ndarray::Ix4;
 use num::Zero;
@@ -38,9 +39,13 @@ impl DNN {
         &self.layers
     }
 
+    pub fn iter(&self) -> DNNIterator {
+        DNNIterator::new(self, DNNIndex::default())
+    }
+
     /// # Returns
     /// `Vec<(num_samples, dimension)>` where each entry is a layer's activations
-    pub fn calculate_activation_pattern(&self, input: Array2<NNVFloat>) -> Vec<Array2<bool>> {
+    pub fn calculate_activation_pattern2(&self, input: Array2<NNVFloat>) -> Vec<Array2<bool>> {
         self.layers
             .iter()
             .scan(input, |state, layer| {
@@ -52,6 +57,13 @@ impl DNN {
                 Some(pattern_opt)
             })
             .flatten()
+            .collect()
+    }
+
+    pub fn calculate_activation_pattern1(&self, input: &Array1<NNVFloat>) -> Vec<Array1<bool>> {
+        self.calculate_activation_pattern2(input.clone().insert_axis(Axis(1)))
+            .into_iter()
+            .map(|x| x.index_axis(Axis(1), 0).to_owned())
             .collect()
     }
 
@@ -76,6 +88,11 @@ impl DNN {
 impl DNN {
     pub fn input_shape(&self) -> TensorShape {
         self.layers[0].input_shape()
+    }
+
+    /// # Panics
+    pub fn output_shape(&self) -> TensorShape {
+        self.layers.last().unwrap().output_shape()
     }
 }
 

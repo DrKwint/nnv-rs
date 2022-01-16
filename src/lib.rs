@@ -1,6 +1,8 @@
 #![warn(clippy::all, clippy::pedantic, clippy::nursery, clippy::cargo)]
 #![allow(clippy::must_use_candidate)]
 #![feature(binary_heap_into_iter_sorted)]
+#![feature(associated_type_bounds)]
+#![feature(generic_associated_types)]
 
 extern crate approx;
 #[cfg(feature = "openblas-system")]
@@ -19,25 +21,18 @@ extern crate shh;
 extern crate truncnorm;
 
 pub mod affine;
-pub mod asterism;
-//pub mod belt;
-pub mod adversarial;
 pub mod bounds;
-pub mod constellation;
 pub mod deeppoly;
 pub mod dnn;
 pub mod gaussian;
-pub mod inequality;
 pub mod lp;
 pub mod polytope;
-pub mod probstarset;
 pub mod star;
 pub mod star_node;
-pub mod starset;
+pub mod starsets;
 pub mod tensorshape;
 pub mod test_util;
 pub mod util;
-pub mod vecstarset;
 
 cfg_if::cfg_if! {
     if #[cfg(feature = "blas_intel-mkl")] {
@@ -61,12 +56,7 @@ pub mod trunks {
         sigma: &Array1<f64>,
     ) -> f64 {
         let mut rng = rand::thread_rng();
-        let bounds = Bounds1::trivial(coeffs.len());
-        let polytope = Polytope::new(
-            coeffs.insert_axis(Axis(0)),
-            Array1::from_vec(vec![rhs]),
-            bounds,
-        );
+        let polytope = Polytope::new(coeffs.insert_axis(Axis(0)), Array1::from_vec(vec![rhs]));
         let mut truncnorm = polytope.get_truncnorm_distribution(
             mu.view(),
             Array2::from_diag(sigma).view(),
