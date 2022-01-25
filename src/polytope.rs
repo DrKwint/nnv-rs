@@ -1,84 +1,203 @@
-#![allow(non_snake_case, clippy::similar_names)]
-//! Implementation of H-representation polytopes
+use crate::affine::Affine2;
 use crate::bounds::Bounds1;
 use crate::gaussian::GaussianDistribution;
-use crate::inequality::Inequality;
 use crate::lp::solve;
 use crate::lp::LinearSolution;
 use crate::util;
 use crate::NNVFloat;
-use ndarray::Array1;
-use ndarray::Array2;
-use ndarray::ArrayView1;
-use ndarray::ArrayView2;
+use ndarray::arr1;
+use ndarray::concatenate;
+use ndarray::Axis;
 use ndarray::Ix2;
+use ndarray::Slice;
+use ndarray::Zip;
+use ndarray::{Array1, Array2};
+use ndarray::{ArrayView1, ArrayView2, ArrayViewMut1};
+use num::Zero;
 use serde::{Deserialize, Serialize};
-use std::fmt::Debug;
+use std::convert::TryFrom;
+use std::iter;
+use std::ops::Mul;
+use std::ops::MulAssign;
 use truncnorm::distributions::MultivariateTruncatedNormal;
 
-/// H-representation polytope
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct Polytope {
-    halfspaces: Inequality,
+    coeffs: Array2<NNVFloat>, // Assume rows correspond to equations and cols are vars, i.e. Ax < b
+    rhs: Array1<NNVFloat>,
 }
 
 impl Polytope {
-    pub fn new(
-        constraint_coeffs: Array2<NNVFloat>,
-        upper_bounds: Array1<NNVFloat>,
-        bounds: Bounds1,
-    ) -> Self {
-        Self {
-            halfspaces: Inequality::new(constraint_coeffs, upper_bounds, bounds),
-        }
+    pub fn new(coeffs: Array2<NNVFloat>, rhs: Array1<NNVFloat>) -> Self {
+        debug_assert_eq!(coeffs.nrows(), rhs.len());
+        Self { coeffs, rhs }
     }
 
-    pub const fn from_halfspaces(halfspaces: Inequality) -> Self {
-        Self { halfspaces }
+    pub fn coeffs(&self) -> ArrayView2<NNVFloat> {
+        self.coeffs.view()
+    }
+
+    pub fn rhs(&self) -> ArrayView1<NNVFloat> {
+        self.rhs.view()
+    }
+
+    pub fn rhs_mut(&mut self) -> ArrayViewMut1<NNVFloat> {
+        self.rhs.view_mut()
+    }
+
+    pub fn num_dims(&self) -> usize {
+        self.coeffs.ncols()
+    }
+
+    pub fn num_constraints(&self) -> usize {
+        self.rhs.len()
+    }
+
+    pub fn check_redundant(
+        &self,
+        coeffs: ArrayView1<NNVFloat>,
+        rhs: NNVFloat,
+        bounds: &Option<Bounds1>,
+    ) -> bool {
+        let maximize_eqn = &coeffs * -1.;
+        let maximize_rhs = rhs + 1.;
+        let solved = solve(
+            self.coeffs()
+                .rows()
+                .into_iter()
+                .chain(iter::once(maximize_eqn.view())),
+            concatenate![Axis(0), self.rhs(), arr1(&[maximize_rhs])].view(),
+            maximize_eqn.view(),
+            bounds,
+        );
+        let val: f64 = match solved {
+            LinearSolution::Solution(_, val) => val,
+            LinearSolution::Infeasible | LinearSolution::Unbounded(_) => return true,
+        };
+        val > rhs
+    }
+
+    /// `check_redundant` is currently disabled
+    /// # Panics
+    pub fn add_eqns(&mut self, eqns: &Self) {
+        self.coeffs.append(Axis(0), eqns.coeffs()).unwrap();
+        self.rhs.append(Axis(0), eqns.rhs()).unwrap();
+    }
+
+    pub fn any_nan(&self) -> bool {
+        self.coeffs().iter().any(|x| x.is_nan()) || self.rhs.iter().any(|x| x.is_nan())
+    }
+
+    /// # Panics
+    pub fn filter_trivial(&mut self) {
+        let (coeffs, rhs): (Vec<ArrayView1<NNVFloat>>, Vec<_>) = self
+            .coeffs
+            .rows()
+            .into_iter()
+            .zip(self.rhs().iter())
+            .filter(|(coeffs, _rhs)| !coeffs.iter().all(|x| *x == 0.))
+            .unzip();
+        self.coeffs = ndarray::stack(Axis(0), &coeffs).unwrap();
+        self.rhs = Array1::from_vec(rhs);
     }
 
     /// # Panics
     #[must_use]
-    pub fn with_input_bounds(mut self, input_bounds: Bounds1) -> Self {
-        let item = Self::from(input_bounds);
-        self.halfspaces.add_eqns(&item.halfspaces);
-        self
+    pub fn get_eqn(&self, idx: usize) -> Self {
+        let i_idx: isize = isize::try_from(idx).unwrap();
+        Self {
+            coeffs: self
+                .coeffs
+                .slice_axis(Axis(0), Slice::new(i_idx, Some(i_idx + 1), 1))
+                .to_owned(),
+            rhs: self
+                .rhs
+                .slice_axis(Axis(0), Slice::new(i_idx, Some(i_idx + 1), 1))
+                .to_owned(),
+        }
     }
 
-    pub fn coeffs(&self) -> ArrayView2<NNVFloat> {
-        self.halfspaces.coeffs()
-    }
-
-    pub fn num_vars(&self) -> usize {
-        self.halfspaces.coeffs().ncols()
-    }
-
-    pub fn ubs(&self) -> ArrayView1<NNVFloat> {
-        self.halfspaces.rhs()
-    }
-
-    pub const fn get_bounds(&self) -> &Bounds1 {
-        self.halfspaces.bounds()
-    }
-
-    pub fn add_constraints(&mut self, constraints: &Inequality) {
-        self.halfspaces.add_eqns(constraints);
-    }
-
-    pub fn num_constraints(&self) -> usize {
-        self.halfspaces.num_constraints()
-    }
-
-    pub fn any_nan(&self) -> bool {
-        self.halfspaces.any_nan()
-    }
-
-    pub fn filter_trivial(&mut self) {
-        self.halfspaces.filter_trivial();
-    }
-
+    /// Returns whether a given point is in the set represented by the `Polytope`
     pub fn is_member(&self, point: &ArrayView1<NNVFloat>) -> bool {
-        self.halfspaces.is_member(point)
+        let vals = self.coeffs.dot(point);
+        Zip::from(&self.rhs)
+            .and(&vals)
+            .fold(true, |acc, ub, v| acc && (v <= ub))
+    }
+
+    /// Remove dimensions from the Polytope that have fixed value.
+    ///
+    /// # Arguments
+    ///
+    /// * `x` - An Array with fixed values in each dimension. Any dimensions that aren't fixed should be set to zero.
+    /// * `fixed_idxs` - Array that indicates which dimensions are fixed with `true` (because a dim could be fixed at zero)
+    ///
+    /// # Returns
+    ///
+    /// None if all the indices are fixed, otherwise a `Self` with reduced dimension
+    ///
+    /// # Panics
+    ///
+    /// Only if the underlying struct is malformed
+    pub fn reduce_with_values(
+        &self,
+        x: ArrayView1<NNVFloat>,
+        fixed_idxs: ArrayView1<bool>,
+    ) -> Option<Self> {
+        // Check if every dimension is fixed
+        if fixed_idxs.iter().all(|y| *y) {
+            return None;
+        }
+
+        // Reduce the rhs of each constraint (but don't filter cuz no rows are removed)
+        let reduced_rhs: Array1<NNVFloat> = &self.rhs - self.coeffs.dot(&x);
+
+        // Remove the variables that are fixed
+        let filtered_coeffs = {
+            // Specifically, remove columns
+            let filtered_cols: Vec<ArrayView2<NNVFloat>> = self
+                .coeffs
+                .columns()
+                .into_iter()
+                .zip(fixed_idxs.iter())
+                .filter(|(_item, &is_fixed)| !is_fixed)
+                .map(|x| x.0.insert_axis(Axis(1)))
+                .collect();
+            // We know this unwrap won't error because we haven't changed the number of rows for any column
+            concatenate(Axis(1), &filtered_cols).unwrap()
+        };
+
+        // Remove trivial constraints (i.e. all zero coeffs on LHS)
+        let is_nontrivial: Vec<bool> = filtered_coeffs
+            .rows()
+            .clone()
+            .into_iter()
+            .map(|row| row.iter().all(|x| !x.is_zero()))
+            .collect();
+
+        // Handle the case where every constraint is trivial
+        if !is_nontrivial.iter().any(|y| *y) {
+            return None;
+        }
+
+        let nontrivial_coeffs: Vec<ArrayView2<NNVFloat>> = filtered_coeffs
+            .rows()
+            .into_iter()
+            .zip(is_nontrivial.iter())
+            .filter(|(_, &is_nontrivial)| is_nontrivial)
+            .map(|(row, _)| row.insert_axis(Axis(0)))
+            .collect();
+        let nontrivial_rhs: Vec<NNVFloat> = reduced_rhs
+            .into_iter()
+            .zip(is_nontrivial.iter())
+            .filter(|(_, &is_nontrivial)| is_nontrivial)
+            .map(|(val, _)| val)
+            .collect();
+
+        let final_coeffs: Array2<NNVFloat> = concatenate(Axis(0), &nontrivial_coeffs).unwrap();
+        let final_rhs = Array1::from_vec(nontrivial_rhs);
+
+        Some(Self::new(final_coeffs, final_rhs))
     }
 
     pub fn get_truncnorm_distribution(
@@ -92,7 +211,7 @@ impl Polytope {
         let mu = mu.mapv(std::convert::Into::into);
         let sigma = sigma.mapv(std::convert::Into::into);
         let mut constraint_coeffs: Array2<f64> = self.coeffs().mapv(std::convert::Into::into);
-        let mut ub = self.ubs().mapv(std::convert::Into::into);
+        let mut ub = self.rhs().mapv(std::convert::Into::into);
 
         // normalise each constraint equation
         let row_norms: Array1<f64> = constraint_coeffs
@@ -132,87 +251,82 @@ impl Polytope {
         }
     }
 
-    /* Commented out while we're working on building the lp features
-    /// Source: <https://stanford.edu/class/ee364a/lectures/problems.pdf>
-    pub fn chebyshev_center(&self) -> Option<(Array1<f64>, f64)> {
-        let b = self.halfspaces.rhs();
-        let mut problem = ProblemVariables::new();
-        let r = problem.add_variable();
-        let x_c = problem.add_vector(variable(), b.len());
-        let mut unsolved = problem.maximise(r).using(coin_cbc);
-
-        self.halfspaces
-            .coeffs()
-            .rows()
-            .into_iter()
-            .zip(b.into_iter())
-            .for_each(|pair: (ArrayView1<T>, &T)| {
-                let (coeffs, ub) = pair;
-                let coeffs = coeffs.map(|x| (*x).into());
-                let l2_norm_val = l2_norm(coeffs.view());
-                let mut expr_map: Vec<(Variable, f64)> = x_c.iter().copied().zip(coeffs).collect();
-                expr_map.push((r, l2_norm_val));
-                let expr = LinearExpression {
-                    coefficients: expr_map,
-                };
-                let constr =
-                    good_lp::constraint::leq(Expression::from_other_affine(expr), (*ub).into());
-                unsolved.add_constraint(constr);
-            });
-        if let Ok(soln) = unsolved.solve() {
-            let x_c: Array1<f64> = x_c.into_iter().map(|x| soln.value(x)).collect();
-            Some((x_c, soln.value(r)))
-        } else {
-            None
-        }
-    }
-    */
-
+    /// # Panics
     /// Returns None if the reduced polytope is empty
-    pub fn reduce_fixed_inputs(&self) -> Option<Self> {
-        let bounds = self.get_bounds();
+    pub fn reduce_fixed_inputs(&self, bounds_opt: &Option<Bounds1>) -> Option<Self> {
+        if bounds_opt.is_none() {
+            return Some(self.clone());
+        }
+        let bounds = bounds_opt.as_ref().unwrap();
         let fixed_idxs = bounds.fixed_idxs();
         let fixed_vals = bounds.fixed_vals_or_zeros();
 
         // update eqns
-        self.halfspaces
-            .reduce_with_values(fixed_vals.view(), fixed_idxs.view())
-            .map(|halfspaces| {
-                let mut reduced_poly = Self { halfspaces };
+        self.reduce_with_values(fixed_vals.view(), fixed_idxs.view())
+            .map(|mut reduced_poly| {
                 reduced_poly.filter_trivial();
                 reduced_poly
             })
     }
-}
 
-impl Polytope {
     /// Check whether the Star set is empty.
     ///
     /// This method assumes that the constraints bound each dimension,
     /// both lower and upper.
     ///
     /// # Panics
-    pub fn is_empty(&self) -> bool {
-        let c = Array1::ones(self.num_vars());
+    pub fn is_empty(&self, bounds_opt: &Option<Bounds1>) -> bool {
+        let c = Array1::ones(self.num_dims());
 
-        let solved = solve(
-            self.halfspaces.coeffs().rows(),
-            self.halfspaces.rhs(),
-            c.view(),
-            self.get_bounds(),
-        );
+        let solved = solve(self.coeffs().rows(), self.rhs(), c.view(), bounds_opt);
 
-        !matches!(solved, LinearSolution::Solution(_, _))
+        !matches!(
+            solved,
+            LinearSolution::Solution(_, _) | LinearSolution::Unbounded(_)
+        )
     }
 }
 
-// Allow a technically fallible from because we're matching array shapes in the fn body
-#[allow(clippy::fallible_impl_from)]
-impl From<Bounds1> for Polytope {
-    fn from(item: Bounds1) -> Self {
-        let coeffs: Array2<NNVFloat> = Array2::zeros((1, item.ndim()));
-        let rhs: Array1<NNVFloat> = Array1::zeros(1);
-        let halfspaces = Inequality::new(coeffs, rhs, item);
-        Self { halfspaces }
+/// Scale by scalar
+impl Mul<NNVFloat> for Polytope {
+    type Output = Self;
+
+    fn mul(self, rhs: NNVFloat) -> Self {
+        Self {
+            coeffs: self.coeffs * rhs,
+            rhs: self.rhs * rhs,
+        }
+    }
+}
+
+/// Scale by scalar
+impl MulAssign<NNVFloat> for Polytope {
+    fn mul_assign(&mut self, rhs: NNVFloat) {
+        self.coeffs *= rhs;
+        self.rhs *= rhs;
+    }
+}
+
+impl From<Affine2> for Polytope {
+    fn from(aff: Affine2) -> Self {
+        Self {
+            coeffs: aff.basis().to_owned(),
+            rhs: aff.shift().to_owned(),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::test_util::Polytope;
+    use proptest::prelude::*;
+
+    proptest! {
+        #[test]
+        fn test_Polytope_get_eqn(ineq in Polytope(3, 4)) {
+            let eqn = ineq.get_eqn(2);
+            let coeffs = eqn.coeffs();
+            prop_assert_eq!(&coeffs.shape(), &vec![1, 3])
+        }
     }
 }

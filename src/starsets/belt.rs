@@ -1,5 +1,6 @@
-use crate::constellation::Constellation;
 use crate::num::One;
+use crate::starsets::Constellation;
+use crate::starsets::StarSet;
 use crate::NNVFloat;
 use ndarray::{Array1, Dimension, Ix2};
 use ordered_float::OrderedFloat;

@@ -12,12 +12,26 @@ use grb::Env;
 use grb::VarType::Continuous;
 use ndarray::{Array1, ArrayView1};
 
+pub fn qsolve<'a, I, J>(
+    A: I,
+    b: J,
+    qvar_coeffs: ArrayView1<NNVFloat>,
+    var_coeffs: ArrayView1<NNVFloat>,
+    var_bounds: &Option<Bounds1>,
+) -> LinearSolution
+where
+    I: IntoIterator<Item = ArrayView1<'a, NNVFloat>>,
+    J: IntoIterator<Item = &'a NNVFloat>,
+{
+    todo!()
+}
+
 /// # Panics
 pub fn solve<'a, I, J>(
     A: I,
     b: J,
     var_coeffs: ArrayView1<NNVFloat>,
-    var_bounds: &Bounds1,
+    var_bounds_opt: &Option<Bounds1>,
 ) -> LinearSolution
 where
     I: IntoIterator<Item = ArrayView1<'a, NNVFloat>>,
@@ -31,15 +45,23 @@ where
     let mut model = Model::with_env("", &env).unwrap();
 
     // Add variables
-    let vars: Vec<_> = var_coeffs
-        .iter()
-        .zip(var_bounds.bounds_iter())
-        .enumerate()
-        .map(|(i, (c, b))| {
-            add_var!(model, Continuous, obj: *c, name: &format!("v{}", i), bounds: b[[0]]..b[[1]])
-                .unwrap()
-        })
-        .collect();
+    let vars: Vec<_> = if let Some(var_bounds) = var_bounds_opt {
+        var_coeffs
+            .iter()
+            .zip(var_bounds.bounds_iter())
+            .enumerate()
+            .map(|(i, (c, b))| {
+                add_var!(model, Continuous, obj: *c, name: &format!("v{}", i), bounds: b[[0]]..b[[1]])
+                    .unwrap()
+            })
+            .collect()
+    } else {
+        var_coeffs
+            .iter()
+            .enumerate()
+            .map(|(i, c)| add_var!(model, Continuous, obj: *c, name: &format!("v{}", i)).unwrap())
+            .collect()
+    };
 
     // Add constraints
     let ineqs = A.into_iter().zip(b.into_iter()).map(|(A_i, b_i)| {
