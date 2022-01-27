@@ -15,9 +15,11 @@ use ndarray::{stack, Array, Dimension};
 use ndarray::{ArrayView, ArrayViewMut, ArrayViewMut1};
 use num::Float;
 use num::Zero;
+use ordered_float::OrderedFloat;
 use rand::distributions::Uniform;
 use rand::rngs::StdRng;
 use serde::{Deserialize, Serialize};
+use std::cmp;
 use std::fmt::Display;
 use std::ops::{Mul, MulAssign};
 
@@ -91,6 +93,23 @@ impl<D: Dimension + ndarray::RemoveAxis> Bounds<D> {
         Zip::from(x)
             .and(self.bounds_iter())
             .all(|&x, bounds| bounds[0] - eps <= x && x <= bounds[1] + eps)
+    }
+
+    pub fn intersect(&self, other: &Self) -> Self {
+        let mut intersection = Self {
+            data: self.data.clone(),
+        };
+        Zip::from(self.lower())
+            .and(other.lower())
+            .map_assign_into(intersection.lower_mut(), |&x, &y| {
+                cmp::min(OrderedFloat(x), OrderedFloat(y)).0
+            });
+        Zip::from(self.upper())
+            .and(other.upper())
+            .map_assign_into(intersection.upper_mut(), |&x, &y| {
+                cmp::max(OrderedFloat(x), OrderedFloat(y)).0
+            });
+        intersection
     }
 }
 

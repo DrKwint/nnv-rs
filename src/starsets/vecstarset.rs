@@ -35,13 +35,18 @@ impl<D: Dimension> VecStarSet<D> {
     }
 }
 
-impl<D: Dimension> StarSet<D> for VecStarSet<D> {
+impl<D: 'static + Dimension> StarSet<D> for VecStarSet<D> {
     fn get_node(&self, node_id: usize) -> &StarNode<D> {
         &self.arena[node_id]
     }
 
     fn get_node_mut(&mut self, node_id: usize) -> &mut StarNode<D> {
         &mut self.arena[node_id]
+    }
+
+    type NI<'a> = std::slice::Iter<'a, StarNode<D>>;
+    fn get_node_iter(&self) -> Self::NI<'_> {
+        self.arena.iter()
     }
 
     fn add_node(&mut self, node: StarNode<D>, parent_id: usize) -> usize {

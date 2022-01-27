@@ -62,7 +62,7 @@ impl<D: Dimension> Constellation<D> {
     }
 }
 
-impl<D: Dimension> StarSet<D> for Constellation<D> {
+impl<D: 'static + Dimension> StarSet<D> for Constellation<D> {
     fn get_node(&self, node_id: usize) -> &StarNode<D> {
         &self.arena[node_id]
     }
@@ -78,6 +78,11 @@ impl<D: Dimension> StarSet<D> for Constellation<D> {
         debug_assert_eq!(child_idx, other_child_idx);
         debug_assert_eq!(child_idx, other_other_child_idx);
         child_idx
+    }
+
+    type NI<'a> = std::slice::Iter<'a, StarNode<D>>;
+    fn get_node_iter(&self) -> Self::NI<'_> {
+        self.arena.iter()
     }
 
     fn get_dnn(&self) -> &DNN {
@@ -145,7 +150,7 @@ impl StarSet2 for Constellation<Ix2> {
     }
 }
 
-impl<D: Dimension> ProbStarSet<D> for Constellation<D> {
+impl<D: 'static + Dimension> ProbStarSet<D> for Constellation<D> {
     fn reset_input_distribution(&mut self, loc: Array1<NNVFloat>, scale: Array2<NNVFloat>) {
         self.loc = loc;
         self.scale = scale;

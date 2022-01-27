@@ -14,7 +14,7 @@ use ndarray_rand::rand_distr::StandardNormal;
 use ndarray_rand::RandomExt;
 use rand::Rng;
 
-pub trait ProbStarSet<D: Dimension>: StarSet<D> {
+pub trait ProbStarSet<D: 'static + Dimension>: StarSet<D> {
     fn reset_input_distribution(&mut self, loc: Array1<NNVFloat>, scale: Array2<NNVFloat>);
 }
 

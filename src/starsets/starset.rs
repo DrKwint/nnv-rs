@@ -13,9 +13,13 @@ use ndarray::ArrayView1;
 use ndarray::Dimension;
 use ndarray::Ix2;
 
-pub trait StarSet<D: Dimension> {
+pub trait StarSet<D: 'static + Dimension> {
+    type NI<'a>: Iterator<Item = &'a StarNode<D>>
+    where
+        Self: 'a;
     fn get_node(&self, node_id: usize) -> &StarNode<D>;
     fn get_node_mut(&mut self, node_id: usize) -> &mut StarNode<D>;
+    fn get_node_iter(&self) -> Self::NI<'_>;
     fn add_node(&mut self, node: StarNode<D>, parent_id: usize) -> usize;
     fn get_dnn(&self) -> &DNN;
     fn get_input_bounds(&self) -> &Option<Bounds1>;

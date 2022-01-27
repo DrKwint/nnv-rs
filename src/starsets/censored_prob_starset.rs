@@ -18,15 +18,17 @@ use log::debug;
 use log::info;
 use ndarray::concatenate;
 use ndarray::Array1;
+use ndarray::Array2;
 use ndarray::Axis;
 use ndarray::Dimension;
 use ndarray::Ix2;
+use ndarray::Slice;
 use ordered_float::OrderedFloat;
 use rand::distributions::Bernoulli;
 use rand::Rng;
 use std::iter;
 
-pub trait CensoredProbStarSet<D: Dimension>: ProbStarSet<D> {
+pub trait CensoredProbStarSet<D: 'static + Dimension>: ProbStarSet<D> {
     type I<'a>: Iterator<Item = &'a Option<bool>>
     where
         Self: 'a;
@@ -36,7 +38,7 @@ pub trait CensoredProbStarSet<D: Dimension>: ProbStarSet<D> {
     fn get_feasible_iter(&self) -> Self::I<'_>;
     fn is_node_infeasible(&self, id: usize) -> bool;
     fn get_node_feasibility(&self, id: usize) -> Option<bool>;
-    fn set_node_feasible(&mut self, id: usize, val: bool);
+    fn set_node_feasibility(&mut self, id: usize, val: bool);
 }
 
 pub trait CensoredProbStarSet2: CensoredProbStarSet<Ix2> + ProbStarSet2 {
@@ -52,7 +54,26 @@ pub trait CensoredProbStarSet2: CensoredProbStarSet<Ix2> + ProbStarSet2 {
         rng: &mut R,
         time_limit_opt: Option<Duration>,
     ) {
-        let samples = self.sample_root_node(num_samples, rng);
+        let samples = {
+            let mut without_fixed = self.sample_root_node(num_samples, rng);
+            let mut almost_samples = if let Some(bounds) = self.get_input_bounds() {
+                let unfixed_dims = without_fixed.shape()[0]; // Assuming rank 2 here
+                let mut fixed = bounds
+                    .fixed_vals_or_zeros()
+                    .slice_axis(Axis(0), Slice::from(..-1 * (unfixed_dims as isize)))
+                    .insert_axis(Axis(1))
+                    .to_owned();
+                let zeros: Array2<f64> = Array2::zeros((1, 1000));
+                fixed = fixed + zeros;
+                fixed
+                    .append(Axis(0), without_fixed.view())
+                    .expect("Could not append!");
+                fixed
+            } else {
+                without_fixed
+            };
+            almost_samples
+        };
         let activation_patterns = self.get_dnn().calculate_activation_pattern2(samples);
         // currently, tilting is propagated, so we need to initialize it for the root node
         self.get_node_gaussian_distribution(self.get_root_id());
@@ -86,6 +107,7 @@ pub trait CensoredProbStarSet2: CensoredProbStarSet<Ix2> + ProbStarSet2 {
                             current_node_id =
                                 snd_child_idx.expect("Error selecting a second child!");
                         }
+                        current_node_type = self.get_node_type(current_node_id).clone();
                     } else {
                         panic!("Expected a ReLU layer!");
                     }
@@ -104,7 +126,7 @@ pub trait CensoredProbStarSet2: CensoredProbStarSet<Ix2> + ProbStarSet2 {
         let deduped_unsafe_nodes = unsafe_nodes.iter().filter(|idx| {
             self.get_node_ancestors(**idx)
                 .iter()
-                .all(|x| !unsafe_nodes.contains(x))
+                .all(|x| *x == **idx || !unsafe_nodes.contains(x))
         });
         deduped_unsafe_nodes
             .filter_map(|idx| {
@@ -163,7 +185,7 @@ pub trait CensoredProbStarSet2: CensoredProbStarSet<Ix2> + ProbStarSet2 {
                                 rng: &mut R|
          -> usize {
             info!("Infeasible reset at depth {}!", path.len());
-            me.set_node_feasible(x, false);
+            me.set_node_feasibility(x, false);
             let mut infeas_cdf = me.get_node_cdf(x, rng);
             path.drain(..).rev().for_each(|x| {
                 // check if all chilren are infeasible
@@ -175,7 +197,7 @@ pub trait CensoredProbStarSet2: CensoredProbStarSet<Ix2> + ProbStarSet2 {
                     // if not infeasible, update CDF
                     me.add_node_cdf(x, NNVFloat::neg(NNVFloat::one()) * infeas_cdf);
                 } else {
-                    me.set_node_feasible(x, false);
+                    me.set_node_feasibility(x, false);
                     infeas_cdf = me.get_node_cdf(x, rng);
                 }
             });
@@ -233,7 +255,7 @@ pub trait CensoredProbStarSet2: CensoredProbStarSet<Ix2> + ProbStarSet2 {
                     return Some((safe_sample, path_logp, total_infeasible_cdf));
                 } else if output_bounds.0 > self.get_safe_value() {
                     // handle case where star is infeasible
-                    self.set_node_feasible(current_node, false);
+                    self.set_node_feasibility(current_node, false);
                     current_node = infeasible_reset(
                         self,
                         current_node,
