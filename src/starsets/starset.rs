@@ -16,7 +16,8 @@ use ndarray::Ix2;
 pub trait StarSet<D: 'static + Dimension> {
     type NI<'a>: Iterator<Item = &'a StarNode<D>>
     where
-        Self: 'a;
+        Self: 'a,
+        D: 'a;
     fn get_node(&self, node_id: usize) -> &StarNode<D>;
     fn get_node_mut(&mut self, node_id: usize) -> &mut StarNode<D>;
     fn get_node_iter(&self) -> Self::NI<'_>;
@@ -98,9 +99,10 @@ pub trait StarSet2: StarSet<Ix2> {
                 let mut ids = vec![];
 
                 if let Some(lower_star) = child_stars.0 {
+                    let outer_bounds: Bounds1 = self.get_input_bounds().as_ref().cloned().unwrap();
                     let mut bounds = self
                         .get_node_mut(node_id)
-                        .get_axis_aligned_input_bounds()
+                        .get_axis_aligned_input_bounds(&outer_bounds)
                         .clone();
                     bounds.index_mut(dim)[0] = 0.;
                     bounds.index_mut(dim)[1] = 0.;
@@ -111,9 +113,10 @@ pub trait StarSet2: StarSet<Ix2> {
                 }
 
                 if let Some(upper_star) = child_stars.1 {
+                    let outer_bounds: Bounds1 = self.get_input_bounds().as_ref().cloned().unwrap();
                     let mut bounds = self
                         .get_node_mut(node_id)
-                        .get_axis_aligned_input_bounds()
+                        .get_axis_aligned_input_bounds(&outer_bounds)
                         .clone();
                     let mut lb = bounds.index_mut(dim);
                     if lb[0].is_sign_negative() {
@@ -140,9 +143,10 @@ pub trait StarSet2: StarSet<Ix2> {
                 let mut ids = vec![];
 
                 if let Some(dropout_star) = child_stars.0 {
+                    let outer_bounds: Bounds1 = self.get_input_bounds().as_ref().cloned().unwrap();
                     let mut bounds = self
                         .get_node_mut(node_id)
-                        .get_axis_aligned_input_bounds()
+                        .get_axis_aligned_input_bounds(&outer_bounds)
                         .clone();
                     bounds.index_mut(dim)[0] = 0.;
                     bounds.index_mut(dim)[1] = 0.;
@@ -153,9 +157,10 @@ pub trait StarSet2: StarSet<Ix2> {
                 }
 
                 if let Some(lower_star) = child_stars.1 {
+                    let outer_bounds: Bounds1 = self.get_input_bounds().as_ref().cloned().unwrap();
                     let mut bounds = self
                         .get_node_mut(node_id)
-                        .get_axis_aligned_input_bounds()
+                        .get_axis_aligned_input_bounds(&outer_bounds)
                         .clone();
                     bounds.index_mut(dim)[0] = 0.;
                     bounds.index_mut(dim)[1] = 0.;
@@ -166,9 +171,10 @@ pub trait StarSet2: StarSet<Ix2> {
                 }
 
                 if let Some(upper_star) = child_stars.2 {
+                    let outer_bounds: Bounds1 = self.get_input_bounds().as_ref().cloned().unwrap();
                     let mut bounds = self
                         .get_node_mut(node_id)
-                        .get_axis_aligned_input_bounds()
+                        .get_axis_aligned_input_bounds(&outer_bounds)
                         .clone();
                     let mut lb = bounds.index_mut(dim);
                     if lb[0].is_sign_negative() {

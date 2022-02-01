@@ -36,6 +36,10 @@ impl<D: Dimension + ndarray::RemoveAxis> Bounds<D> {
         lower: ArrayView<'a, NNVFloat, S>,
         upper: ArrayView<'a, NNVFloat, S>,
     ) -> Self {
+        debug_assert!(
+            Zip::from(&lower).and(&upper).all(|&l, &u| l <= u),
+            "Input bounds are flipped!"
+        );
         let data: Array<NNVFloat, D> = stack(Axis(0), &[lower, upper]).unwrap();
         Self { data }
     }
@@ -103,12 +107,12 @@ impl<D: Dimension + ndarray::RemoveAxis> Bounds<D> {
         Zip::from(self.lower())
             .and(other.lower())
             .map_assign_into(intersection.lower_mut(), |&x, &y| {
-                cmp::min(OrderedFloat(x), OrderedFloat(y)).0
+                cmp::max(OrderedFloat(x), OrderedFloat(y)).0
             });
         Zip::from(self.upper())
             .and(other.upper())
             .map_assign_into(intersection.upper_mut(), |&x, &y| {
-                cmp::max(OrderedFloat(x), OrderedFloat(y)).0
+                cmp::min(OrderedFloat(x), OrderedFloat(y)).0
             });
         intersection
     }

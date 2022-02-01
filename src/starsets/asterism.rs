@@ -250,6 +250,7 @@ impl CensoredProbStarSet2 for Asterism<Ix2> {}
 #[cfg(test)]
 mod test {
     use super::*;
+    use crate::starsets::CensoredProbStarSet2;
     use crate::test_util::*;
     use proptest::*;
     use serde_json::{from_str, to_string};
@@ -257,42 +258,31 @@ mod test {
 
     proptest! {
         #[test]
-        fn test_sample_safe_star(mut constellation in generic_constellation(2, 2, 2, 2)) {
+        fn test_sample_safe_star(mut asterism in generic_asterism(2, 2, 2, 2)) {
             let mut rng = rand::thread_rng();
-            let mut asterism = Asterism::new(&mut constellation, 1.);
             let default: Array1<f64> = Array1::zeros(asterism.get_dnn().input_shape()[0].unwrap());
             let sample = asterism.sample_safe_star(1, &mut rng, None);
         }
 
         #[test]
-        fn test_dfs_samples(mut constellation in generic_constellation(2, 2, 2, 2)) {
+        fn test_dfs_samples(mut asterism in generic_asterism(2, 2, 2, 2)) {
             let num_samples = 4;
-            let cdf_samples = 100;
-            let max_iters = 10;
             let time_limit_opt = None;
-            let stability_eps = 1e-10;
 
             let mut rng = rand::thread_rng();
-            let mut asterism = Asterism::new(&mut constellation, 1.);
             asterism.dfs_samples(num_samples, &mut rng, time_limit_opt);
         }
 
         #[test]
-        fn test_serialization(mut constellation in constellation(2,2,2,2)) {
+        fn test_serialization(mut asterism in generic_asterism(2,2,2,2)) {
             let num_samples = 4;
-            let cdf_samples = 100;
-            let max_iters = 10;
             let time_limit_opt = None;
-            let stability_eps = 1e-10;
 
             let mut rng = rand::thread_rng();
-            let mut asterism = Asterism::new(&mut constellation, 1.);
             asterism.dfs_samples(num_samples, &mut rng, time_limit_opt);
 
-            let serial_asterism = SerializableAsterism::from(asterism);
-            let serialization = serde_json::to_string(&serial_asterism).unwrap();
-
-            let new_serial_asterism: SerializableAsterism<Ix2> = serde_json::from_str(&serialization)?;
+            let serialization = serde_json::to_string(&asterism).unwrap();
+            let serial_asterism: Asterism<Ix2> = serde_json::from_str(&serialization)?;
             fs::write("test.json", &serialization).expect("Unable to write file.");
         }
     }

@@ -1,12 +1,12 @@
 #![cfg(test)]
 use crate::affine::Affine2;
 use crate::bounds::{Bounds, Bounds1};
-use crate::constellation::Constellation;
 use crate::dnn::Layer;
 use crate::dnn::DNN;
-use crate::inequality::Inequality;
 use crate::polytope::Polytope;
 use crate::star::Star2;
+use crate::starsets::Asterism;
+use crate::starsets::Constellation;
 use ndarray::Array1;
 use ndarray::Array2;
 use ndarray::ArrayView1;
@@ -93,17 +93,29 @@ prop_compose! {
         let lbs = loc.clone() - 3.5 * scale_diag.clone();
         let ubs = loc.clone() + 3.5 * scale_diag.clone();
         let input_bounds = Bounds1::new(lbs.view(), ubs.view());
-        let star = Star2::new(Array2::eye(input_size), Array1::zeros(input_size)).with_input_bounds(input_bounds.clone());
-        Constellation::new(dnn, star, loc, Array2::from_diag(&scale_diag).to_owned(), 4, 100, 1e-10)
+        let star = Star2::new(Array2::eye(input_size), Array1::zeros(input_size));
+        Constellation::new(dnn, star, Some(input_bounds), loc, Array2::from_diag(&scale_diag).to_owned(), 4, 100, 1e-10)
     }
 }
 
 prop_compose! {
-    pub fn inequality(num_dims: usize, num_constraints: usize)
+    pub fn asterism(input_size: usize, output_size: usize, nlayers: usize, max_layer_width: usize)
+        (loc in array1(input_size), scale_diag in pos_def_array1(input_size), dnn in fc_dnn(input_size, output_size, nlayers, max_layer_width)) -> Asterism<Ix2>
+    {
+        let lbs = loc.clone() - 3.5 * scale_diag.clone();
+        let ubs = loc.clone() + 3.5 * scale_diag.clone();
+        let input_bounds = Bounds1::new(lbs.view(), ubs.view());
+        let star = Star2::new(Array2::eye(input_size), Array1::zeros(input_size));
+        Asterism::new(dnn, star, loc, Array2::from_diag(&scale_diag).to_owned(), 1., Some(input_bounds), 4, 100, 1e-10)
+    }
+}
+
+prop_compose! {
+    pub fn polytope(num_dims: usize, num_constraints: usize)
         (
             mut coeffs in array2(num_constraints, num_dims),
             rhs in array1(num_constraints)
-        ) -> Inequality {
+        ) -> Polytope {
             coeffs.rows_mut().into_iter().for_each(|mut row| {
                 if row.iter().all(|x| *x == 0.0_f64) {
                     let mut rng = rand::thread_rng();
@@ -112,53 +124,43 @@ prop_compose! {
                 }
             });
 
-            Inequality::new(coeffs, rhs, Bounds1::trivial(num_dims))
+            Polytope::new(coeffs, rhs)
         }
 }
 
 prop_compose! {
-    pub fn inequality_including_zero(num_dims: usize, num_constraints: usize)
-        (ineq in inequality(num_dims, num_constraints)) -> Inequality {
+    pub fn polytope_including_zero(num_dims: usize, num_constraints: usize)
+        (ineq in polytope(num_dims, num_constraints)) -> Polytope {
             let zero = Array1::zeros(num_dims);
-            let mut inequality = Inequality::new(
+            let mut polytope = Polytope::new(
                 Array2::zeros((0, num_dims)),
-                Array1::zeros(0),
-                Bounds1::trivial(num_dims)
-            );
+                Array1::zeros(0));
             (0..ineq.num_constraints())
                 .into_iter()
                 .for_each(|eqn_idx| {
                     let eqn = ineq.get_eqn(eqn_idx);
                     if eqn.is_member(&zero.view()) {
-                        inequality.add_eqns(&eqn);
+                        polytope.add_eqn(eqn.coeffs().row(0), eqn.rhs()[[0]]);
                     } else {
                         let new_coeffs = -1. * eqn.coeffs().to_owned();
                         let new_rhs = -1. * eqn.rhs().to_owned();
-                        let eqn = Inequality::new(new_coeffs, new_rhs, Bounds1::trivial(num_dims));
-                        inequality.add_eqns(&eqn);
+                        polytope.add_eqn(new_coeffs.row(0), new_rhs[[0]]);
                     }
                 });
-            inequality
-        }
-}
-
-prop_compose! {
-    pub fn polytope(num_dims: usize, num_constraints: usize)
-        (ineq in inequality(num_dims, num_constraints)) -> Polytope {
-            Polytope::from_halfspaces(ineq)
+            polytope
         }
 }
 
 prop_compose! {
     pub fn non_empty_polytope(num_dims: usize, num_constraints: usize)
         (
-            ineq in inequality_including_zero(num_dims, num_constraints)
+            poly in polytope_including_zero(num_dims, num_constraints)
                 .prop_filter("Non-zero intercepts",
                              |i| !i.rhs().iter().any(|x| *x == 0.0_f64))
         ) -> Polytope {
             // Make a box bigger than possible inner inequalities
             //let box_bounds: Bounds1 = Bounds1::new(Array1::from_elem(num_dims, -20.).view(), Array1::from_elem(num_dims, -20.).view());
-            Polytope::new(Array2::zeros([1, num_dims]), Array1::zeros(1));
+            Polytope::new(Array2::zeros([1, num_dims]), Array1::zeros(1))
         }
 }
 
@@ -174,32 +176,31 @@ prop_compose! {
     /// are appended to each other and used to create a polytope.
     pub fn empty_polytope(num_dims: usize, num_constraints: usize)
         (
-            mut ineq in inequality_including_zero(num_dims, num_constraints)
+            mut poly in polytope_including_zero(num_dims, num_constraints)
                 .prop_filter("Cannot pass through origin",
                              |eq| !eq.rhs().iter().any(|x| *x == 0.0_f64))
         ) -> Polytope {
             // Invert the sign of the inequality
-            ineq *= -1.0;
+            poly *= -1.0;
 
             // Construct the inequality that is the above flipped
             // across the origin.
-            let inverse_ineq = Inequality::new(
-                ineq.coeffs().to_owned() * -1.,
-                ineq.rhs().to_owned(),
-                Bounds1::trivial(num_dims)
+            let inverse_poly = Polytope::new(
+                poly.coeffs().to_owned() * -1.,
+                poly.rhs().to_owned() * -1.
             );
-            ineq.add_eqns(&inverse_ineq);
+            poly.intersect(&inverse_poly);
 
             // Make a box bigger than possible inner inequalities
             let box_coeffs = Array2::eye(num_dims);
             let mut box_rhs = Array1::ones(num_dims);
-            box_rhs *= 20.0_f64;
+            box_rhs *= -20.0_f64;
 
-            let upper_box_poly = Polytope::new(box_coeffs.clone(), box_rhs.clone(), Bounds1::trivial(num_dims));
-            let lower_box_poly = Polytope::new(-1. * box_coeffs, box_rhs, Bounds1::trivial(num_dims));
+            let upper_box_poly = Polytope::new(box_coeffs.clone(), box_rhs.clone());
+            let lower_box_poly = Polytope::new(-1. * box_coeffs, box_rhs);
 
             // Construct the empty polytope.
-            upper_box_poly.intersect(lower_box_poly)
+            upper_box_poly.intersect(&lower_box_poly).intersect(&poly)
         }
 }
 
@@ -248,9 +249,9 @@ prop_compose! {
 }
 
 prop_compose! {
-    pub fn generic_inequality_including_zero(max_dims: usize, max_constraints: usize)
+    pub fn generic_polytope_including_zero(max_dims: usize, max_constraints: usize)
         (dim in 1..max_dims, constraints in 1..max_constraints)
-        (ineq in inequality_including_zero(dim, constraints)) -> Inequality {
+        (ineq in polytope_including_zero(dim, constraints)) -> Polytope {
             ineq
         }
 }
@@ -305,9 +306,18 @@ prop_compose! {
         }
 }
 
+prop_compose! {
+    pub fn generic_asterism(max_input_size: usize, max_output_size: usize, max_nlayers: usize, max_layer_width: usize)
+        (input_size in 1..max_input_size, output_size in 1..max_output_size, nlayers in 1..max_nlayers)
+        (asterism in asterism(input_size, output_size, nlayers, max_layer_width)) -> Asterism<Ix2>
+        {
+            asterism
+        }
+}
+
 proptest! {
     #[test]
-    fn test_inequality_including_zero(ineq in generic_inequality_including_zero(2, 4)) {
+    fn test_inequality_including_zero(ineq in generic_polytope_including_zero(2, 4)) {
         let zero = Array1::zeros(ineq.num_dims());
         prop_assert!(ineq.is_member(&zero.view()));
     }

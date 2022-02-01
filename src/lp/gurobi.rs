@@ -31,7 +31,7 @@ pub fn solve<'a, I, J>(
     A: I,
     b: J,
     var_coeffs: ArrayView1<NNVFloat>,
-    var_bounds_opt: &Option<Bounds1>,
+    var_bounds_opt: Option<&Bounds1>,
 ) -> LinearSolution
 where
     I: IntoIterator<Item = ArrayView1<'a, NNVFloat>>,

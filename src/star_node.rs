@@ -284,10 +284,13 @@ impl StarNode<Ix2> {
     }
 
     /// # Panics
-    pub fn get_axis_aligned_input_bounds(&mut self) -> &Bounds1 {
+    pub fn get_axis_aligned_input_bounds(&mut self, outer_bounds: &Bounds1) -> &Bounds1 {
         if self.axis_aligned_input_bounds.is_none() {
-            self.axis_aligned_input_bounds = Some(self.star.calculate_axis_aligned_bounding_box());
-            debug_assert!(
+            self.axis_aligned_input_bounds = Some(
+                self.star
+                    .calculate_output_axis_aligned_bounding_box(&outer_bounds),
+            );
+            /*debug_assert!(
                 self.axis_aligned_input_bounds
                     .clone()
                     .unwrap()
@@ -296,7 +299,7 @@ impl StarNode<Ix2> {
                     .all(|x| (x[[0]] <= x[[1]])),
                 "Calculated bounds are flipped! {}",
                 self.axis_aligned_input_bounds.clone().unwrap()
-            );
+            );*/
         }
         self.axis_aligned_input_bounds.as_ref().unwrap()
     }
@@ -306,12 +309,13 @@ impl StarNode<Ix2> {
         &mut self,
         dnn: &DNN,
         output_fn: &dyn Fn(Bounds1) -> (NNVFloat, NNVFloat),
+        outer_input_bounds: &Bounds1,
     ) -> (NNVFloat, NNVFloat) {
         if self.output_bounds.is_none() {
             trace!("get_output_bounds on star {:?}", self.star);
             let dnn_iter = DNNIterator::new(dnn, self.dnn_index);
             self.output_bounds = Some(output_fn(deep_poly(
-                self.get_axis_aligned_input_bounds(),
+                self.get_axis_aligned_input_bounds(&outer_input_bounds),
                 dnn_iter,
             )));
         }

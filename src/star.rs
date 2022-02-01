@@ -9,6 +9,7 @@ use crate::lp::LinearSolution;
 use crate::polytope::Polytope;
 use crate::tensorshape::TensorShape;
 use crate::NNVFloat;
+use ndarray::array;
 use ndarray::ArrayView1;
 use ndarray::Dimension;
 use ndarray::Ix4;
@@ -80,11 +81,12 @@ impl<D: Dimension> Star<D> {
     /// Add constraints to restrict the input set. Each row represents a
     /// constraint and the last column represents the upper bounds.
     #[must_use]
-    pub fn add_constraints(mut self, new_constraints: &Polytope) -> Self {
+    pub fn add_constraint(mut self, coeffs: ArrayView1<NNVFloat>, rhs: NNVFloat) -> Self {
         if let Some(ref mut constrs) = self.constraints {
-            constrs.add_eqns(new_constraints);
+            constrs.add_eqn(coeffs, rhs);
         } else {
-            self.constraints = Some(new_constraints.clone());
+            self.constraints =
+                Polytope::nonempty_new(coeffs.to_owned().insert_axis(Axis(0)), array![rhs]);
         }
         self
     }
@@ -97,12 +99,20 @@ impl Star2 {
 
     #[must_use]
     pub fn get_safe_subset(&self, safe_value: NNVFloat) -> Self {
-        let subset = self.clone();
+        let mut subset = self.clone();
         let mut new_constr: Polytope = self.representation.clone().into();
         let mut rhs = new_constr.rhs_mut();
         rhs *= -1.;
         rhs += safe_value;
-        subset.add_constraints(&new_constr)
+        subset.intersect_input(&new_constr);
+        subset
+    }
+
+    pub fn intersect_input(&mut self, other: &Polytope) {
+        self.constraints = self
+            .constraints
+            .as_ref()
+            .map_or(Some(other.clone()), |x| Some(x.intersect(other)));
     }
 
     pub fn get_input_trunc_gaussian(
@@ -180,16 +190,15 @@ impl Star2 {
         index: usize,
         input_bounds_opt: &Option<Bounds1>,
     ) -> (Option<Self>, Option<Self>) {
-        let mut new_constr: Polytope = {
-            let mut aff = self.representation.get_eqn(index);
-            let neg_basis_part = &aff.basis() * -1.;
-            aff.basis_mut().assign(&neg_basis_part);
-            aff.into()
+        let (coeffs, shift) = {
+            let aff = self.representation.get_eqn(index);
+            let neg_basis_part: Array2<NNVFloat> = &aff.basis() * -1.;
+            let shift = aff.shift();
+            (neg_basis_part.row(0).to_owned(), shift[[0]])
         };
-        let upper_star = self.clone().add_constraints(&new_constr);
+        let upper_star = self.clone().add_constraint(coeffs.view(), shift);
 
-        new_constr *= -1.;
-        let mut lower_star = self.clone().add_constraints(&new_constr);
+        let mut lower_star = self.clone().add_constraint((&coeffs * -1.).view(), -shift);
         lower_star.representation.zero_eqn(index);
 
         let lower_star_opt = if lower_star.is_empty(input_bounds_opt) {
@@ -237,26 +246,39 @@ impl Star2 {
     /// solve function. Currently this is way too hard to do, so we
     /// panic instead. We have an assumption that we start with a
     /// bounded box and therefore should never be unbounded.
-    pub fn get_min(&self, idx: usize, bounds: &Option<Bounds1>) -> NNVFloat {
+    pub fn get_output_min(&self, idx: usize, input_bounds: Option<&Bounds1>) -> NNVFloat {
         let eqn = self.representation.get_eqn(idx);
+        let shift = eqn.shift()[0];
 
-        self.constraints
-            .as_ref()
-            .map_or_else(NNVFloat::neg_infinity, |poly| {
+        self.constraints.as_ref().map_or_else(
+            || {
+                if eqn
+                    .basis()
+                    .index_axis(Axis(0), 0)
+                    .iter()
+                    .any(|x| x.abs() > 0.)
+                {
+                    NNVFloat::neg_infinity()
+                } else {
+                    shift
+                }
+            },
+            |poly| {
                 let solved = solve(
                     poly.coeffs().rows(),
                     poly.rhs(),
                     eqn.basis().index_axis(Axis(0), 0),
-                    bounds,
+                    input_bounds,
                 );
                 if let LinearSolution::Solution(_, val) = solved {
-                    eqn.shift()[0] + val
+                    shift + val
                 } else if let LinearSolution::Unbounded(_) = solved {
                     NNVFloat::neg_infinity()
                 } else {
                     panic!("Solution: {:?}", solved)
                 }
-            })
+            },
+        )
     }
 
     /// Calculates the maximum value of the equation at index `idx`
@@ -267,19 +289,30 @@ impl Star2 {
     ///
     /// # Panics
     /// TODO: Change output type to Option<T>
-    pub fn get_max(&self, idx: usize, bounds: &Option<Bounds1>) -> NNVFloat {
+    pub fn get_output_max(&self, idx: usize, input_bounds: Option<&Bounds1>) -> NNVFloat {
         let mut eqn = self.representation.get_eqn(idx);
         let shift = eqn.shift()[0];
         eqn *= -1.;
 
-        self.constraints
-            .as_ref()
-            .map_or_else(NNVFloat::infinity, |poly| {
+        self.constraints.as_ref().map_or_else(
+            || {
+                if eqn
+                    .basis()
+                    .index_axis(Axis(0), 0)
+                    .iter()
+                    .any(|x| x.abs() > 0.)
+                {
+                    NNVFloat::infinity()
+                } else {
+                    shift
+                }
+            },
+            |poly| {
                 let solved = solve(
                     poly.coeffs().rows(),
                     poly.rhs(),
                     eqn.basis().index_axis(Axis(0), 0),
-                    bounds,
+                    input_bounds,
                 );
                 if let LinearSolution::Solution(_, val) = solved {
                     shift - val
@@ -288,7 +321,8 @@ impl Star2 {
                 } else {
                     panic!()
                 }
-            })
+            },
+        )
     }
 
     //pub fn nearest_euclidean_neighbor(&self, origin: Array1<NNVFloat>) -> Array1<NNVFloat> {}
@@ -337,7 +371,7 @@ impl Star2 {
             solve_a,
             b.iter().chain(shifts.iter()),
             Array1::ones(nvars).view(),
-            &Some(Bounds1::trivial(nvars)),
+            Some(&Bounds1::trivial(nvars)),
         );
         matches!(
             solved,
@@ -345,11 +379,18 @@ impl Star2 {
         )
     }
 
-    pub fn calculate_axis_aligned_bounding_box(&self) -> Bounds1 {
-        let lbs =
-            Array1::from_iter((0..self.representation_space_dim()).map(|x| self.get_min(x, &None)));
-        let ubs =
-            Array1::from_iter((0..self.representation_space_dim()).map(|x| self.get_max(x, &None)));
+    pub fn calculate_output_axis_aligned_bounding_box(
+        &self,
+        input_outer_bounds: &Bounds1,
+    ) -> Bounds1 {
+        let lbs = Array1::from_iter(
+            (0..self.representation_space_dim())
+                .map(|x| self.get_output_min(x, Some(input_outer_bounds))),
+        );
+        let ubs = Array1::from_iter(
+            (0..self.representation_space_dim())
+                .map(|x| self.get_output_max(x, Some(input_outer_bounds))),
+        );
         Bounds1::new(lbs.view(), ubs.view())
     }
 
@@ -426,47 +467,47 @@ mod test {
             */
 
             #[test]
-            fn test_get_min_feasible(star in non_empty_star(2,3)) {
+            fn test_get_output_min_feasible(star in non_empty_star(2,3)) {
                 prop_assert!(!star.input_space_polytope().unwrap().is_empty(), "Polytope is empty");
                 prop_assert!(!star.is_empty(), "Non empty star is empty");
                 let result = panic::catch_unwind(|| {
-                    star.get_min(0);
+                    star.get_output_min(0);
                 });
                 prop_assert!(result.is_ok(), "Calculating min resulted in panic for feasible star");
             }
 
             #[test]
-            fn test_get_min_infeasible(star in empty_star(2,1)) {
+            fn test_get_output_min_infeasible(star in empty_star(2,1)) {
                 prop_assert!(star.input_space_polytope().unwrap().is_empty(), "Polytope is not empty");
                 prop_assert!(star.is_empty(), "Empty star is not empty");
                 let result = panic::catch_unwind(|| {
-                    star.get_min(0)
+                    star.get_output_min(0)
                 });
-                prop_assert!(result.is_err(), "Infeasible star did not panic for get_min {:#?}", result);
+                prop_assert!(result.is_err(), "Infeasible star did not panic for get_output_min {:#?}", result);
             }
 
             #[test]
-            fn test_get_max_feasible(star in non_empty_star(2,3)) {
+            fn test_get_output_max_feasible(star in non_empty_star(2,3)) {
                 prop_assert!(!star.input_space_polytope().unwrap().is_empty(), "Polytope is empty");
                 prop_assert!(!star.is_empty(), "Non empty star is empty");
                 let result = panic::catch_unwind(|| {
-                    star.get_max(0);
+                    star.get_output_max(0);
                 });
                 prop_assert!(result.is_ok(), "Calculating min resulted in panic for feasible star");
             }
 
             #[test]
-            fn test_get_max_infeasible(star in empty_star(2,1)) {
+            fn test_get_output_max_infeasible(star in empty_star(2,1)) {
                 prop_assert!(star.input_space_polytope().unwrap().is_empty(), "Polytope is empty");
                 prop_assert!(star.is_empty(), "Empty star is not empty");
                 let result = panic::catch_unwind(|| {
-                    star.get_max(0)
+                    star.get_output_max(0)
                 });
-                prop_assert!(result.is_err(), "Infeasible star did not panic for get_min {:#?}", result);
+                prop_assert!(result.is_err(), "Infeasible star did not panic for get_output_min {:#?}", result);
             }
 
             #[test]
-            fn test_get_min_box_polytope(basis in array2(2, 2)) {
+            fn test_get_output_min_box_polytope(basis in array2(2, 2)) {
                 let num_dims = 2;
                 let box_bounds: Bounds1<f64> = Bounds1::new(Array1::from_elem(num_dims, -20.).view(), Array1::from_elem(num_dims, -20.).view());
                 let box_ineq = Inequality::new(Array2::zeros([1, num_dims]), Array1::zeros(1), box_bounds);
@@ -476,13 +517,13 @@ mod test {
                 let star = Star2::new(basis, center).with_constraints(poly);
 
                 let result = panic::catch_unwind(|| {
-                    star.get_min(0);
+                    star.get_output_min(0);
                 });
                 assert!(result.is_ok());
             }
 
             #[test]
-            fn test_get_max_box_polytope(basis in array2(2, 2)) {
+            fn test_get_output_max_box_polytope(basis in array2(2, 2)) {
                 let num_dims = 2;
                 let box_bounds: Bounds1<f64> = Bounds1::new(Array1::from_elem(num_dims, -20.).view(), Array1::from_elem(num_dims, -20.).view());
                 let box_ineq = Inequality::new(Array2::zeros([1, num_dims]), Array1::zeros(1), box_bounds);
@@ -492,7 +533,7 @@ mod test {
                 let star = Star2::new(basis, center).with_constraints(poly);
 
                 let result = panic::catch_unwind(|| {
-                    star.get_max(0);
+                    star.get_output_max(0);
                 });
                 assert!(result.is_ok());
             }

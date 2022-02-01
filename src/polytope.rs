@@ -6,6 +6,7 @@ use crate::lp::LinearSolution;
 use crate::util;
 use crate::NNVFloat;
 use ndarray::arr1;
+use ndarray::array;
 use ndarray::concatenate;
 use ndarray::Axis;
 use ndarray::Ix2;
@@ -28,6 +29,25 @@ pub struct Polytope {
 }
 
 impl Polytope {
+    pub fn nonempty_new(coeffs: Array2<NNVFloat>, rhs: Array1<NNVFloat>) -> Option<Self> {
+        let (fcoeffs, frhs): (Vec<ArrayView1<NNVFloat>>, Vec<NNVFloat>) = coeffs
+            .rows()
+            .into_iter()
+            .zip(rhs.iter())
+            .filter(|(row, rhs)| row.iter().any(|x| x.abs() > 1e-15) || **rhs < 0.)
+            .unzip();
+        let fscoeffs: Vec<ArrayView2<NNVFloat>> = fcoeffs
+            .into_iter()
+            .map(|x| x.insert_axis(Axis(0)))
+            .collect();
+        if frhs.len() == 0 {
+            return None;
+        }
+        let coeffs = concatenate(Axis(0), &fscoeffs).unwrap();
+        let rhs = Array1::from_vec(frhs);
+        Some(Polytope::new(coeffs, rhs))
+    }
+
     pub fn new(coeffs: Array2<NNVFloat>, rhs: Array1<NNVFloat>) -> Self {
         debug_assert_eq!(coeffs.nrows(), rhs.len());
         Self { coeffs, rhs }
@@ -75,7 +95,7 @@ impl Polytope {
                 .chain(iter::once(maximize_eqn.view())),
             concatenate![Axis(0), self.rhs(), arr1(&[maximize_rhs])].view(),
             maximize_eqn.view(),
-            bounds,
+            bounds.as_ref(),
         );
         let val: f64 = match solved {
             LinearSolution::Solution(_, val) => val,
@@ -86,9 +106,14 @@ impl Polytope {
 
     /// `check_redundant` is currently disabled
     /// # Panics
-    pub fn add_eqns(&mut self, eqns: &Self) {
-        self.coeffs.append(Axis(0), eqns.coeffs()).unwrap();
-        self.rhs.append(Axis(0), eqns.rhs()).unwrap();
+    pub fn add_eqn(&mut self, coeffs: ArrayView1<NNVFloat>, rhs: NNVFloat) {
+        if coeffs.iter().all(|x| x.abs() < 1e-15) {
+            return;
+        }
+        self.coeffs
+            .append(Axis(0), coeffs.insert_axis(Axis(0)).view())
+            .unwrap();
+        self.rhs.append(Axis(0), array![rhs].view()).unwrap();
     }
 
     pub fn any_nan(&self) -> bool {
@@ -285,7 +310,12 @@ impl Polytope {
     pub fn is_empty(&self, bounds_opt: &Option<Bounds1>) -> bool {
         let c = Array1::ones(self.num_dims());
 
-        let solved = solve(self.coeffs().rows(), self.rhs(), c.view(), bounds_opt);
+        let solved = solve(
+            self.coeffs().rows(),
+            self.rhs(),
+            c.view(),
+            bounds_opt.as_ref(),
+        );
 
         !matches!(
             solved,
@@ -325,12 +355,12 @@ impl From<Affine2> for Polytope {
 
 #[cfg(test)]
 mod tests {
-    use crate::test_util::Polytope;
+    use crate::test_util::polytope;
     use proptest::prelude::*;
 
     proptest! {
         #[test]
-        fn test_Polytope_get_eqn(ineq in Polytope(3, 4)) {
+        fn test_Polytope_get_eqn(ineq in polytope(3, 4)) {
             let eqn = ineq.get_eqn(2);
             let coeffs = eqn.coeffs();
             prop_assert_eq!(&coeffs.shape(), &vec![1, 3])

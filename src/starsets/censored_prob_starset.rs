@@ -31,7 +31,8 @@ use std::iter;
 pub trait CensoredProbStarSet<D: 'static + Dimension>: ProbStarSet<D> {
     type I<'a>: Iterator<Item = &'a Option<bool>>
     where
-        Self: 'a;
+        Self: 'a,
+        D: 'a;
 
     fn get_safe_value(&self) -> NNVFloat;
     fn set_safe_value(&mut self, val: NNVFloat);
@@ -43,8 +44,9 @@ pub trait CensoredProbStarSet<D: 'static + Dimension>: ProbStarSet<D> {
 
 pub trait CensoredProbStarSet2: CensoredProbStarSet<Ix2> + ProbStarSet2 {
     fn get_node_output_bounds(&mut self, node_id: usize) -> (NNVFloat, NNVFloat) {
+        let outer_bounds: Bounds1 = self.get_input_bounds().as_ref().cloned().unwrap();
         let (node_mut, loc, scale, dnn) = self.get_node_mut_with_borrows(node_id);
-        node_mut.get_output_bounds(dnn, &|x| (x.lower()[[0]], x.upper()[[0]]))
+        node_mut.get_output_bounds(dnn, &|x| (x.lower()[[0]], x.upper()[[0]]), &outer_bounds)
     }
 
     /// # Panics
@@ -63,12 +65,16 @@ pub trait CensoredProbStarSet2: CensoredProbStarSet<Ix2> + ProbStarSet2 {
                     .slice_axis(Axis(0), Slice::from(..-(unfixed_dims as isize)))
                     .insert_axis(Axis(1))
                     .to_owned();
-                let zeros: Array2<f64> = Array2::zeros((1, 1000));
-                fixed = fixed + zeros;
-                fixed
-                    .append(Axis(0), without_fixed.view())
-                    .expect("Could not append!");
-                fixed
+                if fixed.iter().any(|x| *x != 0.) {
+                    let zeros: Array2<f64> = Array2::zeros((1, 1000));
+                    fixed = fixed + zeros;
+                    fixed
+                        .append(Axis(0), without_fixed.view())
+                        .expect("Could not append!");
+                    fixed
+                } else {
+                    without_fixed
+                }
             } else {
                 without_fixed
             };

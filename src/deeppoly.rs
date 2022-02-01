@@ -7,6 +7,7 @@ use ndarray::Array1;
 use ndarray::ArrayView1;
 use ndarray::ArrayViewMut1;
 use ndarray::Zip;
+use num::Float;
 use num::Zero;
 use std::ops::Neg;
 
@@ -34,11 +35,29 @@ pub fn deep_poly_steprelu(
         // then, spanning branch
     } else {
         // Using y = ax + b:
-        u_basis.mapv_inplace(|a| a * (u / (u - l)));
-        u_shift.mapv_inplace(|b| u * (b - l) / (u - l));
+        // Handling so things don't break down in the infinite case
+        if u == NNVFloat::infinity() {
+            u_basis.mapv_inplace(|x| {
+                if x * NNVFloat::infinity() == NNVFloat::nan() {
+                    0.
+                } else {
+                    NNVFloat::MAX
+                }
+            });
+            u_shift.mapv_inplace(|x| {
+                if x * NNVFloat::infinity() == NNVFloat::nan() {
+                    0.
+                } else {
+                    NNVFloat::MAX
+                }
+            });
+        } else {
+            u_basis.mapv_inplace(|a| a * (u / (u - l)));
+            u_shift.mapv_inplace(|b| u * (b - l) / (u - l));
+        }
 
         // use approximation with least area
-        if u < NNVFloat::neg(l) {
+        if u < NNVFloat::neg(l) || l == NNVFloat::neg_infinity() {
             // Eqn. 3 from the paper
             *bounds_slice.get_mut(0).unwrap() = NNVFloat::zero();
             lbasis.fill(NNVFloat::zero());
@@ -47,7 +66,7 @@ pub fn deep_poly_steprelu(
             // Eqn. 4 from the paper, leave l_mul at default
         }
     }
-    debug_assert!(bounds.is_all_finite());
+    //debug_assert!(bounds.is_all_finite());
     (bounds, (lower_aff, upper_aff))
 }
 
