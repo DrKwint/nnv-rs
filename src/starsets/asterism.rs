@@ -260,7 +260,7 @@ mod test {
         fn test_sample_safe_star(mut constellation in generic_constellation(2, 2, 2, 2)) {
             let mut rng = rand::thread_rng();
             let mut asterism = Asterism::new(&mut constellation, 1.);
-            let default: Array1<f64> = Array1::zeros(asterism.constellation.get_dnn().input_shape()[0].unwrap());
+            let default: Array1<f64> = Array1::zeros(asterism.get_dnn().input_shape()[0].unwrap());
             let sample = asterism.sample_safe_star(1, &mut rng, None);
         }
 

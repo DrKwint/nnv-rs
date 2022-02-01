@@ -157,9 +157,8 @@ prop_compose! {
                              |i| !i.rhs().iter().any(|x| *x == 0.0_f64))
         ) -> Polytope {
             // Make a box bigger than possible inner inequalities
-            let box_bounds: Bounds1 = Bounds1::new(Array1::from_elem(num_dims, -20.).view(), Array1::from_elem(num_dims, -20.).view());
-            let box_ineq = Inequality::new(Array2::zeros([1, num_dims]), Array1::zeros(1), box_bounds);
-            Polytope::from_halfspaces(box_ineq)
+            //let box_bounds: Bounds1 = Bounds1::new(Array1::from_elem(num_dims, -20.).view(), Array1::from_elem(num_dims, -20.).view());
+            Polytope::new(Array2::zeros([1, num_dims]), Array1::zeros(1));
         }
 }
 
@@ -196,14 +195,11 @@ prop_compose! {
             let mut box_rhs = Array1::ones(num_dims);
             box_rhs *= 20.0_f64;
 
-            let upper_box_ineq = Inequality::new(box_coeffs.clone(), box_rhs.clone(), Bounds1::trivial(num_dims));
-            let lower_box_ineq = Inequality::new(-1. * box_coeffs, box_rhs, Bounds1::trivial(num_dims));
-
-            ineq.add_eqns(&upper_box_ineq);
-            ineq.add_eqns(&lower_box_ineq);
+            let upper_box_poly = Polytope::new(box_coeffs.clone(), box_rhs.clone(), Bounds1::trivial(num_dims));
+            let lower_box_poly = Polytope::new(-1. * box_coeffs, box_rhs, Bounds1::trivial(num_dims));
 
             // Construct the empty polytope.
-            Polytope::from_halfspaces(ineq)
+            upper_box_poly.intersect(lower_box_poly)
         }
 }
 
@@ -221,7 +217,7 @@ prop_compose! {
             constraints in non_empty_polytope(num_dims, num_constraints)
         ) -> Star2 {
             let star = Star2::new(basis, center).with_constraints(constraints);
-            assert!(!star.is_empty());
+            assert!(!star.is_empty(&None));
             star
         }
 }
@@ -318,17 +314,17 @@ proptest! {
 
     #[test]
     fn test_empty_polytope(poly in generic_empty_polytope(2, 4)) {
-        prop_assert!(poly.is_empty());
+        prop_assert!(poly.is_empty(&None));
     }
 
     #[test]
     fn test_non_empty_polytope(poly in generic_non_empty_polytope(2, 4)) {
-        prop_assert!(!poly.is_empty());
+        prop_assert!(!poly.is_empty(&None));
     }
 
     #[test]
     fn test_non_empty_star(star in generic_non_empty_star(2, 4)) {
-        prop_assert!(!star.is_empty());
+        prop_assert!(!star.is_empty(&None));
     }
 
     #[test]

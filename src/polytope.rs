@@ -53,6 +53,13 @@ impl Polytope {
         self.rhs.len()
     }
 
+    pub fn intersect(&self, other: &Polytope) -> Polytope {
+        Polytope {
+            coeffs: concatenate![Axis(0), self.coeffs, other.coeffs],
+            rhs: concatenate![Axis(0), self.rhs, other.rhs],
+        }
+    }
+
     pub fn check_redundant(
         &self,
         coeffs: ArrayView1<NNVFloat>,
