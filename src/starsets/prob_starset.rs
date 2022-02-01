@@ -158,7 +158,7 @@ pub trait ProbStarSet2: ProbStarSet<Ix2> + StarSet2 {
             scale.view(),
             n,
             max_accept_reject_iters,
-            &initialization_opt,
+            initialization_opt.as_ref(),
             stability_eps,
             &input_bounds_opt,
         )
@@ -175,13 +175,11 @@ pub trait ProbStarSet2: ProbStarSet<Ix2> + StarSet2 {
         stability_eps: NNVFloat,
     ) -> Vec<Array1<NNVFloat>> {
         let mut safe_star = self.get_node(node_id).get_safe_star(safe_value);
-        let initialization_opt = self.try_get_node_parent_id(node_id).map(|parent_id| {
+        let initialization_opt = self.try_get_node_parent_id(node_id).and_then(|parent_id| {
             self.get_node(parent_id)
                 .try_get_gaussian_distribution()
                 .unwrap()
                 .try_get_tilting_solution()
-                .unwrap()
-                .clone()
         });
         safe_star.gaussian_sample(
             rng,
@@ -189,7 +187,7 @@ pub trait ProbStarSet2: ProbStarSet<Ix2> + StarSet2 {
             self.get_scale(),
             n,
             max_iters,
-            &initialization_opt,
+            initialization_opt,
             stability_eps,
             self.get_input_bounds(),
         )

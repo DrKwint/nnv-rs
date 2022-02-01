@@ -33,7 +33,7 @@ pub trait StarSet<D: 'static + Dimension> {
         0
     }
 
-    fn is_node_leaf(&mut self, node_id: usize) -> bool {
+    fn is_node_leaf(&self, node_id: usize) -> bool {
         *self.try_get_node_type(node_id) == Some(StarNodeType::Leaf)
     }
 

@@ -45,7 +45,6 @@ cfg_if::cfg_if! {
 pub type NNVFloat = f64;
 
 pub mod trunks {
-    use crate::bounds::Bounds1;
     use crate::polytope::Polytope;
     use ndarray::{Array1, Array2, Axis};
 

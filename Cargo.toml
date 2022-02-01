@@ -58,11 +58,6 @@ rand_pcg = "0.3.1"
 name = "my_benchmark"
 harness = false
 
-[dev-dependencies.cargo-husky]
-version = "1"
-default-features = false
-features = ["run-for-all", "precommit-hook", "run-cargo-check", "run-cargo-fmt"]
-
 [profile.release]
 lto = true
 codegen-units = 1

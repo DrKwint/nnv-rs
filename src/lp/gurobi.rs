@@ -13,8 +13,8 @@ use grb::VarType::Continuous;
 use ndarray::{Array1, ArrayView1};
 
 pub fn qsolve<'a, I, J>(
-    A: I,
-    b: J,
+    A: &I,
+    b: &J,
     qvar_coeffs: ArrayView1<NNVFloat>,
     var_coeffs: ArrayView1<NNVFloat>,
     var_bounds: &Option<Bounds1>,

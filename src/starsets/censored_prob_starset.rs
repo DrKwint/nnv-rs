@@ -55,12 +55,12 @@ pub trait CensoredProbStarSet2: CensoredProbStarSet<Ix2> + ProbStarSet2 {
         time_limit_opt: Option<Duration>,
     ) {
         let samples = {
-            let mut without_fixed = self.sample_root_node(num_samples, rng);
-            let mut almost_samples = if let Some(bounds) = self.get_input_bounds() {
+            let without_fixed = self.sample_root_node(num_samples, rng);
+            let almost_samples = if let Some(bounds) = self.get_input_bounds() {
                 let unfixed_dims = without_fixed.shape()[0]; // Assuming rank 2 here
                 let mut fixed = bounds
                     .fixed_vals_or_zeros()
-                    .slice_axis(Axis(0), Slice::from(..-1 * (unfixed_dims as isize)))
+                    .slice_axis(Axis(0), Slice::from(..-(unfixed_dims as isize)))
                     .insert_axis(Axis(1))
                     .to_owned();
                 let zeros: Array2<f64> = Array2::zeros((1, 1000));

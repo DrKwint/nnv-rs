@@ -269,13 +269,13 @@ impl StarNode<Ix2> {
         sigma: ArrayView2<NNVFloat>,
         n: usize,
         max_iters: usize,
-        tilting_initialization: &Option<TiltingSolution>,
+        tilting_initialization: Option<&TiltingSolution>,
         stability_eps: NNVFloat,
         input_bounds_opt: &Option<Bounds1>,
     ) -> Vec<Array1<NNVFloat>> {
         let distribution =
             self.get_gaussian_distribution(mu, sigma, max_iters, stability_eps, input_bounds_opt);
-        distribution.populate_tilting_solution(tilting_initialization.as_ref());
+        distribution.populate_tilting_solution(tilting_initialization);
         distribution.sample_n(n, rng)
     }
 

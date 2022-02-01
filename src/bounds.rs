@@ -95,6 +95,7 @@ impl<D: Dimension + ndarray::RemoveAxis> Bounds<D> {
             .all(|&x, bounds| bounds[0] - eps <= x && x <= bounds[1] + eps)
     }
 
+    #[must_use]
     pub fn intersect(&self, other: &Self) -> Self {
         let mut intersection = Self {
             data: self.data.clone(),
