@@ -116,6 +116,12 @@ impl Polytope {
         self.rhs.append(Axis(0), array![rhs].view()).unwrap();
     }
 
+    pub fn remove_eqn(&mut self, idx: usize) {
+        debug_assert!(idx < self.coeffs().nrows());
+        self.coeffs.remove_index(Axis(0), idx);
+        self.rhs.remove_index(Axis(0), idx);
+    }
+
     pub fn any_nan(&self) -> bool {
         self.coeffs().iter().any(|x| x.is_nan()) || self.rhs.iter().any(|x| x.is_nan())
     }

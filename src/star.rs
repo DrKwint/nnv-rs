@@ -90,6 +90,15 @@ impl<D: Dimension> Star<D> {
         }
         self
     }
+
+    pub fn remove_constraint(mut self, idx: usize) -> Self {
+        if let Some(ref mut constrs) = self.constraints {
+            constrs.remove_eqn(idx);
+        } else {
+            panic!();
+        }
+        self
+    }
 }
 
 impl Star2 {

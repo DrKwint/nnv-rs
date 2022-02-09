@@ -155,6 +155,10 @@ impl<D: Dimension> StarNode<D> {
         self.dnn_index
     }
 
+    pub fn try_get_cdf(&self) -> Option<NNVFloat> {
+        return self.star_cdf;
+    }
+
     pub fn set_cdf(&mut self, val: NNVFloat) {
         self.star_cdf = Some(val);
     }
@@ -167,6 +171,14 @@ impl<D: Dimension> StarNode<D> {
     /// # Panics
     pub fn add_cdf(&mut self, add: NNVFloat) {
         self.cdf_delta += add;
+    }
+
+    pub fn try_get_output_bounds(&self) -> Option<(NNVFloat, NNVFloat)> {
+        self.output_bounds
+    }
+
+    pub fn set_output_bounds(&mut self, val: (NNVFloat, NNVFloat)) {
+        self.output_bounds = Some(val);
     }
 }
 
@@ -187,6 +199,10 @@ impl StarNode<Ix2> {
     /// None indicates that the distribution hasn't been calculated/constructed
     pub const fn try_get_gaussian_distribution(&self) -> Option<&GaussianDistribution> {
         self.gaussian_distribution.as_ref()
+    }
+
+    pub fn set_gaussian_distribution(&mut self, val: GaussianDistribution) {
+        self.gaussian_distribution = Some(val);
     }
 
     /// # Panics

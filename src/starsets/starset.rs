@@ -98,21 +98,37 @@ pub trait StarSet2: StarSet<Ix2> {
 
                 let mut ids = vec![];
 
-                if let Some(lower_star) = child_stars.0 {
+                let is_single_child = child_stars.0.is_some() ^ child_stars.1.is_some();
+
+                if let Some(mut lower_star) = child_stars.0 {
                     let outer_bounds: Bounds1 = self.get_input_bounds().as_ref().cloned().unwrap();
-                    let mut bounds = self
+                    let mut input_bounds = self
                         .get_node_mut(node_id)
                         .get_axis_aligned_input_bounds(&outer_bounds)
                         .clone();
-                    bounds.index_mut(dim)[0] = 0.;
-                    bounds.index_mut(dim)[1] = 0.;
-                    let lower_node =
-                        StarNode::default(lower_star, Some(bounds)).with_dnn_index(dnn_idx);
+                    input_bounds.index_mut(dim)[0] = 0.;
+                    input_bounds.index_mut(dim)[1] = 0.;
+                    if is_single_child {
+                        // Remove redundant constraint added by step_relu2 above
+                        let num_constraints = lower_star.num_constraints();
+                        lower_star = lower_star.remove_constraint(num_constraints - 1);
+                    }
+                    let mut lower_node =
+                        StarNode::default(lower_star, Some(input_bounds)).with_dnn_index(dnn_idx);
+
+                    if is_single_child {
+                        if let Some(cdf) = self.get_node(node_id).try_get_cdf() {
+                            lower_node.set_cdf(cdf);
+                        }
+                        if let Some(dist) = self.get_node(node_id).try_get_gaussian_distribution() {
+                            lower_node.set_gaussian_distribution(dist.clone());
+                        }
+                    }
                     let id = self.add_node(lower_node, node_id);
                     ids.push(id);
                 }
 
-                if let Some(upper_star) = child_stars.1 {
+                if let Some(mut upper_star) = child_stars.1 {
                     let outer_bounds: Bounds1 = self.get_input_bounds().as_ref().cloned().unwrap();
                     let mut bounds = self
                         .get_node_mut(node_id)
@@ -122,8 +138,25 @@ pub trait StarSet2: StarSet<Ix2> {
                     if lb[0].is_sign_negative() {
                         lb[0] = 0.;
                     }
-                    let upper_node =
+                    if is_single_child {
+                        // Remove redundant constraint added by step_relu2 above
+                        let num_constraints = upper_star.num_constraints();
+                        upper_star = upper_star.remove_constraint(num_constraints - 1);
+                    }
+                    let mut upper_node =
                         StarNode::default(upper_star, Some(bounds)).with_dnn_index(dnn_idx);
+
+                    if is_single_child {
+                        if let Some(cdf) = self.get_node(node_id).try_get_cdf() {
+                            upper_node.set_cdf(cdf);
+                        }
+                        if let Some(bounds) = self.get_node(node_id).try_get_output_bounds() {
+                            upper_node.set_output_bounds(bounds);
+                        }
+                        if let Some(dist) = self.get_node(node_id).try_get_gaussian_distribution() {
+                            upper_node.set_gaussian_distribution(dist.clone());
+                        }
+                    }
                     let id = self.add_node(upper_node, node_id);
                     ids.push(id);
                 }
