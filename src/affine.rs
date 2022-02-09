@@ -175,12 +175,12 @@ impl Affine2 {
 
 impl Affine2 {
     pub fn signed_apply(&self, bounds: &Bounds1) -> Bounds1 {
-        let lower = crate::util::signed_dot(
+        let mut lower = crate::util::signed_dot(
             &self.basis.view(),
             &bounds.lower().view(),
             &bounds.upper().view(),
         ) + &self.shift;
-        let upper = crate::util::signed_dot(
+        let mut upper = crate::util::signed_dot(
             &self.basis.view(),
             &bounds.upper().view(),
             &bounds.lower().view(),

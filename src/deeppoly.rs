@@ -41,14 +41,14 @@ pub fn deep_poly_steprelu(
                 if x * NNVFloat::infinity() == NNVFloat::nan() {
                     0.
                 } else {
-                    NNVFloat::MAX
+                    NNVFloat::INFINITY
                 }
             });
             u_shift.mapv_inplace(|x| {
                 if x * NNVFloat::infinity() == NNVFloat::nan() {
                     0.
                 } else {
-                    NNVFloat::MAX
+                    NNVFloat::INFINITY
                 }
             });
         } else {
@@ -126,7 +126,6 @@ pub fn deep_poly_relu(
 
 /// # Panics
 pub fn deep_poly(input_bounds: &Bounds1, dnn_iter: DNNIterator) -> Bounds1 {
-    debug!("Starting Deeppoly at {:?}", dnn_iter.get_idx());
     trace!("with input bounds {:?}", input_bounds);
     debug_assert!(
         input_bounds

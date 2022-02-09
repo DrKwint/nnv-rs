@@ -246,29 +246,22 @@ impl Star2 {
     /// solve function. Currently this is way too hard to do, so we
     /// panic instead. We have an assumption that we start with a
     /// bounded box and therefore should never be unbounded.
-    pub fn get_output_min(&self, idx: usize, input_bounds: Option<&Bounds1>) -> NNVFloat {
+    pub fn get_output_min(&self, idx: usize, input_bounds: &Bounds1) -> NNVFloat {
         let eqn = self.representation.get_eqn(idx);
         let shift = eqn.shift()[0];
 
         self.constraints.as_ref().map_or_else(
             || {
-                if eqn
-                    .basis()
-                    .index_axis(Axis(0), 0)
-                    .iter()
-                    .any(|x| x.abs() > 0.)
-                {
-                    NNVFloat::neg_infinity()
-                } else {
-                    shift
-                }
+                crate::util::signed_dot(&eqn.basis(), &input_bounds.lower(), &input_bounds.upper())
+                    [[0]]
+                    + shift
             },
             |poly| {
                 let solved = solve(
                     poly.coeffs().rows(),
                     poly.rhs(),
                     eqn.basis().index_axis(Axis(0), 0),
-                    input_bounds,
+                    Some(input_bounds),
                 );
                 if let LinearSolution::Solution(_, val) = solved {
                     shift + val
@@ -289,30 +282,22 @@ impl Star2 {
     ///
     /// # Panics
     /// TODO: Change output type to Option<T>
-    pub fn get_output_max(&self, idx: usize, input_bounds: Option<&Bounds1>) -> NNVFloat {
+    pub fn get_output_max(&self, idx: usize, input_bounds: &Bounds1) -> NNVFloat {
         let mut eqn = self.representation.get_eqn(idx);
         let shift = eqn.shift()[0];
-        eqn *= -1.;
 
         self.constraints.as_ref().map_or_else(
             || {
-                if eqn
-                    .basis()
-                    .index_axis(Axis(0), 0)
-                    .iter()
-                    .any(|x| x.abs() > 0.)
-                {
-                    NNVFloat::infinity()
-                } else {
-                    shift
-                }
+                crate::util::signed_dot(&eqn.basis(), &input_bounds.upper(), &input_bounds.lower())
+                    [[0]]
+                    + shift
             },
             |poly| {
                 let solved = solve(
                     poly.coeffs().rows(),
                     poly.rhs(),
-                    eqn.basis().index_axis(Axis(0), 0),
-                    input_bounds,
+                    eqn.basis().index_axis(Axis(0), 0).mapv(|x| x * -1.).view(),
+                    Some(input_bounds),
                 );
                 if let LinearSolution::Solution(_, val) = solved {
                     shift - val
@@ -385,11 +370,11 @@ impl Star2 {
     ) -> Bounds1 {
         let lbs = Array1::from_iter(
             (0..self.representation_space_dim())
-                .map(|x| self.get_output_min(x, Some(input_outer_bounds))),
+                .map(|x| self.get_output_min(x, input_outer_bounds)),
         );
         let ubs = Array1::from_iter(
             (0..self.representation_space_dim())
-                .map(|x| self.get_output_max(x, Some(input_outer_bounds))),
+                .map(|x| self.get_output_max(x, input_outer_bounds)),
         );
         Bounds1::new(lbs.view(), ubs.view())
     }
