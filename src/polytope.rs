@@ -3,6 +3,7 @@ use crate::bounds::Bounds1;
 use crate::gaussian::GaussianDistribution;
 use crate::lp::solve;
 use crate::lp::LinearSolution;
+use crate::ndarray_linalg::SVD;
 use crate::util;
 use crate::NNVFloat;
 use ndarray::arr1;
@@ -14,6 +15,7 @@ use ndarray::Slice;
 use ndarray::Zip;
 use ndarray::{Array1, Array2};
 use ndarray::{ArrayView1, ArrayView2, ArrayViewMut1};
+use ndarray_stats::QuantileExt;
 use num::Zero;
 use serde::{Deserialize, Serialize};
 use std::convert::TryFrom;
@@ -251,19 +253,22 @@ impl Polytope {
         let mut constraint_coeffs: Array2<f64> = self.coeffs().mapv(std::convert::Into::into);
         let mut ub = self.rhs().mapv(std::convert::Into::into);
 
-        // normalise each constraint equation
-        let row_norms: Array1<f64> = constraint_coeffs
-            .rows()
-            .into_iter()
-            .map(|row| row.mapv(|x| x * x).sum().sqrt())
-            .collect();
-        debug_assert!(
-            !row_norms.iter().any(|x| *x == 0.),
-            "{:?}",
-            constraint_coeffs.rows().into_iter().collect::<Vec<_>>()
-        );
-        constraint_coeffs = (&constraint_coeffs.t() / &row_norms).reversed_axes();
-        ub = ub / row_norms;
+        let inv_coeffs = {
+            let (u_opt, mut s, vt_opt) = constraint_coeffs.svd(true, true).unwrap();
+            let s_max = *s.max().unwrap();
+            s /= s_max;
+            constraint_coeffs /= s_max;
+            ub /= s_max;
+            let s_matrix = {
+                let mut zeros = Array2::zeros([
+                    vt_opt.as_ref().unwrap().shape()[0],
+                    u_opt.as_ref().unwrap().shape()[1],
+                ]);
+                zeros.diag_mut().assign(&s);
+                zeros
+            };
+            vt_opt.unwrap().t().dot(&s_matrix).dot(&u_opt.unwrap().t())
+        };
 
         let sq_constr_sigma = {
             let sigma: Array2<f64> = constraint_coeffs.dot(&sigma.dot(&constraint_coeffs.t()));
@@ -282,7 +287,6 @@ impl Polytope {
             sq_constr_ub,
             max_accept_reject_iters,
         );
-        let inv_coeffs: Array2<NNVFloat> = util::pinv(&constraint_coeffs).mapv(Into::into);
         GaussianDistribution::TruncGaussian {
             distribution,
             inv_coeffs,
