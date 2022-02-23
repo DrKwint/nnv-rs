@@ -1,6 +1,6 @@
 [package]
 name = "nnv-rs"
-version = "0.5.4"
+version = "0.6.0"
 edition = "2021"
 description   = "Verification and Statistics on Deep Neural Networks"
 readme        = "README.md"
@@ -15,7 +15,6 @@ exclude = [
 [features]
 lp_coincbc = ["good_lp/coin_cbc"]
 lp_gurobi = ["grb"]
-rayon = ["ndarray/rayon"]
 blas_intel-mkl = ["ndarray-linalg/intel-mkl", "truncnorm/intel-mkl"]
 blas_openblas-system = ["ndarray/blas", "blas-src", "openblas-src", "ndarray-linalg/openblas-system", "truncnorm/openblas-system"]
 
