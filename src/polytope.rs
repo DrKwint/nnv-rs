@@ -4,7 +4,6 @@ use crate::gaussian::GaussianDistribution;
 use crate::lp::solve;
 use crate::lp::LinearSolution;
 use crate::ndarray_linalg::SVD;
-use crate::util;
 use crate::NNVFloat;
 use ndarray::arr1;
 use ndarray::array;
@@ -370,7 +369,7 @@ mod tests {
 
     proptest! {
         #[test]
-        fn test_Polytope_get_eqn(ineq in polytope(3, 4)) {
+        fn test_polytope_get_eqn(ineq in polytope(3, 4)) {
             let eqn = ineq.get_eqn(2);
             let coeffs = eqn.coeffs();
             prop_assert_eq!(&coeffs.shape(), &vec![1, 3])

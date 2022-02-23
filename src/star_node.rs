@@ -2,9 +2,9 @@
 use crate::affine::Affine2;
 use crate::bounds::Bounds1;
 use crate::deeppoly::deep_poly;
-use crate::dnn::DNNIndex;
-use crate::dnn::DNNIterator;
-use crate::dnn::DNN;
+use crate::dnn::dnn::DNN;
+use crate::dnn::dnn_iter::DNNIndex;
+use crate::dnn::dnn_iter::DNNIterator;
 use crate::gaussian::GaussianDistribution;
 use crate::num::Float;
 use crate::polytope::Polytope;
@@ -20,45 +20,6 @@ use rand::Rng;
 use serde::{Deserialize, Serialize};
 use std::fmt::Debug;
 use truncnorm::tilting::TiltingSolution;
-
-#[derive(Debug, Clone)]
-pub enum StarNodeOp {
-    Leaf,
-    Affine(Affine2),
-    StepRelu(usize),
-    StepReluDropout((NNVFloat, usize)),
-}
-
-impl StarNodeOp {
-    /// bounds: Output bounds: Concrete bounds
-    /// affs: Input bounds: Abstract bounds in terms of inputs
-    ///
-    /// # Panics
-    pub fn apply_bounds(
-        &self,
-        bounds: &Bounds1,
-        lower_aff: &Affine2,
-        upper_aff: &Affine2,
-    ) -> (Bounds1, (Affine2, Affine2)) {
-        match self {
-            Self::Leaf => (bounds.clone(), (lower_aff.clone(), upper_aff.clone())),
-            Self::Affine(aff) => (
-                aff.signed_apply(bounds),
-                (
-                    aff.signed_compose(lower_aff, upper_aff),
-                    aff.signed_compose(upper_aff, lower_aff),
-                ),
-            ),
-            Self::StepRelu(dim) => crate::deeppoly::deep_poly_steprelu(
-                *dim,
-                bounds.clone(),
-                lower_aff.clone(),
-                upper_aff.clone(),
-            ),
-            Self::StepReluDropout(_dim) => todo!(),
-        }
-    }
-}
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum StarNodeType {
@@ -127,10 +88,14 @@ pub struct StarNode<D: Dimension> {
 }
 
 impl<D: Dimension> StarNode<D> {
-    pub fn default(star: Star<D>, axis_aligned_input_bounds: Option<Bounds1>) -> Self {
+    pub fn default(
+        star: Star<D>,
+        axis_aligned_input_bounds: Option<Bounds1>,
+        initial_idx: DNNIndex,
+    ) -> Self {
         Self {
             star,
-            dnn_index: DNNIndex::default(),
+            dnn_index: initial_idx,
             star_cdf: None,
             cdf_delta: 0.,
             axis_aligned_input_bounds,
@@ -139,14 +104,6 @@ impl<D: Dimension> StarNode<D> {
         }
     }
 
-    #[must_use]
-    pub fn with_dnn_index(mut self, dnn_index: DNNIndex) -> Self {
-        self.dnn_index = dnn_index;
-        self
-    }
-}
-
-impl<D: Dimension> StarNode<D> {
     pub fn get_star(&self) -> &Star<D> {
         &self.star
     }
@@ -306,16 +263,6 @@ impl StarNode<Ix2> {
                 self.star
                     .calculate_output_axis_aligned_bounding_box(&outer_bounds),
             );
-            /*debug_assert!(
-                self.axis_aligned_input_bounds
-                    .clone()
-                    .unwrap()
-                    .bounds_iter()
-                    .into_iter()
-                    .all(|x| (x[[0]] <= x[[1]])),
-                "Calculated bounds are flipped! {}",
-                self.axis_aligned_input_bounds.clone().unwrap()
-            );*/
         }
         self.axis_aligned_input_bounds.as_ref().unwrap()
     }
@@ -332,6 +279,7 @@ impl StarNode<Ix2> {
             let dnn_iter = DNNIterator::new(dnn, self.dnn_index);
             self.output_bounds = Some(output_fn(deep_poly(
                 self.get_axis_aligned_input_bounds(&outer_input_bounds),
+                dnn,
                 dnn_iter,
             )));
         }

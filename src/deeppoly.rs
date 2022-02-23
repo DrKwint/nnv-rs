@@ -1,8 +1,9 @@
 use crate::affine::Affine2;
 use crate::bounds::Bounds1;
-use crate::dnn::DNNIterator;
+use crate::dnn::dnn::DNN;
+use crate::dnn::dnn_iter::DNNIterator;
 use crate::NNVFloat;
-use log::{debug, trace};
+use log::trace;
 use ndarray::Array1;
 use ndarray::ArrayView1;
 use ndarray::ArrayViewMut1;
@@ -125,7 +126,7 @@ pub fn deep_poly_relu(
 }
 
 /// # Panics
-pub fn deep_poly(input_bounds: &Bounds1, dnn_iter: DNNIterator) -> Bounds1 {
+pub fn deep_poly(input_bounds: &Bounds1, dnn: &DNN, dnn_iter: DNNIterator) -> Bounds1 {
     trace!("with input bounds {:?}", input_bounds);
     debug_assert!(
         input_bounds
@@ -143,8 +144,13 @@ pub fn deep_poly(input_bounds: &Bounds1, dnn_iter: DNNIterator) -> Bounds1 {
             input_bounds.clone(),
             (Affine2::identity(ndim), Affine2::identity(ndim)),
         ),
-        |(bounds_concrete, (laff, uaff)), op| {
-            let out = op.apply_bounds(&bounds_concrete, &laff, &uaff);
+        |(bounds_concrete, (laff, uaff)), idx| {
+            let layer = dnn.get_layer(idx.layer.unwrap()).unwrap();
+            let out = if let Some(dim) = idx.get_remaining_steps() {
+                layer.apply_bounds_step(dim, &bounds_concrete, &laff, &uaff)
+            } else {
+                layer.apply_bounds(&bounds_concrete, &laff, &uaff)
+            };
             debug_assert!(
                 out.0
                     .bounds_iter()
@@ -179,7 +185,10 @@ pub fn deep_poly(input_bounds: &Bounds1, dnn_iter: DNNIterator) -> Bounds1 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::dnn::{DNNIndex, Layer, DNN};
+    use crate::dnn::dense::Dense;
+    use crate::dnn::dnn::DNN;
+    use crate::dnn::dnn_iter::DNNIndex;
+    use crate::dnn::relu::ReLU;
     use crate::test_util::{bounds1, fc_dnn};
     use ndarray::Array2;
     use ndarray::Axis;
@@ -191,15 +200,20 @@ mod tests {
             Array1::from_vec(vec![0.0, 0.0, 0.0]).insert_axis(Axis(0)),
             Array1::from_vec(vec![7.85]),
         );
-        let dense1 = Layer::new_dense(aff1);
-        let relu1: Layer = Layer::new_relu(1);
+        let dense1 = Dense::new(aff1);
+        let relu1 = ReLU::new(1);
         let aff2 = Affine2::new(
             Array1::from_vec(vec![9.49, 0.0]).insert_axis(Axis(1)),
             Array1::from_vec(vec![0., 0.]),
         );
-        let dense2 = Layer::new_dense(aff2);
-        let relu2: Layer = Layer::new_relu(2);
-        let _dnn = DNN::new(vec![dense1, relu1, dense2, relu2]);
+        let dense2 = Dense::new(aff2);
+        let relu2 = ReLU::new(2);
+        let _dnn = DNN::new(vec![
+            Box::new(dense1),
+            Box::new(relu1),
+            Box::new(dense2),
+            Box::new(relu2),
+        ]);
         let _bounds: Bounds1 = Bounds1::new(
             Array1::from_vec(vec![0.0, 0.0, 0.]).view(),
             Array1::zeros(3).view(),
@@ -209,7 +223,7 @@ mod tests {
     proptest! {
         #[test]
         fn test_deeppoly_with_dnn(dnn in fc_dnn(2, 2, 1, 2), input_bounds in bounds1(2)) {
-            deep_poly(&input_bounds, DNNIterator::new(&dnn, DNNIndex::default()));
+            deep_poly(&input_bounds, &dnn, DNNIterator::new(&dnn, DNNIndex::default()));
         }
     }
 

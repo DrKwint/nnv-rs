@@ -1,11 +1,10 @@
 use crate::bounds::Bounds1;
-use crate::dnn::DNNIndex;
-use crate::dnn::DNNIterator;
-use crate::dnn::DNN;
+use crate::dnn::dnn::DNN;
+use crate::dnn::dnn_iter::DNNIndex;
+use crate::dnn::dnn_iter::DNNIterator;
 use crate::polytope::Polytope;
 use crate::star::Star;
 use crate::star_node::StarNode;
-use crate::star_node::StarNodeOp;
 use crate::star_node::StarNodeType;
 use crate::NNVFloat;
 use ndarray::Array1;
@@ -18,9 +17,16 @@ pub trait StarSet<D: 'static + Dimension> {
     where
         Self: 'a,
         D: 'a;
+
+    type NTI<'a>: Iterator<Item = &'a Option<StarNodeType>>
+    where
+        Self: 'a,
+        D: 'a;
+
     fn get_node(&self, node_id: usize) -> &StarNode<D>;
     fn get_node_mut(&mut self, node_id: usize) -> &mut StarNode<D>;
     fn get_node_iter(&self) -> Self::NI<'_>;
+    fn get_node_type_iter(&self) -> Self::NTI<'_>;
     fn add_node(&mut self, node: StarNode<D>, parent_id: usize) -> usize;
     fn get_dnn(&self) -> &DNN;
     fn get_input_bounds(&self) -> &Option<Bounds1>;
@@ -77,158 +83,73 @@ pub trait StarSet2: StarSet<Ix2> {
         let dnn_iter = &mut DNNIterator::new(self.get_dnn(), dnn_index);
 
         // Get this node's operation from the dnn_iter
-        let op = dnn_iter.next();
+        let op_idx = dnn_iter.next();
+
         // Do this node's operation to produce its children
-        let children = match op {
-            Some(StarNodeOp::Leaf) => StarNodeType::Leaf,
-            Some(StarNodeOp::Affine(aff)) => {
-                let child_idx = self.add_node(
-                    StarNode::default(self.get_node(node_id).get_star().affine_map2(&aff), None)
-                        .with_dnn_index(dnn_iter.get_idx()),
-                    node_id,
-                );
-                StarNodeType::Affine { child_idx }
-            }
-            Some(StarNodeOp::StepRelu(dim)) => {
-                let child_stars = self
-                    .get_node(node_id)
-                    .get_star()
-                    .step_relu2(dim, self.get_input_bounds());
-                let dnn_idx = dnn_iter.get_idx();
-
-                let mut ids = vec![];
-
-                let is_single_child = child_stars.0.is_some() ^ child_stars.1.is_some();
-
-                if let Some(mut lower_star) = child_stars.0 {
-                    let outer_bounds: Bounds1 = self.get_input_bounds().as_ref().cloned().unwrap();
-                    let mut input_bounds = self
-                        .get_node_mut(node_id)
-                        .get_axis_aligned_input_bounds(&outer_bounds)
-                        .clone();
-                    input_bounds.index_mut(dim)[0] = 0.;
-                    input_bounds.index_mut(dim)[1] = 0.;
-                    if is_single_child {
-                        // Remove redundant constraint added by step_relu2 above
-                        let num_constraints = lower_star.num_constraints();
-                        lower_star = lower_star.remove_constraint(num_constraints - 1);
+        let children = match op_idx {
+            None => StarNodeType::Leaf,
+            Some(op_idx) => {
+                let (child_stars, star_input_bounds, same_output_bounds) = match op_idx {
+                    DNNIndex {
+                        layer: Some(idx),
+                        remaining_steps: Some(dim),
+                    } => {
+                        let outer_bounds = &self.get_input_bounds().as_ref().cloned().unwrap();
+                        let parent_bounds = self
+                            .get_node_mut(node_id)
+                            .get_axis_aligned_input_bounds(outer_bounds)
+                            .clone();
+                        let star = self.get_node(node_id).get_star();
+                        let bounds = self.get_input_bounds().clone();
+                        self.get_dnn().get_layer(idx).unwrap().forward_star(
+                            star,
+                            Some(dim),
+                            bounds,
+                            Some(parent_bounds),
+                        )
                     }
-                    let mut lower_node =
-                        StarNode::default(lower_star, Some(input_bounds)).with_dnn_index(dnn_idx);
-
-                    if is_single_child {
-                        if let Some(cdf) = self.get_node(node_id).try_get_cdf() {
-                            lower_node.set_cdf(cdf);
-                        }
-                        if let Some(dist) = self.get_node(node_id).try_get_gaussian_distribution() {
-                            lower_node.set_gaussian_distribution(dist.clone());
-                        }
+                    DNNIndex {
+                        layer: Some(idx), ..
+                    } => {
+                        let layer = self.get_dnn().get_layer(idx).unwrap();
+                        layer.forward_star(self.get_node(node_id).get_star(), None, None, None)
                     }
-                    let id = self.add_node(lower_node, node_id);
-                    ids.push(id);
+                    DNNIndex { layer: None, .. } => panic!(),
+                };
+                debug_assert!(child_stars.len() > 0);
+                debug_assert!(child_stars.len() == star_input_bounds.len());
+                let mut child_ids = vec![];
+                for (star, input_bounds) in
+                    child_stars.into_iter().zip(star_input_bounds.into_iter())
+                {
+                    let node = StarNode::default(star, input_bounds, op_idx);
+                    let id = self.add_node(node, node_id);
+                    child_ids.push(id);
                 }
 
-                if let Some(mut upper_star) = child_stars.1 {
-                    let outer_bounds: Bounds1 = self.get_input_bounds().as_ref().cloned().unwrap();
-                    let mut bounds = self
-                        .get_node_mut(node_id)
-                        .get_axis_aligned_input_bounds(&outer_bounds)
-                        .clone();
-                    let mut lb = bounds.index_mut(dim);
-                    if lb[0].is_sign_negative() {
-                        lb[0] = 0.;
+                if child_ids.len() == 1 {
+                    if let Some(cdf) = self.get_node(node_id).try_get_cdf() {
+                        self.get_node_mut(child_ids[0]).set_cdf(cdf);
                     }
-                    if is_single_child {
-                        // Remove redundant constraint added by step_relu2 above
-                        let num_constraints = upper_star.num_constraints();
-                        upper_star = upper_star.remove_constraint(num_constraints - 1);
+                    if let Some(dist) = self.get_node(node_id).try_get_gaussian_distribution() {
+                        let dist = dist.clone();
+                        self.get_node_mut(child_ids[0])
+                            .set_gaussian_distribution(dist);
                     }
-                    let mut upper_node =
-                        StarNode::default(upper_star, Some(bounds)).with_dnn_index(dnn_idx);
 
-                    if is_single_child {
-                        if let Some(cdf) = self.get_node(node_id).try_get_cdf() {
-                            upper_node.set_cdf(cdf);
-                        }
+                    if same_output_bounds {
                         if let Some(bounds) = self.get_node(node_id).try_get_output_bounds() {
-                            upper_node.set_output_bounds(bounds);
-                        }
-                        if let Some(dist) = self.get_node(node_id).try_get_gaussian_distribution() {
-                            upper_node.set_gaussian_distribution(dist.clone());
+                            self.get_node_mut(child_ids[0]).set_output_bounds(bounds);
                         }
                     }
-                    let id = self.add_node(upper_node, node_id);
-                    ids.push(id);
                 }
-
-                StarNodeType::StepRelu {
-                    dim,
-                    fst_child_idx: ids[0],
-                    snd_child_idx: ids.get(1).copied(),
-                }
+                self.get_dnn()
+                    .get_layer(op_idx.layer.unwrap())
+                    .unwrap()
+                    .construct_starnodetype(&child_ids, op_idx.get_remaining_steps())
             }
-            Some(StarNodeOp::StepReluDropout((dropout_prob, dim))) => {
-                let child_stars = self
-                    .get_node(node_id)
-                    .get_star()
-                    .step_relu2_dropout(dim, self.get_input_bounds());
-                let dnn_idx = dnn_iter.get_idx();
-                let mut ids = vec![];
-
-                if let Some(dropout_star) = child_stars.0 {
-                    let outer_bounds: Bounds1 = self.get_input_bounds().as_ref().cloned().unwrap();
-                    let mut bounds = self
-                        .get_node_mut(node_id)
-                        .get_axis_aligned_input_bounds(&outer_bounds)
-                        .clone();
-                    bounds.index_mut(dim)[0] = 0.;
-                    bounds.index_mut(dim)[1] = 0.;
-                    let dropout_node =
-                        StarNode::default(dropout_star, Some(bounds)).with_dnn_index(dnn_idx);
-                    let id = self.add_node(dropout_node, node_id);
-                    ids.push(id);
-                }
-
-                if let Some(lower_star) = child_stars.1 {
-                    let outer_bounds: Bounds1 = self.get_input_bounds().as_ref().cloned().unwrap();
-                    let mut bounds = self
-                        .get_node_mut(node_id)
-                        .get_axis_aligned_input_bounds(&outer_bounds)
-                        .clone();
-                    bounds.index_mut(dim)[0] = 0.;
-                    bounds.index_mut(dim)[1] = 0.;
-                    let lower_node =
-                        StarNode::default(lower_star, Some(bounds)).with_dnn_index(dnn_idx);
-                    let id = self.add_node(lower_node, node_id);
-                    ids.push(id);
-                }
-
-                if let Some(upper_star) = child_stars.2 {
-                    let outer_bounds: Bounds1 = self.get_input_bounds().as_ref().cloned().unwrap();
-                    let mut bounds = self
-                        .get_node_mut(node_id)
-                        .get_axis_aligned_input_bounds(&outer_bounds)
-                        .clone();
-                    let mut lb = bounds.index_mut(dim);
-                    if lb[0].is_sign_negative() {
-                        lb[0] = 0.;
-                    }
-                    let upper_node =
-                        StarNode::default(upper_star, Some(bounds)).with_dnn_index(dnn_idx);
-                    let id = self.add_node(upper_node, node_id);
-                    ids.push(id);
-                }
-
-                StarNodeType::StepReluDropOut {
-                    dim,
-                    dropout_prob,
-                    fst_child_idx: ids[0],
-                    snd_child_idx: ids.get(1).copied(),
-                    trd_child_idx: ids.get(2).copied(),
-                }
-            }
-            None => panic!(),
         };
+
         self.set_node_type(node_id, children);
         self.get_node_type(node_id)
     }

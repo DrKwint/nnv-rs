@@ -1,5 +1,7 @@
 use crate::bounds::Bounds1;
-use crate::dnn::{DNNIndex, DNN};
+use crate::dnn::dnn::DNN;
+use crate::dnn::dnn_iter::DNNIndex;
+use crate::dnn::dnn_iter::DNNIterator;
 use crate::star::Star;
 use crate::star_node::StarNode;
 use crate::star_node::StarNodeType;
@@ -13,7 +15,7 @@ use ndarray::{Array1, Array2};
 use ndarray::{ArrayView1, ArrayView2};
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct Constellation<D: Dimension> {
     // These are parallel arrays with an entry per node
     arena: Vec<StarNode<D>>,
@@ -41,8 +43,11 @@ impl<D: Dimension> Constellation<D> {
         num_cdf_samples: usize,
         stability_eps: NNVFloat,
     ) -> Self {
-        let star_node = StarNode::default(input_star, None);
-        let arena = vec![star_node];
+        let arena = {
+            let initial_idx = DNNIterator::new(&dnn, DNNIndex::default()).next().unwrap();
+            let star_node = StarNode::default(input_star, None, initial_idx);
+            vec![star_node]
+        };
         let node_type = vec![None];
         let parents = vec![None];
         let feasible = vec![None];
@@ -85,6 +90,11 @@ impl<D: 'static + Dimension> StarSet<D> for Constellation<D> {
         self.arena.iter()
     }
 
+    type NTI<'a> = std::slice::Iter<'a, Option<StarNodeType>>;
+    fn get_node_type_iter(&self) -> Self::NTI<'_> {
+        self.node_type.iter()
+    }
+
     fn get_dnn(&self) -> &DNN {
         &self.dnn
     }
@@ -110,8 +120,13 @@ impl<D: 'static + Dimension> StarSet<D> for Constellation<D> {
     }
 
     fn reset_with_star(&mut self, input_star: Star<D>, input_bounds_opt: Option<Bounds1>) {
-        let star_node = StarNode::default(input_star, None);
-        self.arena = vec![star_node];
+        self.arena = {
+            let initial_idx = DNNIterator::new(&self.dnn, DNNIndex::default())
+                .next()
+                .unwrap();
+            let star_node = StarNode::default(input_star, None, initial_idx);
+            vec![star_node]
+        };
         self.node_type = vec![None];
         self.parents = vec![None];
         self.input_bounds = input_bounds_opt;

@@ -1,8 +1,9 @@
 use ndarray::Array;
 use ndarray::Dim;
 use nnv_rs::affine::Affine2;
-use nnv_rs::dnn::Layer;
-use nnv_rs::dnn::DNN;
+use nnv_rs::dnn::dense::Dense;
+use nnv_rs::dnn::dnn::DNN;
+use nnv_rs::dnn::relu::ReLU;
 use rand::Rng;
 
 pub fn affine2(in_dim: &usize, out_dim: &usize) -> Affine2 {
@@ -21,8 +22,8 @@ pub fn make_dnn(shape: &Vec<usize>, num_layers: &usize) -> DNN {
     let mut dnn = DNN::default();
 
     (0..*num_layers).into_iter().for_each(|_| {
-        dnn.add_layer(Layer::new_dense(affine2(&shape[0], &shape[1])));
-        dnn.add_layer(Layer::new_relu(shape[1]));
+        dnn.add_layer(Box::new(Dense::new(affine2(&shape[0], &shape[1]))));
+        dnn.add_layer(Box::new(ReLU::new(shape[1])));
     });
 
     dnn

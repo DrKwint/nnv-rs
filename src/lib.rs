@@ -7,8 +7,9 @@
 extern crate approx;
 #[cfg(feature = "openblas-system")]
 extern crate blas_src;
-extern crate env_logger;
 extern crate itertools;
+#[macro_use]
+extern crate more_asserts;
 extern crate ndarray;
 extern crate ndarray_linalg;
 extern crate ndarray_stats;

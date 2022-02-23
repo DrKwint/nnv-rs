@@ -8,12 +8,18 @@ pub struct TensorShape {
 }
 
 impl TensorShape {
+    /// # Panics
     pub fn new(dims: Vec<Option<usize>>) -> Self {
+        assert!(dims.iter().any(Option::is_some));
         Self { dims }
     }
 
     pub fn rank(&self) -> usize {
         self.dims.len()
+    }
+
+    pub fn dims(&self) -> usize {
+        self.dims.iter().fold(1, |a, b| a * b.unwrap_or(1))
     }
 
     pub fn is_fully_defined(&self) -> bool {

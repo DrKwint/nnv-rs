@@ -1,6 +1,6 @@
 use crate::bounds::Bounds1;
-use crate::dnn::DNNIndex;
-use crate::dnn::DNN;
+use crate::dnn::dnn::DNN;
+use crate::dnn::dnn_iter::{DNNIndex, DNNIterator};
 use crate::star::Star;
 use crate::star_node::StarNode;
 use crate::star_node::StarNodeType;
@@ -19,7 +19,7 @@ use serde::{Deserialize, Serialize};
 
 use super::CensoredProbStarSet;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct Asterism<D: Dimension> {
     // These are parallel arrays with an entry per node
     arena: Vec<StarNode<D>>,
@@ -49,8 +49,11 @@ impl<D: Dimension> Asterism<D> {
         num_cdf_samples: usize,
         stability_eps: NNVFloat,
     ) -> Self {
-        let star_node = StarNode::default(input_star, None);
-        let arena = vec![star_node];
+        let arena = {
+            let initial_idx = DNNIterator::new(&dnn, DNNIndex::default()).next().unwrap();
+            let star_node = StarNode::default(input_star, None, initial_idx);
+            vec![star_node]
+        };
         let node_type = vec![None];
         let parents = vec![None];
         let feasible = vec![None];
@@ -83,6 +86,11 @@ impl<D: 'static + Dimension> StarSet<D> for Asterism<D> {
     type NI<'a> = std::slice::Iter<'a, StarNode<D>>;
     fn get_node_iter(&self) -> Self::NI<'_> {
         self.arena.iter()
+    }
+
+    type NTI<'a> = std::slice::Iter<'a, Option<StarNodeType>>;
+    fn get_node_type_iter(&self) -> Self::NTI<'_> {
+        self.node_type.iter()
     }
 
     fn add_node(&mut self, node: StarNode<D>, parent_id: usize) -> usize {
@@ -121,8 +129,13 @@ impl<D: 'static + Dimension> StarSet<D> for Asterism<D> {
     }
 
     fn reset_with_star(&mut self, input_star: Star<D>, input_bounds_opt: Option<Bounds1>) {
-        let star_node = StarNode::default(input_star, None);
-        self.arena = vec![star_node];
+        let arena = {
+            let initial_idx = DNNIterator::new(&self.dnn, DNNIndex::default())
+                .next()
+                .unwrap();
+            let star_node = StarNode::default(input_star, None, initial_idx);
+            vec![star_node]
+        };
         self.node_type = vec![None];
         self.parents = vec![None];
         self.feasible = vec![None];
@@ -252,9 +265,31 @@ mod test {
     use super::*;
     use crate::starsets::CensoredProbStarSet2;
     use crate::test_util::*;
+    use log::LevelFilter;
+    use log4rs::append::file::FileAppender;
+    use log4rs::config::{Appender, Config, Root};
+    use log4rs::encode::pattern::PatternEncoder;
     use proptest::*;
-    use serde_json::{from_str, to_string};
     use std::fs;
+    use std::sync::Once;
+
+    static INIT: Once = Once::new();
+
+    fn setup() {
+        INIT.call_once(|| {
+            let logfile = FileAppender::builder()
+                .encoder(Box::new(PatternEncoder::new("{l} - {m}\n")))
+                .build("log/output.log")
+                .unwrap();
+
+            let config = Config::builder()
+                .appender(Appender::builder().build("logfile", Box::new(logfile)))
+                .build(Root::builder().appender("logfile").build(LevelFilter::Info))
+                .unwrap();
+
+            log4rs::init_config(config);
+        });
+    }
 
     proptest! {
         #[test]
@@ -263,6 +298,7 @@ mod test {
             let default: Array1<f64> = Array1::zeros(asterism.get_dnn().input_shape()[0].unwrap());
             let sample = asterism.sample_safe_star(1, &mut rng, None);
         }
+
 
         #[test]
         fn test_dfs_samples(mut asterism in generic_asterism(2, 2, 2, 2)) {

@@ -83,11 +83,13 @@ pub trait CensoredProbStarSet2: CensoredProbStarSet<Ix2> + ProbStarSet2 {
         let activation_patterns = self.get_dnn().calculate_activation_pattern2(samples);
         // currently, tilting is propagated, so we need to initialize it for the root node
         self.get_node_gaussian_distribution(self.get_root_id());
+
         // For each datum
         for i in 0..num_samples {
             // Start at the root
             let mut current_node_id = self.get_root_id();
             let mut current_node_type = self.get_node_type(current_node_id).clone();
+
             // For each ReLU layer activation pattern
             for layer_activations in &activation_patterns {
                 // Go through the Affine
@@ -115,7 +117,7 @@ pub trait CensoredProbStarSet2: CensoredProbStarSet<Ix2> + ProbStarSet2 {
                         }
                         current_node_type = self.get_node_type(current_node_id).clone();
                     } else {
-                        panic!("Expected a ReLU layer!");
+                        panic!("Expected a ReLU layer! Found {:?}", current_node_type);
                     }
                 }
             }
@@ -212,7 +214,11 @@ pub trait CensoredProbStarSet2: CensoredProbStarSet<Ix2> + ProbStarSet2 {
             0
         };
         loop {
-            debug!("Current node: {:?}", current_node);
+            info!("Current node: {:?}", current_node);
+            info!(
+                "Current idx: {:?}",
+                self.get_node(current_node).get_dnn_index()
+            );
             // base case for feasability
             if current_node == 0 && self.is_node_infeasible(current_node) {
                 info!("No feasible value exists!");

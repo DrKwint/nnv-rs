@@ -292,7 +292,7 @@ impl Star2 {
     /// # Panics
     /// TODO: Change output type to Option<T>
     pub fn get_output_max(&self, idx: usize, input_bounds: &Bounds1) -> NNVFloat {
-        let mut eqn = self.representation.get_eqn(idx);
+        let eqn = self.representation.get_eqn(idx);
         let shift = eqn.shift()[0];
 
         self.constraints.as_ref().map_or_else(

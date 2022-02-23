@@ -1,8 +1,9 @@
 #![cfg(test)]
 use crate::affine::Affine2;
 use crate::bounds::{Bounds, Bounds1};
-use crate::dnn::Layer;
-use crate::dnn::DNN;
+use crate::dnn::dense::Dense;
+use crate::dnn::dnn::DNN;
+use crate::dnn::relu::ReLU;
 use crate::polytope::Polytope;
 use crate::star::Star2;
 use crate::starsets::Asterism;
@@ -79,8 +80,8 @@ prop_compose! {
             let mut dnn = DNN::default();
             for aff in affines {
                     let output_dim = aff.output_dim();
-                    dnn.add_layer(Layer::new_dense(aff));
-                    dnn.add_layer(Layer::new_relu(output_dim));
+                    dnn.add_layer(Box::new(Dense::new(aff)));
+                    dnn.add_layer(Box::new(ReLU::new(output_dim)));
                 }
             dnn
         }

@@ -1,4 +1,4 @@
-use crate::dnn::DNN;
+use crate::dnn::dnn::DNN;
 use crate::gaussian::GaussianDistribution;
 use crate::star_node::StarNode;
 use crate::starsets::StarSet;

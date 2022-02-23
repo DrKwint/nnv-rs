@@ -1,6 +1,6 @@
 use crate::bounds::Bounds1;
-use crate::dnn::DNNIndex;
-use crate::dnn::DNN;
+use crate::dnn::dnn::DNN;
+use crate::dnn::dnn_iter::{DNNIndex, DNNIterator};
 use crate::star::Star;
 use crate::star_node::StarNode;
 use crate::star_node::StarNodeType;
@@ -12,7 +12,7 @@ use ndarray::Dimension;
 use ndarray::Ix2;
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct VecStarSet<D: Dimension> {
     arena: Vec<StarNode<D>>,
     node_type: Vec<Option<StarNodeType>>,
@@ -22,8 +22,11 @@ pub struct VecStarSet<D: Dimension> {
 
 impl<D: Dimension> VecStarSet<D> {
     pub fn new(dnn: DNN, input_star: Star<D>) -> Self {
-        let star_node = StarNode::default(input_star, None);
-        let arena = vec![star_node];
+        let arena = {
+            let initial_idx = DNNIterator::new(&dnn, DNNIndex::default()).next().unwrap();
+            let star_node = StarNode::default(input_star, None, initial_idx);
+            vec![star_node]
+        };
         let node_type = vec![None];
         let parents = vec![None];
         Self {
@@ -47,6 +50,11 @@ impl<D: 'static + Dimension> StarSet<D> for VecStarSet<D> {
     type NI<'a> = std::slice::Iter<'a, StarNode<D>>;
     fn get_node_iter(&self) -> Self::NI<'_> {
         self.arena.iter()
+    }
+
+    type NTI<'a> = std::slice::Iter<'a, Option<StarNodeType>>;
+    fn get_node_type_iter(&self) -> Self::NTI<'_> {
+        self.node_type.iter()
     }
 
     fn add_node(&mut self, node: StarNode<D>, parent_id: usize) -> usize {
