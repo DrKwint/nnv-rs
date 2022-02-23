@@ -1,6 +1,6 @@
 [package]
 name = "nnv-rs"
-version = "0.5.4"
+version = "0.6.0"
 edition = "2021"
 description   = "Verification and Statistics on Deep Neural Networks"
 readme        = "README.md"
@@ -15,7 +15,6 @@ exclude = [
 [features]
 lp_coincbc = ["good_lp/coin_cbc"]
 lp_gurobi = ["grb"]
-rayon = ["ndarray/rayon", "truncnorm/rayon"]
 blas_intel-mkl = ["ndarray-linalg/intel-mkl", "truncnorm/intel-mkl"]
 blas_openblas-system = ["ndarray/blas", "blas-src", "openblas-src", "ndarray-linalg/openblas-system", "truncnorm/openblas-system"]
 
@@ -41,7 +40,7 @@ num = "^0.4.0"
 openblas-src = { version = "^0.10.4", features = ["cblas", "system"], optional = true }
 rand = "^0.8.4"
 #truncnorm = "^0.4.3"
-truncnorm = { path = "../truncnorm-rs" }
+truncnorm = { version = "^0.5.0" }
 shh = "^1.0.1"
 ordered-float = "^2.8.0"
 serde = "^1.0.131"
