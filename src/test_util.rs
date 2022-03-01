@@ -10,6 +10,8 @@ use crate::starsets::Asterism;
 use crate::starsets::Constellation;
 use ndarray::Array1;
 use ndarray::Array2;
+use ndarray::Array3;
+use ndarray::Array4;
 use ndarray::ArrayView1;
 use ndarray::Axis;
 use ndarray::Ix2;
@@ -39,6 +41,20 @@ prop_compose! {
         (v in Vec::lift1_with(array1(cols), SizeRange::new(rows..=rows))) -> Array2<f64> {
             assert!(rows > 0);
             ndarray::stack(Axis(0), &v.iter().map(ndarray::ArrayBase::view).collect::<Vec<ArrayView1<f64>>>()).unwrap()
+        }
+}
+
+prop_compose! {
+    pub fn array3(dim_1: usize, dim_2:usize, dim_3:usize)
+        (v in array1(dim_1*dim_2*dim_3))-> Array3<f64> {
+            v.into_shape((dim_1, dim_2, dim_3)).unwrap()
+        }
+}
+
+prop_compose! {
+    pub fn array4(dim_1: usize, dim_2:usize, dim_3:usize, dim_4:usize)
+        (v in array1(dim_1*dim_2*dim_3*dim_4))-> Array4<f64> {
+            v.into_shape((dim_1, dim_2, dim_3, dim_4)).unwrap()
         }
 }
 

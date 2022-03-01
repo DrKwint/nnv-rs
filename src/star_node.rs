@@ -27,6 +27,9 @@ pub enum StarNodeType {
     Affine {
         child_idx: usize,
     },
+    Conv {
+        child_idx: usize,
+    },
     StepRelu {
         dim: usize,
         fst_child_idx: usize,
@@ -46,6 +49,7 @@ impl StarNodeType {
         match self {
             StarNodeType::Leaf => vec![],
             StarNodeType::Affine { child_idx } => vec![*child_idx],
+            StarNodeType::Conv { child_idx } => vec![*child_idx],
             StarNodeType::StepRelu {
                 dim: _,
                 fst_child_idx,

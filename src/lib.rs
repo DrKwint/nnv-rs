@@ -3,6 +3,7 @@
 #![feature(binary_heap_into_iter_sorted)]
 #![feature(associated_type_bounds)]
 #![feature(generic_associated_types)]
+#![feature(box_syntax)]
 
 extern crate approx;
 #[cfg(feature = "openblas-system")]

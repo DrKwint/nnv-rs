@@ -1,8 +1,9 @@
 #![allow(clippy::cast_possible_wrap, clippy::cast_sign_loss)]
+use serde::{Deserialize, Serialize};
 use std::fmt::Display;
 use std::ops::Index;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TensorShape {
     dims: Vec<Option<usize>>,
 }
