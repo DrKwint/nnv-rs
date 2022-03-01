@@ -40,7 +40,7 @@ cfg_if::cfg_if! {
     if #[cfg(feature = "blas_intel-mkl")] {
     } else if #[cfg(feature = "blas_openblas-system")] {
     } else {
-        compile_error!("Must enable one of \"blas_{{intel_mkl,openblas-system}}\"");
+        compile_error!(r#"Must enable one of "blas_{{intel_mkl,openblas-system}}""#);
     }
 }
 

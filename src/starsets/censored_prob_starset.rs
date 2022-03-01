@@ -55,7 +55,8 @@ pub trait CensoredProbStarSet2: CensoredProbStarSet<Ix2> + ProbStarSet2 {
         num_samples: usize,
         rng: &mut R,
         time_limit_opt: Option<Duration>,
-    ) {
+    ) -> NNVFloat {
+        let start_time = Instant::now();
         let samples = {
             let without_fixed = self.sample_root_node(num_samples, rng);
             let almost_samples = if let Some(bounds) = self.get_input_bounds() {
@@ -66,42 +67,77 @@ pub trait CensoredProbStarSet2: CensoredProbStarSet<Ix2> + ProbStarSet2 {
                     .insert_axis(Axis(1))
                     .to_owned();
                 if fixed.iter().any(|x| *x != 0.) {
-                    let zeros: Array2<f64> = Array2::zeros((1, 1000));
+                    let zeros: Array2<f64> = Array2::zeros((1, num_samples));
                     fixed = fixed + zeros;
                     fixed
                         .append(Axis(0), without_fixed.view())
                         .expect("Could not append!");
                     fixed
                 } else {
+                    println!("ALL ZEROS");
                     without_fixed
                 }
             } else {
+                println!("INPUT BOUNDS NONE");
                 without_fixed
             };
+            println!("samples shape {:?}", almost_samples.shape());
             almost_samples
         };
         let activation_patterns = self.get_dnn().calculate_activation_pattern2(samples);
         // currently, tilting is propagated, so we need to initialize it for the root node
         self.get_node_gaussian_distribution(self.get_root_id());
-
+        let safe_value = self.get_safe_value();
+        let mut total_infeasible_cdf = 0.;
         // For each datum
         for i in 0..num_samples {
+            if let Some(time_limit) = time_limit_opt {
+                if start_time.elapsed() >= time_limit {
+                    return total_infeasible_cdf;
+                }
+            }
+            let mut path = vec![];
             // Start at the root
             let mut current_node_id = self.get_root_id();
+            path.push(current_node_id);
             let mut current_node_type = self.get_node_type(current_node_id).clone();
-
+            let mut sample_finished = false;
             // For each ReLU layer activation pattern
             for layer_activations in &activation_patterns {
+                if sample_finished {
+                    break;
+                }
                 // Go through the Affine
                 if let StarNodeType::Affine { child_idx } = current_node_type {
                     current_node_id = child_idx;
+                    path.push(current_node_id);
                     current_node_type = self.get_node_type(current_node_id).clone();
                 }
                 // For each activation
                 for activation in layer_activations.column(i) {
-                    // Estimate output bounds and potentially stop
-                    // TODO
+                    if let Some(feasible) = self.get_node_feasibility(current_node_id) {
+                        if !feasible {
+                            sample_finished = true;
+                            break;
+                        }
+                    }
                     let current_output_bounds = self.get_node_output_bounds(current_node_id);
+                    if current_output_bounds.1 < safe_value {
+                        sample_finished = true;
+                        break;
+                    } else if current_output_bounds.0 > safe_value {
+                        current_node_id = self.infeasible_reset(
+                            current_node_id,
+                            &mut path,
+                            &mut 0.,
+                            &mut total_infeasible_cdf,
+                            rng,
+                        );
+                        println!("Marked node infeasible!");
+                        panic!();
+                        sample_finished = true;
+                        break;
+                    }
                     // Select a child node based on the activation
                     if let StarNodeType::StepRelu {
                         dim,
@@ -116,12 +152,14 @@ pub trait CensoredProbStarSet2: CensoredProbStarSet<Ix2> + ProbStarSet2 {
                                 snd_child_idx.expect("Error selecting a second child!");
                         }
                         current_node_type = self.get_node_type(current_node_id).clone();
+                        path.push(current_node_id);
                     } else {
                         panic!("Expected a ReLU layer! Found {:?}", current_node_type);
                     }
                 }
             }
         }
+        total_infeasible_cdf
     }
 
     fn get_overapproximated_infeasible_input_regions(&self) -> Vec<Bounds1> {
@@ -144,6 +182,37 @@ pub trait CensoredProbStarSet2: CensoredProbStarSet<Ix2> + ProbStarSet2 {
             })
             .cloned()
             .collect()
+    }
+
+    fn infeasible_reset<R: Rng>(
+        &mut self,
+        x: usize,
+        path: &mut Vec<usize>,
+        path_logp: &mut NNVFloat,
+        total_infeasible_cdf: &mut NNVFloat,
+        rng: &mut R,
+    ) -> usize {
+        info!("Infeasible reset at depth {}!", path.len());
+        self.set_node_feasibility(x, false);
+        let mut infeas_cdf = self.get_node_cdf(x, rng);
+        path.drain(..).rev().for_each(|x| {
+            // check if all chilren are infeasible
+            if self
+                .get_node_child_ids(x)
+                .iter()
+                .any(|&x| !self.is_node_infeasible(x))
+            {
+                // if not all infeasible, update CDF
+                self.add_node_cdf(x, NNVFloat::neg(NNVFloat::one()) * infeas_cdf);
+            } else {
+                // if all infeasible, set this to infeasible and continue
+                self.set_node_feasibility(x, false);
+                infeas_cdf = self.get_node_cdf(x, rng);
+            }
+        });
+        *total_infeasible_cdf += infeas_cdf;
+        *path_logp = NNVFloat::zero();
+        0
     }
 
     /// Sample from a Gaussian distribution with an upper bound on the output value
@@ -176,7 +245,6 @@ pub trait CensoredProbStarSet2: CensoredProbStarSet<Ix2> + ProbStarSet2 {
         time_limit_opt: Option<Duration>,
     ) -> Option<(Vec<Array1<NNVFloat>>, NNVFloat, NNVFloat)> {
         let start_time = Instant::now();
-        let cdf_samples = self.get_cdf_samples();
         let max_iters = self.get_max_accept_reject_iters();
         let stability_eps = self.get_stability_eps();
         let mut sample_heap: BinaryHeap<FstOrdTuple<Reverse<OrderedFloat<f64>>, _>> =
@@ -185,34 +253,6 @@ pub trait CensoredProbStarSet2: CensoredProbStarSet<Ix2> + ProbStarSet2 {
         let mut path = vec![];
         let mut path_logp = 0.;
         let mut total_infeasible_cdf = 0.;
-        let infeasible_reset = |me: &mut Self,
-                                x: usize,
-                                path: &mut Vec<usize>,
-                                path_logp: &mut NNVFloat,
-                                total_infeasible_cdf: &mut NNVFloat,
-                                rng: &mut R|
-         -> usize {
-            info!("Infeasible reset at depth {}!", path.len());
-            me.set_node_feasibility(x, false);
-            let mut infeas_cdf = me.get_node_cdf(x, rng);
-            path.drain(..).rev().for_each(|x| {
-                // check if all chilren are infeasible
-                if me
-                    .get_node_child_ids(x)
-                    .iter()
-                    .any(|&x| !me.is_node_infeasible(x))
-                {
-                    // if not infeasible, update CDF
-                    me.add_node_cdf(x, NNVFloat::neg(NNVFloat::one()) * infeas_cdf);
-                } else {
-                    me.set_node_feasibility(x, false);
-                    infeas_cdf = me.get_node_cdf(x, rng);
-                }
-            });
-            *total_infeasible_cdf += infeas_cdf;
-            *path_logp = NNVFloat::zero();
-            0
-        };
         loop {
             info!("Current node: {:?}", current_node);
             info!(
@@ -245,6 +285,12 @@ pub trait CensoredProbStarSet2: CensoredProbStarSet<Ix2> + ProbStarSet2 {
             };
             // check feasibility of current node
             {
+                if let Some(feasible) = self.get_node_feasibility(current_node) {
+                    if !feasible {
+                        current_node = self.get_root_id();
+                        continue;
+                    }
+                }
                 // makes the assumption that bounds are on 0th dimension of output
                 let output_bounds = if current_node == 0 {
                     (NNVFloat::neg_infinity(), NNVFloat::infinity())
@@ -268,8 +314,7 @@ pub trait CensoredProbStarSet2: CensoredProbStarSet<Ix2> + ProbStarSet2 {
                 } else if output_bounds.0 > self.get_safe_value() {
                     // handle case where star is infeasible
                     self.set_node_feasibility(current_node, false);
-                    current_node = infeasible_reset(
-                        self,
+                    current_node = self.infeasible_reset(
                         current_node,
                         &mut path,
                         &mut path_logp,
@@ -322,8 +367,7 @@ pub trait CensoredProbStarSet2: CensoredProbStarSet<Ix2> + ProbStarSet2 {
                         path_logp += logp;
                     }
                     None => {
-                        current_node = infeasible_reset(
-                            self,
+                        current_node = self.infeasible_reset(
                             current_node,
                             &mut path,
                             &mut path_logp,
