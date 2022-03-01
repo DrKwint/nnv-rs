@@ -53,14 +53,14 @@ impl Layer for Dense {
     fn forward_star(
         &self,
         star: &Star2,
-        activation_idx: Option<usize>,
-        input_bounds: Option<Bounds1>,
-        parent_bounds: Option<Bounds1>,
+        _activation_idx: Option<usize>,
+        _input_bounds: Option<Bounds1>,
+        _parent_bounds: Option<Bounds1>,
     ) -> (Vec<Star2>, Vec<Option<Bounds1>>, bool) {
         (vec![star.affine_map2(&self.aff)], vec![None], false)
     }
 
-    fn construct_starnodetype(&self, child_ids: &Vec<usize>, dim: Option<usize>) -> StarNodeType {
+    fn construct_starnodetype(&self, child_ids: &Vec<usize>, _dim: Option<usize>) -> StarNodeType {
         debug_assert_eq!(child_ids.len(), 1);
         StarNodeType::Affine {
             child_idx: child_ids[0],

@@ -74,7 +74,7 @@ impl<D: 'static + Dimension> StarSet<D> for VecStarSet<D> {
         todo!()
     }
 
-    fn try_get_node_parent_id(&self, node_id: usize) -> Option<usize> {
+    fn try_get_node_parent_id(&self, _node_id: usize) -> Option<usize> {
         todo!()
     }
 
@@ -90,7 +90,7 @@ impl<D: 'static + Dimension> StarSet<D> for VecStarSet<D> {
         self.node_type[node_id] = Some(children);
     }
 
-    fn reset_with_star(&mut self, input_star: Star<D>, input_bounds_opt: Option<Bounds1>) {
+    fn reset_with_star(&mut self, _input_star: Star<D>, _input_bounds_opt: Option<Bounds1>) {
         todo!()
     }
 }

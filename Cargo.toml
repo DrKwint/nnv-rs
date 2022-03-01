@@ -13,7 +13,7 @@ exclude = [
 ]
 
 [features]
-lp_coincbc = ["good_lp/coin_cbc"]
+lp_coincbc = ["good_lp/coin_cbc", "coin_cbc"]
 lp_gurobi = ["grb"]
 blas_intel-mkl = ["ndarray-linalg/intel-mkl", "truncnorm/intel-mkl"]
 blas_openblas-system = ["ndarray/blas", "blas-src", "openblas-src", "ndarray-linalg/openblas-system", "truncnorm/openblas-system"]
@@ -25,6 +25,7 @@ crate-type = ["lib"]
 [dependencies]
 approx = "^0.5.0"
 blas-src = { version = "0.8", features = ["openblas"], optional = true }
+coin_cbc = { version = "^0.1.6", optional = true }
 cfg-if = "1.0.0"
 float-cmp = "0.9.0"
 good_lp = { version = "^1.3.1", optional = true }
@@ -58,4 +59,3 @@ rand_pcg = "0.3.1"
 lto = true
 codegen-units = 1
 panic = "abort"
-target-cpu = "native"

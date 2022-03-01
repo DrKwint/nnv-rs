@@ -171,7 +171,7 @@ prop_compose! {
 prop_compose! {
     pub fn non_empty_polytope(num_dims: usize, num_constraints: usize)
         (
-            poly in polytope_including_zero(num_dims, num_constraints)
+            _poly in polytope_including_zero(num_dims, num_constraints)
                 .prop_filter("Non-zero intercepts",
                              |i| !i.rhs().iter().any(|x| *x == 0.0_f64))
         ) -> Polytope {

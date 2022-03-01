@@ -129,7 +129,7 @@ impl<D: 'static + Dimension> StarSet<D> for Asterism<D> {
     }
 
     fn reset_with_star(&mut self, input_star: Star<D>, input_bounds_opt: Option<Bounds1>) {
-        let arena = {
+        self.arena = {
             let initial_idx = DNNIterator::new(&self.dnn, DNNIndex::default())
                 .next()
                 .unwrap();
@@ -265,38 +265,38 @@ mod test {
     use super::*;
     use crate::starsets::CensoredProbStarSet2;
     use crate::test_util::*;
-    use log::LevelFilter;
-    use log4rs::append::file::FileAppender;
-    use log4rs::config::{Appender, Config, Root};
-    use log4rs::encode::pattern::PatternEncoder;
+    // use log::LevelFilter;
+    // use log4rs::append::file::FileAppender;
+    // use log4rs::config::{Appender, Config, Root};
+    // use log4rs::encode::pattern::PatternEncoder;
     use proptest::*;
     use std::fs;
-    use std::sync::Once;
+    // use std::sync::Once;
 
-    static INIT: Once = Once::new();
+    // static INIT: Once = Once::new();
 
-    fn setup() {
-        INIT.call_once(|| {
-            let logfile = FileAppender::builder()
-                .encoder(Box::new(PatternEncoder::new("{l} - {m}\n")))
-                .build("log/output.log")
-                .unwrap();
+    // fn setup() {
+    //     INIT.call_once(|| {
+    //         let logfile = FileAppender::builder()
+    //             .encoder(Box::new(PatternEncoder::new("{l} - {m}\n")))
+    //             .build("log/output.log")
+    //             .unwrap();
 
-            let config = Config::builder()
-                .appender(Appender::builder().build("logfile", Box::new(logfile)))
-                .build(Root::builder().appender("logfile").build(LevelFilter::Info))
-                .unwrap();
+    //         let config = Config::builder()
+    //             .appender(Appender::builder().build("logfile", Box::new(logfile)))
+    //             .build(Root::builder().appender("logfile").build(LevelFilter::Info))
+    //             .unwrap();
 
-            log4rs::init_config(config);
-        });
-    }
+    //         let _log_res = log4rs::init_config(config);
+    //     });
+    // }
 
     proptest! {
         #[test]
         fn test_sample_safe_star(mut asterism in generic_asterism(2, 2, 2, 2)) {
             let mut rng = rand::thread_rng();
-            let default: Array1<f64> = Array1::zeros(asterism.get_dnn().input_shape()[0].unwrap());
-            let sample = asterism.sample_safe_star(1, &mut rng, None);
+            let _default: Array1<f64> = Array1::zeros(asterism.get_dnn().input_shape()[0].unwrap());
+            let _sample = asterism.sample_safe_star(1, &mut rng, None);
         }
 
 
@@ -318,7 +318,7 @@ mod test {
             asterism.dfs_samples(num_samples, &mut rng, time_limit_opt);
 
             let serialization = serde_json::to_string(&asterism).unwrap();
-            let serial_asterism: Asterism<Ix2> = serde_json::from_str(&serialization)?;
+            let _serial_asterism: Asterism<Ix2> = serde_json::from_str(&serialization)?;
             fs::write("test.json", &serialization).expect("Unable to write file.");
         }
     }

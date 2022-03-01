@@ -1,5 +1,4 @@
 #![allow(clippy::module_name_repetitions)]
-use crate::affine::Affine2;
 use crate::bounds::Bounds1;
 use crate::deeppoly::deep_poly;
 use crate::dnn::dnn::DNN;

@@ -45,7 +45,7 @@ pub trait CensoredProbStarSet<D: 'static + Dimension>: ProbStarSet<D> {
 pub trait CensoredProbStarSet2: CensoredProbStarSet<Ix2> + ProbStarSet2 {
     fn get_node_output_bounds(&mut self, node_id: usize) -> (NNVFloat, NNVFloat) {
         let outer_bounds: Bounds1 = self.get_input_bounds().as_ref().cloned().unwrap();
-        let (node_mut, loc, scale, dnn) = self.get_node_mut_with_borrows(node_id);
+        let (node_mut, _loc, _scale, dnn) = self.get_node_mut_with_borrows(node_id);
         node_mut.get_output_bounds(dnn, &|x| (x.lower()[[0]], x.upper()[[0]]), &outer_bounds)
     }
 
@@ -134,13 +134,12 @@ pub trait CensoredProbStarSet2: CensoredProbStarSet<Ix2> + ProbStarSet2 {
                             rng,
                         );
                         println!("Marked node infeasible!");
-                        panic!();
                         sample_finished = true;
                         break;
                     }
                     // Select a child node based on the activation
                     if let StarNodeType::StepRelu {
-                        dim,
+                        dim: _,
                         fst_child_idx,
                         snd_child_idx,
                     } = current_node_type

@@ -1,4 +1,4 @@
-#![allow(clippy::module_name_repetitions, clippy::similar_names)]
+#![allow(clippy::module_name_repetitions, clippy::similar_names, non_snake_case)]
 //! Implementation of [star sets](https://link.springer.com/chapter/10.1007/978-3-030-30942-8_39)
 //! for representing affine transformed sets
 use crate::affine::{Affine, Affine2, Affine4};

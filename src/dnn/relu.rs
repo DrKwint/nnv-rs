@@ -5,7 +5,6 @@ use crate::deeppoly::deep_poly_steprelu;
 use crate::dnn::layer::Layer;
 use crate::star::Star2;
 use crate::star_node::StarNodeType;
-use crate::tensorshape::TensorShape;
 use crate::NNVFloat;
 use ndarray::Array1;
 use ndarray::Array2;
@@ -106,7 +105,6 @@ impl Layer for ReLU {
         let is_single_child = child_stars.0.is_some() ^ child_stars.1.is_some();
 
         if let Some(mut lower_star) = child_stars.0 {
-            let outer_bounds: Bounds1 = input_bounds.as_ref().cloned().unwrap();
             let mut bounds = parent_bounds.clone();
             bounds.index_mut(dim)[0] = 0.;
             bounds.index_mut(dim)[1] = 0.;
@@ -121,7 +119,6 @@ impl Layer for ReLU {
         }
 
         if let Some(mut upper_star) = child_stars.1 {
-            let outer_bounds: Bounds1 = input_bounds.as_ref().cloned().unwrap();
             let mut bounds = parent_bounds.clone();
             let mut lb = bounds.index_mut(dim);
             if lb[0].is_sign_negative() {

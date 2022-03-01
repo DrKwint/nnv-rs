@@ -26,10 +26,10 @@ pub trait Layer: Display + Debug {
     ) -> (Bounds1, (Affine2, Affine2));
     fn apply_bounds_step(
         &self,
-        dim: usize,
-        bounds: &Bounds1,
-        lower_aff: &Affine2,
-        upper_aff: &Affine2,
+        _dim: usize,
+        _bounds: &Bounds1,
+        _lower_aff: &Affine2,
+        _upper_aff: &Affine2,
     ) -> (Bounds1, (Affine2, Affine2)) {
         panic!();
     }
@@ -58,7 +58,7 @@ pub trait Layer: Display + Debug {
         false
     }
 
-    fn get_activation_pattern(&self, state: &Array2<NNVFloat>) -> Option<Array2<bool>> {
+    fn get_activation_pattern(&self, _state: &Array2<NNVFloat>) -> Option<Array2<bool>> {
         // This should only be Some in an activation layer (e.g. ReLU)
         None
     }

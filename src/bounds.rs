@@ -156,7 +156,6 @@ impl Bounds1 {
     }
 
     pub fn trivial(dim: usize) -> Self {
-        panic!("Trying to banish infinity from the library inputs.");
         Self::new(
             Array::from_elem(dim, NNVFloat::neg_infinity()).view(),
             Array::from_elem(dim, NNVFloat::infinity()).view(),

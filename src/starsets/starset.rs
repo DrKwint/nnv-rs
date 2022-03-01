@@ -170,7 +170,7 @@ pub trait StarSet2: StarSet<Ix2> {
             for activation in layer_activations {
                 // Select a child node based on the activation
                 if let StarNodeType::StepRelu {
-                    dim,
+                    dim: _,
                     fst_child_idx,
                     snd_child_idx,
                 } = current_node_type

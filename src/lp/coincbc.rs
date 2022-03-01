@@ -1,3 +1,4 @@
+#![allow(non_snake_case)]
 use crate::bounds::Bounds1;
 use crate::lp::LinearSolution;
 use crate::NNVFloat;
@@ -79,11 +80,12 @@ where
         Ok(raw_soln) => {
             let cbc_model = raw_soln.model();
             match cbc_model.secondary_status() {
-                HasSolution => {
+                coin_cbc::raw::SecondaryStatus::HasSolution => {
                     let param = Array1::from_iter(cbc_model.col_solution().into_iter().copied());
                     let fun = raw_soln.eval(c_expression);
                     LinearSolution::Solution(param, fun)
                 }
+                _ => todo!(),
             }
         }
         Err(ResolutionError::Infeasible) => LinearSolution::Infeasible,

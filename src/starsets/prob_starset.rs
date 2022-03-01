@@ -40,7 +40,7 @@ pub trait ProbStarSet2: ProbStarSet<Ix2> + StarSet2 {
         let iters = self.get_max_accept_reject_iters();
         let stab_eps = self.get_stability_eps();
         let input_bounds_opt = self.get_input_bounds().clone();
-        let (node_mut, loc, scale, dnn) = self.get_node_mut_with_borrows(node_id);
+        let (node_mut, loc, scale, _dnn) = self.get_node_mut_with_borrows(node_id);
         node_mut.gaussian_cdf(
             loc,
             scale,
@@ -77,7 +77,7 @@ pub trait ProbStarSet2: ProbStarSet<Ix2> + StarSet2 {
         let max_accept_reject_iters = self.get_max_accept_reject_iters();
         let stability_eps = self.get_stability_eps();
         let input_bounds_opt = self.get_input_bounds().clone();
-        let (node_mut, loc, scale, dnn) = self.get_node_mut_with_borrows(node_id);
+        let (node_mut, loc, scale, _dnn) = self.get_node_mut_with_borrows(node_id);
         node_mut.get_gaussian_distribution(
             loc,
             scale,

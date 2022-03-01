@@ -8,11 +8,10 @@ use crate::star_node::StarNodeType;
 use crate::tensorshape::TensorShape;
 use crate::NNVFloat;
 use itertools::Itertools;
-use ndarray::{concatenate, Array1, Array2, Array3, Array4, ArrayView3, Axis};
+use ndarray::{Array1, Array2, Array3, Array4, ArrayView3};
 use serde::{Deserialize, Serialize};
 use std::fmt;
-use std::fmt::{Debug, Display};
-use std::ops::{Add, AddAssign, Mul, MulAssign};
+use std::fmt::Debug;
 
 /// Assumes that data is always in a flattened state.
 /// Weights are of the shape: (kernel_w, kernel_h, channels_in, channels_out)
@@ -216,14 +215,14 @@ impl Layer for Conv {
     fn forward_star(
         &self,
         star: &Star2,
-        activation_idx: Option<usize>,
-        input_bounds: Option<Bounds1>,
-        parent_bounds: Option<Bounds1>,
+        _activation_idx: Option<usize>,
+        _input_bounds: Option<Bounds1>,
+        _parent_bounds: Option<Bounds1>,
     ) -> (Vec<Star2>, Vec<Option<Bounds1>>, bool) {
         (vec![star.affine_map2(self.get_affine())], vec![None], false)
     }
 
-    fn construct_starnodetype(&self, child_ids: &Vec<usize>, dim: Option<usize>) -> StarNodeType {
+    fn construct_starnodetype(&self, child_ids: &Vec<usize>, _dim: Option<usize>) -> StarNodeType {
         debug_assert_eq!(child_ids.len(), 1);
         StarNodeType::Conv {
             child_idx: child_ids[0],
@@ -304,7 +303,7 @@ mod tests {
 
     proptest! {
     #[test]
-    fn test_conv_3_equality((mut conv_layer, data) in conv_test_inputs(7, 7, 28, 28, 10, 10, 3, 3)) {
+    fn test_conv_3_equality((conv_layer, data) in conv_test_inputs(7, 7, 28, 28, 10, 10, 3, 3)) {
         let h_in = conv_layer.input_shape()[1].unwrap();
         let w_in = conv_layer.input_shape()[2].unwrap();
         let c_in = conv_layer.input_shape()[3].unwrap();
