@@ -3,7 +3,6 @@ use crate::affine::Affine2;
 use crate::rand::distributions::Distribution;
 use crate::rand::SeedableRng;
 use crate::NNVFloat;
-use ndarray::concatenate;
 use ndarray::iter::{Lanes, LanesMut};
 use ndarray::Array2;
 use ndarray::ArrayView1;
@@ -11,6 +10,7 @@ use ndarray::Axis;
 use ndarray::Ix2;
 use ndarray::RemoveAxis;
 use ndarray::Zip;
+use ndarray::{concatenate, Array1};
 use ndarray::{stack, Array, Dimension};
 use ndarray::{ArrayView, ArrayViewMut, ArrayViewMut1};
 use num::Float;
@@ -54,6 +54,12 @@ impl<D: Dimension + ndarray::RemoveAxis> Bounds<D> {
         Zip::from(self.lower())
             .and(self.upper())
             .map_collect(|&lb, &ub| if lb == ub { lb } else { NNVFloat::zero() })
+    }
+
+    pub fn fixed_vals_or_none(&self) -> Array<Option<NNVFloat>, D::Smaller> {
+        Zip::from(self.lower())
+            .and(self.upper())
+            .map_collect(|&lb, &ub| if lb == ub { Some(lb) } else { None })
     }
 
     pub fn is_all_finite(&self) -> bool {
@@ -201,6 +207,19 @@ impl Bounds1 {
                 .to_owned()
                 .insert_axis(Axis(0)),
         }
+    }
+
+    pub fn unfixed_dims(&self) -> Self {
+        let (lower, upper): (Vec<_>, Vec<_>) = self
+            .lower()
+            .iter()
+            .zip(self.upper().iter())
+            .filter(|(&l, &u)| l != u)
+            .unzip();
+        Self::new(
+            Array1::from_vec(lower).view(),
+            Array1::from_vec(upper).view(),
+        )
     }
 }
 

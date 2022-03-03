@@ -4,14 +4,17 @@ use crate::star::Star2;
 use crate::star_node::StarNodeType;
 use crate::tensorshape::TensorShape;
 use crate::NNVFloat;
+use dyn_clone::DynClone;
 use ndarray::{Array1, Array2};
 use std::fmt::{Debug, Display};
 
+/// Use `DynClone` to implement `Clone`
 #[typetag::serde(tag = "type")]
-pub trait Layer: Display + Debug {
+pub trait Layer: DynClone + Display + Debug + Send + Sync {
     fn input_shape(&self) -> TensorShape {
         panic!()
     }
+
     fn output_shape(&self) -> TensorShape {
         panic!()
     }
@@ -63,3 +66,6 @@ pub trait Layer: Display + Debug {
         None
     }
 }
+
+// This implements `Clone` for the trait
+dyn_clone::clone_trait_object!(Layer);

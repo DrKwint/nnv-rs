@@ -8,10 +8,24 @@ use ndarray::Axis;
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
-#[derive(Default, Debug, Serialize, Deserialize)]
+#[derive(Clone, Default, Debug, Serialize, Deserialize)]
 pub struct DNN {
     layers: Vec<Box<dyn Layer>>,
 }
+
+/*
+impl Clone for DNN {
+    fn clone(&self) -> Self {
+        DNN {
+            layers: self
+                .layers
+                .iter()
+                .map(|x| dyn_clone::clone_box(&*x))
+                .collect(),
+        }
+    }
+}
+*/
 
 impl DNN {
     pub fn new(layers: Vec<Box<dyn Layer>>) -> Self {

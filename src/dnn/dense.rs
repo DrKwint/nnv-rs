@@ -19,6 +19,12 @@ impl Dense {
     pub fn new(aff: Affine2) -> Self {
         Self { aff }
     }
+
+    pub fn from_parts(mul: Array2<NNVFloat>, add: Array1<NNVFloat>) -> Self {
+        Self {
+            aff: Affine2::new(mul, add),
+        }
+    }
 }
 
 #[typetag::serde]

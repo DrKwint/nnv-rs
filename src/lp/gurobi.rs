@@ -12,12 +12,13 @@ use grb::Env;
 use grb::VarType::Continuous;
 use ndarray::{Array1, ArrayView1};
 
+#[allow(dead_code)]
 pub fn qsolve<'a, I, J>(
-    A: &I,
-    b: &J,
-    qvar_coeffs: ArrayView1<NNVFloat>,
-    var_coeffs: ArrayView1<NNVFloat>,
-    var_bounds: &Option<Bounds1>,
+    _A: &I,
+    _b: &J,
+    _qvar_coeffs: ArrayView1<NNVFloat>,
+    _var_coeffs: ArrayView1<NNVFloat>,
+    _var_bounds: &Option<Bounds1>,
 ) -> LinearSolution
 where
     I: IntoIterator<Item = ArrayView1<'a, NNVFloat>>,

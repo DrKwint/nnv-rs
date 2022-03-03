@@ -61,27 +61,25 @@ pub trait CensoredProbStarSet2: CensoredProbStarSet<Ix2> + ProbStarSet2 {
             let without_fixed = self.sample_root_node(num_samples, rng);
             let almost_samples = if let Some(bounds) = self.get_input_bounds() {
                 let unfixed_dims = without_fixed.shape()[0]; // Assuming rank 2 here
-                let mut fixed = bounds
-                    .fixed_vals_or_zeros()
+                let fixed_opt = bounds
+                    .fixed_vals_or_none()
                     .slice_axis(Axis(0), Slice::from(..-(unfixed_dims as isize)))
                     .insert_axis(Axis(1))
                     .to_owned();
-                if fixed.iter().any(|x| *x != 0.) {
+                if fixed_opt.iter().any(|x| x.is_some()) {
                     let zeros: Array2<f64> = Array2::zeros((1, num_samples));
-                    fixed = fixed + zeros;
+                    let mut fixed =
+                        fixed_opt.mapv(|x| if let Some(val) = x { val } else { 0. }) + zeros;
                     fixed
                         .append(Axis(0), without_fixed.view())
                         .expect("Could not append!");
                     fixed
                 } else {
-                    println!("ALL ZEROS");
                     without_fixed
                 }
             } else {
-                println!("INPUT BOUNDS NONE");
                 without_fixed
             };
-            println!("samples shape {:?}", almost_samples.shape());
             almost_samples
         };
         let activation_patterns = self.get_dnn().calculate_activation_pattern2(samples);
@@ -123,9 +121,14 @@ pub trait CensoredProbStarSet2: CensoredProbStarSet<Ix2> + ProbStarSet2 {
                     }
                     let current_output_bounds = self.get_node_output_bounds(current_node_id);
                     if current_output_bounds.1 < safe_value {
+                        self.set_node_feasibility(current_node_id, true);
                         sample_finished = true;
                         break;
                     } else if current_output_bounds.0 > safe_value {
+                        println!(
+                            "Infeasible from dfs {:?} > {:?}",
+                            current_output_bounds.0, safe_value
+                        );
                         current_node_id = self.infeasible_reset(
                             current_node_id,
                             &mut path,
@@ -133,7 +136,6 @@ pub trait CensoredProbStarSet2: CensoredProbStarSet<Ix2> + ProbStarSet2 {
                             &mut total_infeasible_cdf,
                             rng,
                         );
-                        println!("Marked node infeasible!");
                         sample_finished = true;
                         break;
                     }
@@ -165,7 +167,7 @@ pub trait CensoredProbStarSet2: CensoredProbStarSet<Ix2> + ProbStarSet2 {
         let unsafe_nodes: Vec<usize> = self
             .get_feasible_iter()
             .enumerate()
-            .filter(|(_pos, x)| !matches!(x, Some(true)))
+            .filter(|(_pos, x)| matches!(x, Some(false)))
             .map(|(pos, _x)| pos)
             .collect();
         let deduped_unsafe_nodes = unsafe_nodes.iter().filter(|idx| {
@@ -192,6 +194,7 @@ pub trait CensoredProbStarSet2: CensoredProbStarSet<Ix2> + ProbStarSet2 {
         rng: &mut R,
     ) -> usize {
         info!("Infeasible reset at depth {}!", path.len());
+        println!("Infeasible reset at node {}!", x);
         self.set_node_feasibility(x, false);
         let mut infeas_cdf = self.get_node_cdf(x, rng);
         path.drain(..).rev().for_each(|x| {
@@ -261,6 +264,7 @@ pub trait CensoredProbStarSet2: CensoredProbStarSet<Ix2> + ProbStarSet2 {
             // base case for feasability
             if current_node == 0 && self.is_node_infeasible(current_node) {
                 info!("No feasible value exists!");
+                println!("No feasible value exists!");
                 return None;
             }
             // Try to sample and return if a valid sample is found
@@ -275,6 +279,7 @@ pub trait CensoredProbStarSet2: CensoredProbStarSet<Ix2> + ProbStarSet2 {
                         self.get_safe_value(),
                         path.len()
                     );
+                    println!("Random safe sample before fast check");
                     return Some((safe_samples, path_logp, total_infeasible_cdf));
                 }
                 Err(sample_val_pairs) => sample_val_pairs
@@ -297,6 +302,7 @@ pub trait CensoredProbStarSet2: CensoredProbStarSet<Ix2> + ProbStarSet2 {
                     self.get_node_output_bounds(current_node)
                 };
                 debug!("Output bounds: {:?}", output_bounds);
+                println!("Sample process Output bounds: {:?}", output_bounds);
                 debug_assert!(self
                     .try_get_node_gaussian_distribution(current_node)
                     .is_some());
@@ -312,6 +318,12 @@ pub trait CensoredProbStarSet2: CensoredProbStarSet<Ix2> + ProbStarSet2 {
                     return Some((safe_sample, path_logp, total_infeasible_cdf));
                 } else if output_bounds.0 > self.get_safe_value() {
                     // handle case where star is infeasible
+                    println!(
+                        "Node {:?} is infeasible as {:?} > {:?}",
+                        current_node,
+                        output_bounds.0,
+                        self.get_safe_value()
+                    );
                     self.set_node_feasibility(current_node, false);
                     current_node = self.infeasible_reset(
                         current_node,
