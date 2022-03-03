@@ -50,7 +50,7 @@ impl<D: Dimension> Asterism<D> {
         stability_eps: NNVFloat,
     ) -> Self {
         let arena = {
-            let initial_idx = DNNIterator::new(&dnn, DNNIndex::default()).next().unwrap();
+            let initial_idx = DNNIndex::default();
             let star_node = StarNode::default(input_star, None, initial_idx);
             vec![star_node]
         };
@@ -270,6 +270,7 @@ mod test {
     // use log4rs::config::{Appender, Config, Root};
     // use log4rs::encode::pattern::PatternEncoder;
     use proptest::*;
+    use rand::prelude::*;
     use std::fs;
     // use std::sync::Once;
 
@@ -292,9 +293,35 @@ mod test {
     // }
 
     proptest! {
+        /// Test that a sample and a fast forward bounds check from the root have the same feasbility
+        #[test]
+        fn test_feasibility(mut asterism in generic_asterism(2,2,2,2)) {
+            let eps = 1e-5;
+            let mut rng = SmallRng::seed_from_u64(0);
+            let (lower_bound, upper_bound) = asterism.get_node_output_bounds(asterism.get_root_id());
+            let root_samples = asterism.sample_root_node(100, &mut rng);
+            let sample_output_vals = root_samples.columns().into_iter()
+                    .map(|x| asterism.get_dnn().forward1(x.to_owned()));
+            prop_assert!(sample_output_vals.clone().all(|val| *val.shape() == [1]));
+            let input_bounds = asterism.get_input_bounds().as_ref().cloned().unwrap();
+            for (val, sample) in sample_output_vals.zip(root_samples.columns().into_iter()) {
+                if !input_bounds.is_member(&sample) {
+                    continue;
+                }
+                if input_bounds.lower().abs_diff_eq(&sample, eps) || input_bounds.upper().abs_diff_eq(&sample, eps) {
+                    continue;
+                }
+                asterism.get_dnn().get_layers().iter().fold(sample.to_owned(), |x, layer| {
+                    let repr = layer.forward1(&x);
+                    repr
+                });
+                prop_assert!(val[[0]] >= lower_bound - eps && val[[0]] <= upper_bound + eps, "val: {}", val[[0]]);
+            }
+        }
+
         #[test]
         fn test_sample_safe_star(mut asterism in generic_asterism(2, 2, 2, 2)) {
-            let mut rng = rand::thread_rng();
+            let mut rng = SmallRng::seed_from_u64(0);
             let _default: Array1<f64> = Array1::zeros(asterism.get_dnn().input_shape()[0].unwrap());
             let _sample = asterism.sample_safe_star(1, &mut rng, None);
         }
@@ -305,7 +332,7 @@ mod test {
             let num_samples = 4;
             let time_limit_opt = None;
 
-            let mut rng = rand::thread_rng();
+            let mut rng = SmallRng::seed_from_u64(0);
             asterism.dfs_samples(num_samples, &mut rng, time_limit_opt);
         }
 

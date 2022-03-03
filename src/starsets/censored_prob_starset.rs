@@ -399,7 +399,7 @@ pub trait CensoredProbStarSet2: CensoredProbStarSet<Ix2> + ProbStarSet2 {
         num_samples: usize,
     ) -> Result<Vec<Array1<NNVFloat>>, Vec<(Array1<NNVFloat>, NNVFloat)>> {
         let unsafe_sample = self.sample_gaussian_node(current_node, rng, num_samples);
-        let vals: Vec<_> = {
+        let output_vals: Vec<_> = {
             let sample_iter = unsafe_sample.iter();
             let fixed_input_part: Option<Array1<NNVFloat>> = {
                 let unsafe_len = unsafe_sample[0].len();
@@ -423,14 +423,14 @@ pub trait CensoredProbStarSet2: CensoredProbStarSet<Ix2> + ProbStarSet2 {
         };
         let safe_subset: Vec<_> = unsafe_sample
             .iter()
-            .zip(vals.iter())
+            .zip(output_vals.iter())
             .filter(|(_sample, out)| out[[0]] < self.get_safe_value())
             .map(|(sample, _val)| sample.to_owned())
             .collect();
         if safe_subset.is_empty() {
             Err(unsafe_sample
                 .into_iter()
-                .zip(vals.iter())
+                .zip(output_vals.iter())
                 .map(|(x, out)| (x.to_owned(), out[[0]]))
                 .collect())
         } else {
