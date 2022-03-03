@@ -1,6 +1,6 @@
 use crate::bounds::Bounds1;
 use crate::dnn::dnn::DNN;
-use crate::dnn::dnn_iter::{DNNIndex, DNNIterator};
+use crate::dnn::dnn_iter::DNNIndex;
 use crate::star::Star;
 use crate::star_node::StarNode;
 use crate::star_node::StarNodeType;
@@ -130,9 +130,7 @@ impl<D: 'static + Dimension> StarSet<D> for Asterism<D> {
 
     fn reset_with_star(&mut self, input_star: Star<D>, input_bounds_opt: Option<Bounds1>) {
         self.arena = {
-            let initial_idx = DNNIterator::new(&self.dnn, DNNIndex::default())
-                .next()
-                .unwrap();
+            let initial_idx = DNNIndex::default();
             let star_node = StarNode::default(input_star, None, initial_idx);
             vec![star_node]
         };

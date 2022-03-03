@@ -169,12 +169,9 @@ mod tests {
         #[test]
         fn test_iter_all_layers(asterism in asterism(2, 2, 4, 2)) {
             let root_dnn_index = asterism.get_node_dnn_index(asterism.get_root_id());
-            println!("root_dnn_index {:?}", root_dnn_index);
             let mut dnn_iter = DNNIterator::new(asterism.get_dnn(), root_dnn_index);
-            println!("Start test");
             for layer in asterism.get_dnn().get_layers() {
                 let iter_idx = dnn_iter.next();
-                println!("iter_idx {:?}", iter_idx);
                 let iter_layer = asterism.get_dnn().get_layer(iter_idx.unwrap().layer.unwrap()).unwrap();
                 prop_assert_eq!(format!("{:?}", layer), format!("{:?}", iter_layer), "layer: {:?} vs iter_layer: {:?} at idx {:?}", layer, iter_layer, iter_idx);
             }
