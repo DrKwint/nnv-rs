@@ -146,11 +146,10 @@ pub fn deep_poly(input_bounds: &Bounds1, dnn: &DNN, dnn_iter: DNNIterator) -> Bo
         ),
         |(bounds_concrete, (laff, uaff)), idx| {
             let layer = dnn.get_layer(idx.layer.unwrap()).unwrap();
-            let out = if let Some(dim) = idx.get_remaining_steps() {
-                layer.apply_bounds_step(dim, &bounds_concrete, &laff, &uaff)
-            } else {
-                layer.apply_bounds(&bounds_concrete, &laff, &uaff)
-            };
+            let out = idx.get_remaining_steps().map_or_else(
+                || layer.apply_bounds(&bounds_concrete, &laff, &uaff),
+                |dim| layer.apply_bounds_step(dim, &bounds_concrete, &laff, &uaff),
+            );
             debug_assert!(
                 out.0
                     .bounds_iter()

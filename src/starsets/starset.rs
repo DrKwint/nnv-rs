@@ -116,7 +116,7 @@ pub trait StarSet2: StarSet<Ix2> {
                     }
                     DNNIndex { layer: None, .. } => panic!(),
                 };
-                debug_assert!(child_stars.len() > 0);
+                debug_assert!(!child_stars.is_empty());
                 debug_assert!(child_stars.len() == star_input_bounds.len());
                 let mut child_ids = vec![];
                 for (star, input_bounds) in

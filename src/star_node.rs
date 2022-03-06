@@ -47,8 +47,9 @@ impl StarNodeType {
     pub fn get_child_ids(&self) -> Vec<usize> {
         match self {
             StarNodeType::Leaf => vec![],
-            StarNodeType::Affine { child_idx } => vec![*child_idx],
-            StarNodeType::Conv { child_idx } => vec![*child_idx],
+            StarNodeType::Affine { child_idx } | StarNodeType::Conv { child_idx } => {
+                vec![*child_idx]
+            }
             StarNodeType::StepRelu {
                 dim: _,
                 fst_child_idx,
@@ -116,7 +117,7 @@ impl<D: Dimension> StarNode<D> {
     }
 
     pub fn try_get_cdf(&self) -> Option<NNVFloat> {
-        return self.star_cdf;
+        self.star_cdf
     }
 
     pub fn set_cdf(&mut self, val: NNVFloat) {
@@ -264,7 +265,7 @@ impl StarNode<Ix2> {
         if self.axis_aligned_input_bounds.is_none() {
             self.axis_aligned_input_bounds = Some(
                 self.star
-                    .calculate_output_axis_aligned_bounding_box(&outer_bounds),
+                    .calculate_output_axis_aligned_bounding_box(outer_bounds),
             );
         }
         self.axis_aligned_input_bounds.as_ref().unwrap()
@@ -281,7 +282,7 @@ impl StarNode<Ix2> {
             trace!("get_output_bounds on star {:?}", self.star);
             let dnn_iter = DNNIterator::new(dnn, self.dnn_index);
             self.output_bounds = Some(output_fn(deep_poly(
-                self.get_axis_aligned_input_bounds(&outer_input_bounds),
+                self.get_axis_aligned_input_bounds(outer_input_bounds),
                 dnn,
                 dnn_iter,
             )));

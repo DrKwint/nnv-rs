@@ -86,11 +86,13 @@ impl<D: Dimension> Star<D> {
             constrs.add_eqn(coeffs, rhs);
         } else {
             self.constraints =
-                Polytope::nonempty_new(coeffs.to_owned().insert_axis(Axis(0)), array![rhs]);
+                Polytope::nonempty_new(&coeffs.to_owned().insert_axis(Axis(0)), &array![rhs]);
         }
         self
     }
 
+    #[must_use]
+    /// # Panics
     pub fn remove_constraint(mut self, idx: usize) -> Self {
         if let Some(ref mut constrs) = self.constraints {
             constrs.remove_eqn(idx);

@@ -14,7 +14,7 @@ use std::fmt;
 use std::fmt::Debug;
 
 /// Assumes that data is always in a flattened state.
-/// Weights are of the shape: (kernel_w, kernel_h, channels_in, channels_out)
+/// Weights are of the shape: (`kernel_w`, `kernel_h`, `channels_in`, `channels_out`)
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct Conv {
     kernel: Array4<NNVFloat>, // (K_h, K_w, C_in, C_out)
@@ -56,6 +56,7 @@ impl Conv {
         s
     }
 
+    /// # Panics
     pub fn get_affine(&self) -> &Affine2 {
         self.affine.as_ref().unwrap()
     }
@@ -64,6 +65,7 @@ impl Conv {
         self.input_shape.clone()
     }
 
+    /// # Panics
     pub fn output_shape(&self) -> TensorShape {
         let k_h = self.kernel.shape()[0];
         let k_w = self.kernel.shape()[1];
@@ -82,6 +84,7 @@ impl Conv {
         ])
     }
 
+    /// # Panics
     pub fn construct_affine(&mut self) {
         let h_in = self.input_shape[1].unwrap();
         let w_in = self.input_shape[2].unwrap();
@@ -131,9 +134,10 @@ impl Conv {
         .into_shape(h_out * w_out * c_out)
         .unwrap();
 
-        self.affine = Some(Affine2::new(weight, bias))
+        self.affine = Some(Affine2::new(weight, bias));
     }
 
+    /// # Panics
     pub fn convolve(&self, data: ArrayView3<NNVFloat>) -> Array3<NNVFloat> {
         let h_in = self.input_shape[1].unwrap();
         let w_in = self.input_shape[2].unwrap();
@@ -222,7 +226,7 @@ impl Layer for Conv {
         (vec![star.affine_map2(self.get_affine())], vec![None], false)
     }
 
-    fn construct_starnodetype(&self, child_ids: &Vec<usize>, _dim: Option<usize>) -> StarNodeType {
+    fn construct_starnodetype(&self, child_ids: &[usize], _dim: Option<usize>) -> StarNodeType {
         debug_assert_eq!(child_ids.len(), 1);
         StarNodeType::Conv {
             child_idx: child_ids[0],

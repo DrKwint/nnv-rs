@@ -66,10 +66,9 @@ pub trait CensoredProbStarSet2: CensoredProbStarSet<Ix2> + ProbStarSet2 {
                     .slice_axis(Axis(0), Slice::from(..-(unfixed_dims as isize)))
                     .insert_axis(Axis(1))
                     .to_owned();
-                if fixed_opt.iter().any(|x| x.is_some()) {
+                if fixed_opt.iter().any(Option::is_some) {
                     let zeros: Array2<f64> = Array2::zeros((1, num_samples));
-                    let mut fixed =
-                        fixed_opt.mapv(|x| if let Some(val) = x { val } else { 0. }) + zeros;
+                    let mut fixed = fixed_opt.mapv(|x| x.map_or(0., |val| val)) + zeros;
                     fixed
                         .append(Axis(0), without_fixed.view())
                         .expect("Could not append!");
@@ -451,8 +450,9 @@ pub trait CensoredProbStarSet2: CensoredProbStarSet<Ix2> + ProbStarSet2 {
             StarNodeType::Leaf => {
                 panic!();
             }
-            StarNodeType::Affine { child_idx } => Some((child_idx, path_logp)),
-            StarNodeType::Conv { child_idx } => Some((child_idx, path_logp)),
+            StarNodeType::Affine { child_idx } | StarNodeType::Conv { child_idx } => {
+                Some((child_idx, path_logp))
+            }
             StarNodeType::StepRelu {
                 fst_child_idx,
                 snd_child_idx,

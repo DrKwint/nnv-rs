@@ -30,7 +30,8 @@ pub struct Polytope {
 }
 
 impl Polytope {
-    pub fn nonempty_new(coeffs: Array2<NNVFloat>, rhs: Array1<NNVFloat>) -> Option<Self> {
+    /// # Panics
+    pub fn nonempty_new(coeffs: &Array2<NNVFloat>, rhs: &Array1<NNVFloat>) -> Option<Self> {
         let (fcoeffs, frhs): (Vec<ArrayView1<NNVFloat>>, Vec<NNVFloat>) = coeffs
             .rows()
             .into_iter()
@@ -41,12 +42,12 @@ impl Polytope {
             .into_iter()
             .map(|x| x.insert_axis(Axis(0)))
             .collect();
-        if frhs.len() == 0 {
+        if frhs.is_empty() {
             return None;
         }
         let coeffs = concatenate(Axis(0), &fscoeffs).unwrap();
         let rhs = Array1::from_vec(frhs);
-        Some(Polytope::new(coeffs, rhs))
+        Some(Self::new(coeffs, rhs))
     }
 
     pub fn new(coeffs: Array2<NNVFloat>, rhs: Array1<NNVFloat>) -> Self {
@@ -74,8 +75,9 @@ impl Polytope {
         self.rhs.len()
     }
 
-    pub fn intersect(&self, other: &Polytope) -> Polytope {
-        Polytope {
+    #[must_use]
+    pub fn intersect(&self, other: &Self) -> Self {
+        Self {
             coeffs: concatenate![Axis(0), self.coeffs, other.coeffs],
             rhs: concatenate![Axis(0), self.rhs, other.rhs],
         }
@@ -239,6 +241,7 @@ impl Polytope {
         Some(Self::new(final_coeffs, final_rhs))
     }
 
+    /// # Panics
     pub fn get_truncnorm_distribution(
         &self,
         mu: ArrayView1<NNVFloat>,

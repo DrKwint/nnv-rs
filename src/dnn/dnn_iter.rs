@@ -25,7 +25,7 @@ impl DNNIndex {
         self.layer.map_or(0, |x| x + 1)
     }
 
-    pub fn get_remaining_steps(&self) -> Option<usize> {
+    pub const fn get_remaining_steps(&self) -> Option<usize> {
         self.remaining_steps
     }
 
@@ -92,12 +92,9 @@ impl<'a> DNNIterator<'a> {
         self.idx
     }
 
-    pub fn get_layer(&self, idx: &DNNIndex) -> Option<&Box<dyn Layer>> {
-        if let Some(layer_idx) = idx.layer {
-            self.dnn.get_layer(layer_idx)
-        } else {
-            None
-        }
+    pub fn get_layer(&self, idx: &DNNIndex) -> Option<&dyn Layer> {
+        idx.layer
+            .and_then(|layer_idx| self.dnn.get_layer(layer_idx))
     }
 }
 

@@ -17,8 +17,8 @@ pub struct ReLU {
 }
 
 impl ReLU {
-    pub fn new(ndims: usize) -> Self {
-        ReLU { ndims }
+    pub const fn new(ndims: usize) -> Self {
+        Self { ndims }
     }
 }
 
@@ -119,7 +119,7 @@ impl Layer for ReLU {
         }
 
         if let Some(mut upper_star) = child_stars.1 {
-            let mut bounds = parent_bounds.clone();
+            let mut bounds = parent_bounds;
             let mut lb = bounds.index_mut(dim);
             if lb[0].is_sign_negative() {
                 lb[0] = 0.;
@@ -136,7 +136,7 @@ impl Layer for ReLU {
         (stars, star_input_bounds, same_output_bounds)
     }
 
-    fn construct_starnodetype(&self, child_ids: &Vec<usize>, dim: Option<usize>) -> StarNodeType {
+    fn construct_starnodetype(&self, child_ids: &[usize], dim: Option<usize>) -> StarNodeType {
         debug_assert_gt!(child_ids.len(), 0);
         StarNodeType::StepRelu {
             dim: dim.unwrap(),

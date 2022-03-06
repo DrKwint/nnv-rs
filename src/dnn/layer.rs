@@ -46,7 +46,7 @@ pub trait Layer: DynClone + Display + Debug + Send + Sync {
         input_bounds: Option<Bounds1>,
         parent_bounds: Option<Bounds1>,
     ) -> (Vec<Star2>, Vec<Option<Bounds1>>, bool);
-    fn construct_starnodetype(&self, child_ids: &Vec<usize>, dim: Option<usize>) -> StarNodeType;
+    fn construct_starnodetype(&self, child_ids: &[usize], dim: Option<usize>) -> StarNodeType;
 
     fn input_dims(&self) -> usize {
         self.input_shape().dims()

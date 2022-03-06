@@ -21,6 +21,7 @@ pub struct VecStarSet<D: Dimension> {
 }
 
 impl<D: Dimension> VecStarSet<D> {
+    /// # Panics
     pub fn new(dnn: DNN, input_star: Star<D>) -> Self {
         let arena = {
             let initial_idx = DNNIterator::new(&dnn, DNNIndex::default()).next().unwrap();

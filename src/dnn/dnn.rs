@@ -36,8 +36,8 @@ impl DNN {
         self.layers.push(layer);
     }
 
-    pub fn get_layer(&self, idx: usize) -> Option<&Box<dyn Layer>> {
-        self.layers.get(idx)
+    pub fn get_layer(&self, idx: usize) -> Option<&dyn Layer> {
+        self.layers.get(idx).map(Box::as_ref)
     }
 
     pub fn get_layers(&self) -> &[Box<dyn Layer>] {
