@@ -23,6 +23,9 @@ use truncnorm::tilting::TiltingSolution;
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum StarNodeType {
     Leaf,
+    Interpolate {
+        child_idx: usize,
+    },
     Affine {
         child_idx: usize,
     },
@@ -47,6 +50,7 @@ impl StarNodeType {
     pub fn get_child_ids(&self) -> Vec<usize> {
         match self {
             StarNodeType::Leaf => vec![],
+            StarNodeType::Interpolate { child_idx } => vec![*child_idx],
             StarNodeType::Affine { child_idx } => vec![*child_idx],
             StarNodeType::Conv { child_idx } => vec![*child_idx],
             StarNodeType::StepRelu {
