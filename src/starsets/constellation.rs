@@ -33,6 +33,7 @@ pub struct Constellation<D: Dimension> {
 }
 
 impl<D: Dimension> Constellation<D> {
+    /// # Panics
     pub fn new(
         dnn: DNN,
         input_star: Star<D>,

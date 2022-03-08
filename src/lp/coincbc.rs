@@ -55,7 +55,7 @@ where
         coefficients: vars
             .iter()
             .copied()
-            .zip(var_coeffs.iter().map(|x| (*x).into()))
+            .zip(var_coeffs.iter().copied())
             .collect(),
     };
     let mut unsolved = problem.minimise(c_expression.clone()).using(coin_cbc);
@@ -65,11 +65,7 @@ where
         .for_each(|pair: (ArrayView1<NNVFloat>, &NNVFloat)| {
             let (coeffs, ub) = pair;
             let expr = LinearExpression {
-                coefficients: vars
-                    .iter()
-                    .copied()
-                    .zip(coeffs.iter().map(|x| (*x).into()))
-                    .collect(),
+                coefficients: vars.iter().copied().zip(coeffs.iter().copied()).collect(),
             };
             let constr = good_lp::constraint::leq(Expression::from_other_affine(expr), *ub);
             unsolved.add_constraint(constr);
@@ -81,16 +77,15 @@ where
             let cbc_model = raw_soln.model();
             match cbc_model.secondary_status() {
                 coin_cbc::raw::SecondaryStatus::HasSolution => {
-                    let param = Array1::from_iter(cbc_model.col_solution().into_iter().copied());
+                    let param = Array1::from_iter(cbc_model.col_solution().iter().copied());
                     let fun = raw_soln.eval(c_expression);
                     LinearSolution::Solution(param, fun)
                 }
                 _ => todo!(),
             }
         }
-        Err(ResolutionError::Infeasible) => LinearSolution::Infeasible,
+        Err(ResolutionError::Infeasible | ResolutionError::Other(_)) => LinearSolution::Infeasible,
         Err(ResolutionError::Unbounded) => LinearSolution::Unbounded(Array1::zeros(1)),
-        Err(ResolutionError::Other(_)) => LinearSolution::Infeasible,
         Err(e) => panic!("{:?}", e),
     }
 }

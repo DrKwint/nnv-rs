@@ -209,6 +209,7 @@ impl Bounds1 {
         }
     }
 
+    #[must_use]
     pub fn unfixed_dims(&self) -> Self {
         let (lower, upper): (Vec<_>, Vec<_>) = self
             .lower()

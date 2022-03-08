@@ -16,7 +16,7 @@ pub struct Dense {
 }
 
 impl Dense {
-    pub fn new(aff: Affine2) -> Self {
+    pub const fn new(aff: Affine2) -> Self {
         Self { aff }
     }
 
@@ -66,7 +66,7 @@ impl Layer for Dense {
         (vec![star.affine_map2(&self.aff)], vec![None], false)
     }
 
-    fn construct_starnodetype(&self, child_ids: &Vec<usize>, _dim: Option<usize>) -> StarNodeType {
+    fn construct_starnodetype(&self, child_ids: &[usize], _dim: Option<usize>) -> StarNodeType {
         debug_assert_eq!(child_ids.len(), 1);
         StarNodeType::Affine {
             child_idx: child_ids[0],

@@ -188,7 +188,7 @@ impl Layer for Interpolate {
         (vec![star.affine_map2(self.get_affine())], vec![None], false)
     }
 
-    fn construct_starnodetype(&self, child_ids: &Vec<usize>, _dim: Option<usize>) -> StarNodeType {
+    fn construct_starnodetype(&self, child_ids: &[usize], _dim: Option<usize>) -> StarNodeType {
         debug_assert_eq!(child_ids.len(), 1);
         StarNodeType::Conv {
             child_idx: child_ids[0],
