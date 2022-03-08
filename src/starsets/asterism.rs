@@ -171,6 +171,22 @@ impl StarSet2 for Asterism<Ix2> {
             self.expand(node_id)
         }
     }
+
+    fn get_node_type_mut(&mut self, node_id: usize) -> &mut StarNodeType {
+        if self
+            .node_type
+            .get(node_id)
+            .and_then(std::option::Option::as_ref)
+            .is_some()
+        {
+            self.node_type
+                .get_mut(node_id)
+                .and_then(std::option::Option::as_mut)
+                .unwrap()
+        } else {
+            self.expand(node_id)
+        }
+    }
 }
 
 impl<D: 'static + Dimension> ProbStarSet<D> for Asterism<D> {

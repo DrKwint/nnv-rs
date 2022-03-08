@@ -181,7 +181,7 @@ pub trait ProbStarSet2: ProbStarSet<Ix2> + StarSet2 {
                 .unwrap()
                 .try_get_tilting_solution()
         });
-        safe_star.gaussian_sample(
+        let samples = safe_star.gaussian_sample(
             rng,
             self.get_loc(),
             self.get_scale(),
@@ -190,6 +190,7 @@ pub trait ProbStarSet2: ProbStarSet<Ix2> + StarSet2 {
             initialization_opt,
             stability_eps,
             self.get_input_bounds(),
-        )
+        );
+        self.filter_node_member(node_id, samples)
     }
 }

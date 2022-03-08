@@ -22,9 +22,12 @@ use truncnorm::tilting::TiltingSolution;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum StarNodeType {
-    Leaf,
     Interpolate {
         child_idx: usize,
+    },
+    Leaf {
+        safe_idx: Option<usize>,
+        unsafe_idx: Option<usize>,
     },
     Affine {
         child_idx: usize,
@@ -49,7 +52,12 @@ pub enum StarNodeType {
 impl StarNodeType {
     pub fn get_child_ids(&self) -> Vec<usize> {
         match self {
-            StarNodeType::Leaf => vec![],
+            StarNodeType::Leaf {
+                safe_idx,
+                unsafe_idx,
+            } => IntoIterator::into_iter(vec![safe_idx, unsafe_idx])
+                .filter_map(|&x| x)
+                .collect(),
             StarNodeType::Affine { child_idx }
             | StarNodeType::Conv { child_idx }
             | StarNodeType::Interpolate { child_idx } => {
@@ -200,6 +208,20 @@ impl StarNode<Ix2> {
 
     pub fn forward(&self, x: &Array1<NNVFloat>) -> Array1<NNVFloat> {
         self.star.get_representation().apply(&x.view())
+    }
+
+    #[must_use]
+    pub fn get_unsafe_star(&self, safe_value: NNVFloat) -> Self {
+        let safe_star = self.star.get_safe_subset(safe_value);
+        Self {
+            star: safe_star,
+            dnn_index: self.dnn_index,
+            star_cdf: None,
+            cdf_delta: 0.,
+            axis_aligned_input_bounds: None,
+            output_bounds: None,
+            gaussian_distribution: None,
+        }
     }
 
     #[must_use]

@@ -124,10 +124,6 @@ pub trait CensoredProbStarSet2: CensoredProbStarSet<Ix2> + ProbStarSet2 {
                         sample_finished = true;
                         break;
                     } else if current_output_bounds.0 > safe_value {
-                        println!(
-                            "Infeasible from dfs {:?} > {:?} at node {:?}",
-                            current_output_bounds, safe_value, current_node_id
-                        );
                         current_node_id = self.infeasible_reset(
                             current_node_id,
                             &mut path,
@@ -156,6 +152,50 @@ pub trait CensoredProbStarSet2: CensoredProbStarSet<Ix2> + ProbStarSet2 {
                     } else {
                         panic!("Expected a ReLU layer! Found {:?}", current_node_type);
                     }
+                }
+            }
+            // Leaf reached only if sample didn't exit early
+            if !sample_finished {
+                let mut current_node_type = self.get_node_type(current_node_id).clone();
+                // Go through the last Affine
+                if let StarNodeType::Affine { child_idx } = current_node_type {
+                    current_node_id = child_idx;
+                    current_node_type = self.get_node_type(current_node_id).clone();
+                }
+                match current_node_type {
+                    StarNodeType::Leaf {
+                        unsafe_idx: Some(_),
+                        ..
+                    } => continue,
+                    StarNodeType::Leaf {
+                        unsafe_idx: None,
+                        safe_idx: safe_idx_val,
+                    } => {
+                        let safe_value = self.get_safe_value();
+                        let unsafe_node =
+                            self.get_node(current_node_id).get_unsafe_star(safe_value);
+                        let unsafe_node_idx = self.add_node(unsafe_node, current_node_id);
+                        self.set_node_type(
+                            current_node_id,
+                            StarNodeType::Leaf {
+                                safe_idx: safe_idx_val,
+                                unsafe_idx: Some(unsafe_node_idx),
+                            },
+                        );
+                        path.push(unsafe_node_idx);
+                        self.infeasible_reset(
+                            current_node_id,
+                            &mut path,
+                            &mut 0.,
+                            &mut total_infeasible_cdf,
+                            rng,
+                        );
+                    }
+                    _ => panic!(
+                        "This should always be a leaf, instead it's a {:?} in {:?}",
+                        current_node_type,
+                        self.get_node_type_iter().collect::<Vec<_>>()
+                    ),
                 }
             }
         }
@@ -277,6 +317,9 @@ pub trait CensoredProbStarSet2: CensoredProbStarSet<Ix2> + ProbStarSet2 {
                         self.get_safe_value(),
                         path.len()
                     );
+                    if safe_samples.iter().any(|x| x.iter().any(|v| v.abs() > 10.)) {
+                        panic!("Random safe sample big!");
+                    }
                     return Some((safe_samples, path_logp, total_infeasible_cdf));
                 }
                 Err(sample_val_pairs) => sample_val_pairs
@@ -311,6 +354,9 @@ pub trait CensoredProbStarSet2: CensoredProbStarSet<Ix2> + ProbStarSet2 {
                         output_bounds
                     );
                     let safe_sample = self.sample_gaussian_node(current_node, rng, num_samples);
+                    if safe_sample.iter().any(|x| x.iter().any(|v| v.abs() > 10.)) {
+                        panic!("Safe node sample big!");
+                    }
                     return Some((safe_sample, path_logp, total_infeasible_cdf));
                 } else if output_bounds.0 > self.get_safe_value() {
                     // handle case where star is infeasible
@@ -323,22 +369,41 @@ pub trait CensoredProbStarSet2: CensoredProbStarSet<Ix2> + ProbStarSet2 {
                         rng,
                     );
                     continue;
-                } else if let StarNodeType::Leaf = self.get_node_type(current_node) {
-                    // do procedure to select safe part
-                    info!(
-                        "Safe sample with value at most {} at leaf (bounds {:?})",
-                        self.get_safe_value(),
-                        output_bounds
-                    );
-                    let safe_sample = self.sample_gaussian_node_safe(
-                        current_node,
-                        rng,
-                        num_samples,
-                        max_iters,
-                        self.get_safe_value(),
-                        stability_eps,
-                    );
-                    return Some((safe_sample, path_logp, total_infeasible_cdf));
+                } else {
+                    match self.get_node_type(current_node) {
+                        StarNodeType::Leaf { .. } => {
+                            // do procedure to select safe part
+                            info!(
+                                "Safe sample with value at most {} at leaf (bounds {:?})",
+                                self.get_safe_value(),
+                                output_bounds
+                            );
+                            let safe_sample = self.sample_gaussian_node_safe(
+                                current_node,
+                                rng,
+                                num_samples,
+                                max_iters,
+                                self.get_safe_value(),
+                                stability_eps,
+                            );
+                            if !safe_sample.is_empty() {
+                                if safe_sample.iter().any(|x| x.iter().any(|v| v.abs() > 10.)) {
+                                    panic!("Leaf safe sample big!");
+                                }
+                                return Some((safe_sample, path_logp, total_infeasible_cdf));
+                            } else {
+                                // Best thing to do here would be to figure out how to sample despite poor conditioning
+                                current_node = self.infeasible_reset(
+                                    current_node,
+                                    &mut path,
+                                    &mut path_logp,
+                                    &mut total_infeasible_cdf,
+                                    rng,
+                                );
+                            }
+                        }
+                        _ => (),
+                    }
                 }
                 // otherwise, push to path and continue expanding
                 path.push(current_node);
@@ -347,11 +412,14 @@ pub trait CensoredProbStarSet2: CensoredProbStarSet<Ix2> + ProbStarSet2 {
             if let Some(time_limit) = time_limit_opt {
                 if start_time.elapsed() >= time_limit {
                     info!("Unsafe sample after timeout at depth {}", path.len());
-                    let samples = sample_heap
+                    let samples: Vec<_> = sample_heap
                         .into_iter_sorted()
                         .take(num_samples)
                         .map(|pair| pair.0 .1.mapv(|x| x.0))
                         .collect();
+                    if samples.iter().any(|x| x.iter().any(|v| v.abs() > 10.)) {
+                        panic!("Timeout safe sample big!");
+                    }
                     return Some((samples, path_logp, total_infeasible_cdf));
                 }
             }
@@ -388,8 +456,8 @@ pub trait CensoredProbStarSet2: CensoredProbStarSet<Ix2> + ProbStarSet2 {
         rng: &mut R,
         num_samples: usize,
     ) -> Result<Vec<Array1<NNVFloat>>, Vec<(Array1<NNVFloat>, NNVFloat)>> {
-        let unsafe_sample = self.sample_gaussian_node(current_node, rng, num_samples);
-        let output_vals: Vec<_> = {
+        let unsafe_sample: Vec<_> = self.sample_gaussian_node(current_node, rng, num_samples);
+        let unsafe_sample_and_vals: Vec<(&Array1<NNVFloat>, f64)> = {
             let sample_iter = unsafe_sample.iter();
             let fixed_input_part: Option<Array1<NNVFloat>> = {
                 let unsafe_len = unsafe_sample[0].len();
@@ -399,32 +467,47 @@ pub trait CensoredProbStarSet2: CensoredProbStarSet<Ix2> + ProbStarSet2 {
                     fixed_array
                 })
             };
+            let node = self.get_node(current_node);
+            let bounds = self.get_input_bounds().as_ref();
             if let Some(fix_part) = fixed_input_part {
                 sample_iter
                     .zip(iter::repeat(fix_part))
-                    .map(|(unfix, fix)| concatenate(Axis(0), &[fix.view(), unfix.view()]).unwrap())
-                    .map(|x| self.get_dnn().forward1(x)[[0]])
+                    .map(|(unfix, fix)| {
+                        (
+                            unfix,
+                            concatenate(Axis(0), &[fix.view(), unfix.view()]).unwrap(),
+                        )
+                    })
+                    .filter(|(_sample, x)| bounds.map(|b| b.is_member(&x.view())).unwrap_or(true))
+                    .filter(|(_sample, x)| node.is_input_member(&x.view()))
+                    .map(|(sample, x)| (sample, self.get_dnn().forward1(x)[[0]]))
                     .collect()
             } else {
                 sample_iter
-                    .map(|x| self.get_dnn().forward1(x.clone())[[0]])
+                    .map(|x| (x, self.get_dnn().forward1(x.clone())[[0]]))
+                    .filter(|(sample, _out)| {
+                        bounds.map(|b| b.is_member(&sample.view())).unwrap_or(true)
+                    })
+                    .filter(|(sample, _out)| node.is_input_member(&sample.view()))
                     .collect()
             }
         };
-        let safe_subset: Vec<_> = unsafe_sample
+
+        let safe_subset: Vec<_> = unsafe_sample_and_vals
             .iter()
-            .zip(output_vals.iter())
-            .filter(|(_sample, &out)| out < self.get_safe_value())
+            .filter(|(_sample, out)| *out < self.get_safe_value())
             .map(|(sample, _val)| sample.to_owned())
             .collect();
         if safe_subset.is_empty() {
-            Err(unsafe_sample
+            Err(unsafe_sample_and_vals
                 .into_iter()
-                .zip(output_vals.iter())
-                .map(|(x, &out)| (x.to_owned(), out))
+                .map(|(x, out)| (x.to_owned(), out))
                 .collect())
         } else {
-            Ok(safe_subset)
+            Ok(safe_subset
+                .into_iter()
+                .map(|sample| sample.clone())
+                .collect())
         }
     }
 
@@ -447,8 +530,25 @@ pub trait CensoredProbStarSet2: CensoredProbStarSet<Ix2> + ProbStarSet2 {
         let current_node_type = self.get_node_type(current_node);
         match *current_node_type {
             // leaf node, which must be partially safe and partially unsafe
-            StarNodeType::Leaf => {
-                panic!();
+            StarNodeType::Leaf {
+                safe_idx: Some(safe_idx_val),
+                ..
+            } => Some((safe_idx_val, 1.)),
+            StarNodeType::Leaf {
+                safe_idx: None,
+                unsafe_idx: unsafe_idx_val,
+            } => {
+                let safe_value = self.get_safe_value();
+                let safe_node = self.get_node(current_node).get_safe_star(safe_value);
+                let safe_node_idx = self.add_node(safe_node, current_node);
+                self.set_node_type(
+                    current_node,
+                    StarNodeType::Leaf {
+                        safe_idx: Some(safe_node_idx),
+                        unsafe_idx: unsafe_idx_val,
+                    },
+                );
+                Some((safe_node_idx, 1.))
             }
             StarNodeType::Affine { child_idx }
             | StarNodeType::Conv { child_idx }
