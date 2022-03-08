@@ -17,11 +17,11 @@ use std::fmt::Debug;
 /// Weights are of the shape: (kernel_w, kernel_h, channels_in, channels_out)
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct Conv {
-    kernel: Array4<NNVFloat>, // (K_h, K_w, C_in, C_out)
+    kernel: Array4<NNVFloat>, // (K_h, K_w, C_in, C_out) following tf convention
     bias: Array1<NNVFloat>,   // (C_out)
     input_shape: TensorShape, // (None, H, W, C_in)
-    strides: Vec<usize>,      // (3)
-    padding: Array1<usize>,   // (3)
+    strides: (usize, usize, usize), // (3)
+    padding: ((usize, usize), (usize, usize)), // ((top, bottom), (left, right))
     affine: Option<Affine2>,
 }
 
@@ -32,16 +32,11 @@ impl Conv {
         kernel: Array4<NNVFloat>,
         bias: Array1<NNVFloat>,
         input_shape: TensorShape,
-        strides: Vec<usize>,
-        padding: Array1<usize>,
+        strides: (usize, usize, usize),
+        padding: ((usize, usize), (usize, usize)),
     ) -> Self {
         debug_assert_eq!(kernel.shape()[3], bias.len());
-        debug_assert_eq!(strides.len(), 3);
-        debug_assert_eq!(padding.len(), 3);
-        if padding[2] != 0 {
-            todo!();
-        }
-        if strides[2] != 1 {
+        if strides.2 != 1 {
             todo!();
         }
         let mut s = Self {
@@ -67,12 +62,14 @@ impl Conv {
     pub fn output_shape(&self) -> TensorShape {
         let k_h = self.kernel.shape()[0];
         let k_w = self.kernel.shape()[1];
-        let h_out = (self.input_shape[1].unwrap() + 2 * self.padding[0] - (k_h - 1) - 1)
-            / self.strides[0]
-            + 1;
-        let w_out = (self.input_shape[2].unwrap() + 2 * self.padding[1] - (k_w - 1) - 1)
-            / self.strides[1]
-            + 1;
+        let h_out =
+            (self.input_shape[1].unwrap() + self.padding.0 .0 + self.padding.0 .1 - (k_h - 1) - 1)
+                / self.strides.0
+                + 1;
+        let w_out =
+            (self.input_shape[2].unwrap() + self.padding.1 .0 + self.padding.1 .1 - (k_w - 1) - 1)
+                / self.strides.1
+                + 1;
 
         TensorShape::new(vec![
             None,
@@ -82,7 +79,7 @@ impl Conv {
         ])
     }
 
-    pub fn construct_affine(&mut self) {
+    fn construct_affine(&mut self) {
         let h_in = self.input_shape[1].unwrap();
         let w_in = self.input_shape[2].unwrap();
         let c_in = self.input_shape[3].unwrap();
@@ -97,22 +94,22 @@ impl Conv {
 
         let mut weight = Array2::<NNVFloat>::zeros((output_dims, input_dims));
         for (y_out, x_out) in (0..h_out).cartesian_product(0..w_out) {
-            let y_0 = y_out * self.strides[0];
-            let x_0 = x_out * self.strides[1];
+            let y_0 = y_out * self.strides.0;
+            let x_0 = x_out * self.strides.1;
 
             // Assign each filter of a pixel in the output to have the kernel contents
             for k_y in 0..k_h {
-                if y_0 + k_y < self.padding[0] || y_0 + k_y - self.padding[0] >= h_in {
+                if y_0 + k_y < self.padding.0 .0 || y_0 + k_y >= h_in + self.padding.0 .0 {
                     // Assumption that padding value is 0, so continue;
                     continue;
                 }
-                let y_in = y_0 + k_y - self.padding[0];
+                let y_in = y_0 + k_y - self.padding.0 .0;
                 for k_x in 0..k_w {
-                    if x_0 + k_x < self.padding[1] || x_0 + k_x - self.padding[1] >= w_in {
+                    if x_0 + k_x < self.padding.1 .0 || x_0 + k_x >= w_in + self.padding.1 .0 {
                         // Assumption that padding value is 0, so continue;
                         continue;
                     }
-                    let x_in = x_0 + k_x - self.padding[1];
+                    let x_in = x_0 + k_x - self.padding.1 .0;
 
                     for f_in in 0..c_in {
                         let input_idx = y_in * (w_in * c_in) + x_in * c_in + f_in;
@@ -152,20 +149,20 @@ impl Conv {
         output = output * self.bias.view().into_shape((1, 1, c_out)).unwrap();
 
         for (y_out, x_out) in (0..h_out).cartesian_product(0..w_out) {
-            let y_0 = y_out * self.strides[0];
-            let x_0 = x_out * self.strides[1];
+            let y_0 = y_out * self.strides.0;
+            let x_0 = x_out * self.strides.1;
 
             // Assign each filter of a pixel in the output to have the kernel contents
             for k_y in 0..k_h {
-                if y_0 + k_y < self.padding[0] || y_0 + k_y - self.padding[0] >= h_in {
+                if y_0 + k_y < self.padding.0 .0 || y_0 + k_y >= h_in + self.padding.0 .0 {
                     continue;
                 }
-                let y_in = y_0 + k_y - self.padding[0];
+                let y_in = y_0 + k_y - self.padding.0 .0;
                 for k_x in 0..k_w {
-                    if x_0 + k_x < self.padding[1] || x_0 + k_x - self.padding[1] >= w_in {
+                    if x_0 + k_x < self.padding.1 .0 || x_0 + k_x >= w_in + self.padding.1 .0 {
                         continue;
                     }
-                    let x_in = x_0 + k_x - self.padding[1];
+                    let x_in = x_0 + k_x - self.padding.1 .0;
 
                     for f_in in 0..c_in {
                         for f_out in 0..c_out {
@@ -282,6 +279,8 @@ mod tests {
                 array1(c_out),
                 0..(k_h / 2 + 1),
                 0..(k_w / 2 + 1),
+                0..(k_h / 2 + 1),
+                0..(k_w / 2 + 1),
                 1..(max_stride_x + 1),
                 1..(max_stride_y + 1),
                 Just(w_in),
@@ -291,10 +290,23 @@ mod tests {
         });
         Strategy::prop_map(
             strat,
-            move |(kernel, data, bias, pad_y, pad_x, stride_x, stride_y, w_in, h_in, c_in)| {
+            move |(
+                kernel,
+                data,
+                bias,
+                pad_y_0,
+                pad_y_1,
+                pad_x_0,
+                pad_x_1,
+                stride_x,
+                stride_y,
+                w_in,
+                h_in,
+                c_in,
+            )| {
                 let input_shape = TensorShape::new(vec![None, Some(h_in), Some(w_in), Some(c_in)]);
-                let padding = Array1::<usize>::from_vec(vec![pad_y as usize, pad_x as usize, 0]);
-                let strides: Vec<usize> = vec![stride_y as usize, stride_x as usize, 1];
+                let padding = ((pad_y_0, pad_y_1), (pad_x_0, pad_x_1));
+                let strides = (stride_y, stride_x, 1);
                 let conv_layer = Conv::new(kernel, bias, input_shape, strides, padding);
                 (conv_layer, data)
             },
@@ -302,32 +314,32 @@ mod tests {
     }
 
     proptest! {
-    #[test]
-    fn test_conv_3_equality((conv_layer, data) in conv_test_inputs(7, 7, 28, 28, 10, 10, 3, 3)) {
-        let h_in = conv_layer.input_shape()[1].unwrap();
-        let w_in = conv_layer.input_shape()[2].unwrap();
-        let c_in = conv_layer.input_shape()[3].unwrap();
+        #[test]
+        fn test_conv_equality((conv_layer, data) in conv_test_inputs(7, 7, 28, 28, 10, 10, 3, 3)) {
+            let h_in = conv_layer.input_shape()[1].unwrap();
+            let w_in = conv_layer.input_shape()[2].unwrap();
+            let c_in = conv_layer.input_shape()[3].unwrap();
 
-        let input_dims = h_in * w_in * c_in;
-        let flat_data = data.view().into_shape(input_dims).unwrap();
-        let output_shape = conv_layer.output_shape();
-        let output_dims =
-            output_shape[1].unwrap() * output_shape[2].unwrap() * output_shape[3].unwrap();
+            let input_dims = h_in * w_in * c_in;
+            let flat_data = data.view().into_shape(input_dims).unwrap();
+            let output_shape = conv_layer.output_shape();
+            let output_dims =
+                output_shape[1].unwrap() * output_shape[2].unwrap() * output_shape[3].unwrap();
 
-        let convolve_result = conv_layer.convolve(data.view());
-        let affine = conv_layer.get_affine();
-        let affine_result = affine.apply(&flat_data);
+            let convolve_result = conv_layer.convolve(data.view());
+            let affine = conv_layer.get_affine();
+            let affine_result = affine.apply(&flat_data);
 
-        let flat_convolve_result = convolve_result.into_shape(output_dims).unwrap();
-        prop_assert!(
-            flat_convolve_result.abs_diff_eq(&affine_result, 1e-10),
-            "Unequal results. Convolve: {:?} Affine: {:?}, Affine mtx: {:?}, Flat data: {:?}, Output Shape: {:?}",
-            flat_convolve_result,
-            affine_result,
-            affine,
-            flat_data,
-            output_shape,
-        );
-    }
+            let flat_convolve_result = convolve_result.into_shape(output_dims).unwrap();
+            prop_assert!(
+                flat_convolve_result.abs_diff_eq(&affine_result, 1e-10),
+                "Unequal results. Convolve: {:?} Affine: {:?}, Affine mtx: {:?}, Flat data: {:?}, Output Shape: {:?}",
+                flat_convolve_result,
+                affine_result,
+                affine,
+                flat_data,
+                output_shape,
+            );
+        }
     }
 }

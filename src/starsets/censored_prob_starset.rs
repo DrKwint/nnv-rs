@@ -453,6 +453,7 @@ pub trait CensoredProbStarSet2: CensoredProbStarSet<Ix2> + ProbStarSet2 {
             }
             StarNodeType::Affine { child_idx } => Some((child_idx, path_logp)),
             StarNodeType::Conv { child_idx } => Some((child_idx, path_logp)),
+            StarNodeType::Interpolate { child_idx } => Some((child_idx, path_logp)),
             StarNodeType::StepRelu {
                 fst_child_idx,
                 snd_child_idx,
