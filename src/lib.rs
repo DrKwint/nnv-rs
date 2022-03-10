@@ -27,6 +27,7 @@ pub mod bounds;
 pub mod deeppoly;
 pub mod dnn;
 pub mod gaussian;
+pub mod graph;
 pub mod lp;
 pub mod polytope;
 pub mod star;
