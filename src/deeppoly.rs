@@ -2,6 +2,7 @@ use crate::affine::Affine2;
 use crate::bounds::Bounds1;
 use crate::dnn::dnn::DNN;
 use crate::dnn::dnn_iter::DNNIterator;
+use crate::graph::Engine;
 use crate::NNVFloat;
 use log::trace;
 use ndarray::Array1;
@@ -125,17 +126,61 @@ pub fn deep_poly_relu(
     (out, (lower_aff, upper_aff))
 }
 
+/// Runs deep poly on an entire network
 /// # Panics
-pub fn deep_poly(input_bounds: &Bounds1, dnn: &DNN, dnn_iter: DNNIterator) -> Bounds1 {
+pub fn deep_poly(input_bounds: Vec<&Bounds1>, dnn: &DNN, sub_idx: Option<usize>) -> Vec<Bounds1> {
     trace!("with input bounds {:?}", input_bounds);
     debug_assert!(
         input_bounds
-            .bounds_iter()
-            .into_iter()
-            .all(|x| (x[[0]] <= x[[1]])),
+            .iter()
+            .map(|bounds| bounds.bounds_iter().into_iter().all(|x| (x[[0]] <= x[[1]])))
+            .all(|x| x),
         "Input bounds are flipped!"
     );
-    let ndim = input_bounds.ndim();
+    let inputs = input_bounds
+        .iter()
+        .zip(dnn.get_input_representation_ids().iter())
+        .map(|(&bounds, &id)| {
+            let ndim = bounds.ndim();
+            (
+                id,
+                (
+                    bounds.clone(),
+                    (Affine2::identity(ndim), Affine2::identity(ndim)),
+                ),
+            )
+        })
+        .collect::<Vec<_>>();
+
+    let engine = Engine::new(dnn.get_graph());
+    let visit = |op, inputs| -> (&Bounds1, (Affine2, Affine2)) {
+        let out = idx.get_remaining_steps().map_or_else(
+            || layer.apply_bounds(&bounds_concrete, &laff, &uaff),
+            |dim| layer.apply_bounds_step(dim, &bounds_concrete, &laff, &uaff),
+        );
+        debug_assert!(
+            out.0
+                .bounds_iter()
+                .into_iter()
+                .all(|x| (x[[0]] <= x[[1]]) || (x[[0]] - x[[1]]) < 1e-4),
+            "Bounds: {:?}",
+            out.0
+        );
+        if cfg!(debug_assertions) {
+            let lower_bounds = out.1 .0.signed_apply(input_bounds);
+            let upper_bounds = out.1 .1.signed_apply(input_bounds);
+            let realized_abstract_bounds = Bounds1::new(lower_bounds.lower(), upper_bounds.upper());
+            debug_assert!(
+                realized_abstract_bounds.subset(&out.0),
+                "\n\nRealized abstract: {:?}\nConcrete: {:?}\n\n",
+                realized_abstract_bounds,
+                bounds_concrete
+            );
+        }
+        out
+    };
+    engine.run(dnn.get_output_representation_ids().clone(), inputs, visit);
+
     // Affine expressing bounds on each variable in current layer as a
     // linear function of input bounds
     let aff_bounds = dnn_iter.fold(

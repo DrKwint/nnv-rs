@@ -7,6 +7,7 @@ use crate::tensorshape::TensorShape;
 use crate::NNVFloat;
 use dyn_clone::DynClone;
 use ndarray::{Array1, Array2};
+use serde::{Deserialize, Serialize};
 use std::any::Any;
 use std::collections::HashMap;
 use std::fmt::{Debug, Display};
@@ -84,6 +85,7 @@ pub trait Operation: DynClone + Display + Debug + Send + Sync {
 dyn_clone::clone_trait_object!(Operation);
 
 /// Each RepresentationId is created uniquely by a single OperationNode
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct OperationNode {
     operation: Box<dyn Operation>,
     inputs: Vec<RepresentationId>,
@@ -116,7 +118,7 @@ impl OperationNode {
     }
 }
 
-#[derive(Default)]
+#[derive(Default, Debug, Clone, Serialize, Deserialize)]
 pub struct Graph {
     representation_ops: HashMap<RepresentationId, OperationId>, // representation to idx of HashMap
     operation_nodes: Vec<OperationNode>,                        // topo sorted list of operations
@@ -136,6 +138,16 @@ impl Graph {
         self.operation_nodes.get(id)
     }
 
+    pub fn add_operation(
+        &mut self,
+        op: Box<dyn Operation>,
+        inputs: Vec<RepresentationId>,
+        outputs: Vec<RepresentationId>,
+    ) -> Result<OperationId, GraphError> {
+        let node = OperationNode::new(op, inputs, outputs);
+        self.add_operation_node(node)
+    }
+
     /// Add an operation node to the graph. Nodes should be added in a topological order
     ///
     /// # Arguments
@@ -150,7 +162,6 @@ impl Graph {
             .map(|&id| self.representation_ops.insert(id, node_id))
             .any(|x| x.is_some())
         {
-            // TODO: Specify double output error
             return Err(GraphError::AnotherOpProducesOutput);
         }
 

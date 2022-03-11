@@ -13,6 +13,7 @@ pub enum ExecuteError {
     OperationNotExist { op_id: OperationId },
     AnotherOpProducesOutput { op_id: OperationId },
     OneOfRepresentationsNotExist { repr_ids: Vec<RepresentationId> },
+    ReprIdGivenByInputsAndOpState { repr_ids: HashSet<RepresentationId> },
 }
 
 pub trait OperationVisitor<T: Clone> {
@@ -25,12 +26,19 @@ pub trait OperationVisitor<T: Clone> {
     fn visit(&mut self, operation: &Box<dyn Operation>, inputs: Vec<&T>) -> Vec<T>;
 }
 
-#[derive(Default)]
-pub struct ExecutionState<T: Clone + Default> {
+pub struct ExecutionState<T: Clone> {
     representations: HashMap<RepresentationId, T>,
 }
 
-impl<T: Clone + Default> ExecutionState<T> {
+impl<T: Clone> Default for ExecutionState<T> {
+    fn default() -> Self {
+        Self {
+            representations: HashMap::new(),
+        }
+    }
+}
+
+impl<T: Clone> ExecutionState<T> {
     pub fn get_representation(&self, representation_id: RepresentationId) -> Option<&T> {
         self.representations.get(&representation_id)
     }
@@ -52,6 +60,12 @@ impl<T: Clone + Default> ExecutionState<T> {
     }
 }
 
+#[derive(Clone, Debug)]
+pub enum StepState<T: Clone + Debug> {
+    Repr(T),                     // A single representation
+    StepRepr(HashMap<usize, T>), // The representations within an operation
+}
+
 pub struct Engine<'a> {
     graph: &'a Graph,
 }
@@ -61,6 +75,124 @@ impl<'a> Engine<'a> {
         Self { graph }
     }
 
+    /// Calculates output after a given step of an operation
+    ///
+    /// If an operation is required for the calculation and an input representation is provided for a
+    /// specific step of the operation then all inputs for the operation at that step must be supplied.
+    /// For instance, suppose we are calculating (A, B) -> C, i.e. C is calculated from an operation
+    /// involving both A and B. Further, suppose the operation contains 3 steps and A is provided after
+    /// performing step 2. Then B must also be provided after performing step 2.
+    ///
+    /// # Arguments
+    ///
+    /// * `outputs` - Representations along with steps to calculate. Use None to signify the end of the step.
+    /// * `inputs` - The representations of inputs of the calculation.
+    /// * `step_inputs` - Intermediate representation at a step in calculating the tensor of the given id.
+    /// * `visit` - The function to run at each step of each operation. Note the extra arguments to the visit function.
+    ///             The first is the index of the step if there are steps in the operation. The second is the output of
+    ///             the previous step operation (or None for the first step operation).
+    pub fn run_step<T: Clone + Debug>(
+        &self,
+        output_ids: Vec<RepresentationId>,
+        output_state_ids: Vec<(OperationId, usize)>,
+        inputs: Vec<(RepresentationId, T)>,
+        operation_states: Vec<(OperationId, usize, Vec<T>)>,
+        visit: impl FnMut(
+            &Box<dyn Operation>,
+            Option<Vec<&T>>,
+            Option<usize>,
+            Option<&Vec<T>>,
+        ) -> Vec<T>,
+    ) -> Result<Vec<(RepresentationId, StepState<T>)>, ExecuteError> {
+        let mut internal_representations = HashMap::<OperationId, HashMap<usize, Vec<T>>>::new();
+
+        // Check that the inputs from operation_states do not collide with those from inputs
+        let operation_state_input_ids = operation_states
+            .iter()
+            .map(|(op_id, _, _)| {
+                let op = self.graph.get_operation_node(*op_id).unwrap();
+                op.get_output_ids().clone().into_iter()
+            })
+            .flatten()
+            .collect::<HashSet<RepresentationId>>();
+        let input_ids = inputs
+            .iter()
+            .map(|(repr_id, _)| *repr_id)
+            .collect::<HashSet<RepresentationId>>();
+        let id_intersection = operation_state_input_ids
+            .intersection(&input_ids)
+            .map(|&x| x)
+            .collect::<HashSet<_>>();
+        if !id_intersection.is_empty() {
+            return Err(ExecuteError::ReprIdGivenByInputsAndOpState {
+                repr_ids: id_intersection,
+            });
+        }
+
+        // 1. Manually run forward step input operations
+        let op_state_inputs = operation_states
+            .into_iter()
+            .map(|(op_id, step, in_repr)| {
+                let mut reprs = HashMap::<usize, Vec<T>>::new();
+                reprs.insert(step, in_repr);
+                let op_node = self.graph.get_operation_node(op_id).unwrap();
+                let op = op_node.get_operation();
+
+                for s in (step + 1)..(op.output_dims() as usize) {
+                    let step_inputs = reprs.get(&(s - 1));
+                    let step_outputs = visit(op, None, Some(s), step_inputs);
+                    reprs.insert(s, step_outputs);
+                }
+
+                internal_representations.insert(op_id, reprs);
+
+                reprs
+                    .get(&(op.output_dims() - 1))
+                    .unwrap()
+                    .iter()
+                    .zip(op_node.get_output_ids().iter())
+                    .map(|(repr, repr_id)| (*repr_id, repr.clone()))
+            })
+            .flatten();
+
+        // 2. Collect all inputs together to run the rest of the visitor
+        let inputs = inputs
+            .into_iter()
+            .chain(op_state_inputs)
+            .collect::<Vec<_>>();
+
+        // 3. Collect all output representation ids necessary.
+        let op_state_output_repr_ids = output_state_ids.iter().map(|(op_id, _)| -> OperationId {
+            let op = self.graph.get_operation_node(*op_id).unwrap();
+            op.get_output_ids().first().unwrap().clone()
+        });
+        let output_ids = output_ids
+            .iter()
+            .map(|&x| x)
+            .chain(op_state_output_repr_ids)
+            .collect::<Vec<_>>();
+
+        // 4. Run the visitor function for the graph
+        let step_visit = |op: &Box<dyn Operation>, inp| -> Vec<T> {
+            if op.is_activation() {
+                let mut reprs = HashMap::<usize, Vec<T>>::new();
+
+                (0..(op.output_dims() as usize)).for_each(|dim| {
+                    let step_inputs = reprs.get(&(dim - 1));
+                    let step_outputs = visit(op, inp, Some(dim), step_inputs);
+                    reprs.insert(dim, step_outputs);
+                });
+
+                reprs.get(&(op.output_dims() - 1)).unwrap().clone()
+            } else {
+                todo!()
+            }
+        };
+        let outputs = self.run(output_ids, inputs, step_visit);
+
+        todo!();
+    }
+
     /// Calculates the output of a visitor given the inputs
     ///
     /// # Arguments
@@ -68,11 +200,20 @@ impl<'a> Engine<'a> {
     /// * `outputs` - Set of representations to calculate
     /// * `inputs` - Set of starting inputs required to calculate outputs
     /// * `visitor` - Performs the intermediate calculations at each node
-    fn run<T: Clone + Default + Debug>(
+    pub fn run_visitor<T: Clone + Debug>(
         &self,
         output_ids: Vec<RepresentationId>,
         inputs: Vec<(RepresentationId, T)>,
         visitor: &mut dyn OperationVisitor<T>,
+    ) -> Result<Vec<(RepresentationId, T)>, ExecuteError> {
+        self.run(output_ids, inputs, |op, inp| visitor.visit(op, inp))
+    }
+
+    pub fn run<T: Clone + Debug>(
+        &self,
+        output_ids: Vec<RepresentationId>,
+        inputs: Vec<(RepresentationId, T)>,
+        visit: impl FnMut(&Box<dyn Operation>, Vec<&T>) -> Vec<T>,
     ) -> Result<Vec<(RepresentationId, T)>, ExecuteError> {
         // Calculate subgraph and path of operations to perform
         // 1. Walk back through operations BFS
@@ -167,7 +308,7 @@ impl<'a> Engine<'a> {
                 })?;
 
             // Execute visitor
-            let outputs = visitor.visit(op_node.get_operation(), inputs);
+            let outputs = visit(op_node.get_operation(), inputs);
             if outputs.len() != op_node.get_output_ids().len() {
                 return Err(ExecuteError::IncorrectOutputsFromVisitor {
                     expected: outputs.len(),

@@ -1,5 +1,6 @@
 use super::dnn_iter::{DNNIndex, DNNIterator};
 use super::layer::Layer;
+use crate::graph::{Graph, GraphError, Operation, OperationId, RepresentationId};
 use crate::tensorshape::TensorShape;
 use crate::NNVFloat;
 use ndarray::Array1;
@@ -10,7 +11,9 @@ use std::fmt;
 
 #[derive(Clone, Default, Debug, Serialize, Deserialize)]
 pub struct DNN {
-    layers: Vec<Box<dyn Layer>>,
+    graph: Graph,
+    input_representation_ids: Vec<RepresentationId>,
+    output_representation_ids: Vec<RepresentationId>,
 }
 
 /*
@@ -28,25 +31,56 @@ impl Clone for DNN {
 */
 
 impl DNN {
-    pub fn new(layers: Vec<Box<dyn Layer>>) -> Self {
-        Self { layers }
+    pub fn new(
+        graph: Graph,
+        input_representation_ids: Vec<RepresentationId>,
+        output_representation_ids: Vec<RepresentationId>,
+    ) -> Self {
+        Self {
+            graph,
+            input_representation_ids,
+            output_representation_ids,
+        }
     }
 
-    pub fn add_layer(&mut self, layer: Box<dyn Layer>) {
-        self.layers.push(layer);
+    pub fn add_operation(
+        &mut self,
+        op: Box<dyn Operation>,
+        inputs: Vec<RepresentationId>,
+        outputs: Vec<RepresentationId>,
+    ) -> Result<OperationId, GraphError> {
+        self.graph.add_operation(op, inputs, outputs)
     }
 
-    pub fn get_layer(&self, idx: usize) -> Option<&dyn Layer> {
-        self.layers.get(idx).map(Box::as_ref)
+    pub fn get_operation(&self, id: OperationId) -> Option<&dyn Operation> {
+        self.graph
+            .get_operation_node(id)
+            .map(|node| node.get_operation().as_ref())
     }
 
-    pub fn get_layers(&self) -> &[Box<dyn Layer>] {
-        &self.layers
+    pub fn get_input_representation_ids(&self) -> &Vec<RepresentationId> {
+        &self.input_representation_ids
     }
 
-    pub fn iter(&self) -> DNNIterator {
-        DNNIterator::new(self, DNNIndex::default())
+    pub fn get_output_representation_ids(&self) -> &Vec<RepresentationId> {
+        &self.output_representation_ids
     }
+
+    pub fn get_graph(&self) -> &Graph {
+        &self.graph
+    }
+
+    // pub fn get_layer(&self, idx: usize) -> Option<&dyn Layer> {
+    //     self.layers.get(idx).map(Box::as_ref)
+    // }
+
+    // pub fn get_layers(&self) -> &[Box<dyn Layer>] {
+    //     &self.layers
+    // }
+
+    // pub fn iter(&self) -> DNNIterator {
+    //     DNNIterator::new(self, DNNIndex::default())
+    // }
 
     /// # Returns
     /// `Vec<(num_samples, dimension)>` where each entry is a layer's activations
