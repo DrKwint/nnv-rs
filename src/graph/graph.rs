@@ -25,6 +25,8 @@ pub enum GraphError {
 pub trait Operation: DynClone + Display + Debug + Send + Sync {
     fn as_any(&self) -> &dyn Any;
 
+    fn num_steps(&self) -> Option<usize>;
+
     fn input_shape(&self) -> TensorShape {
         panic!()
     }

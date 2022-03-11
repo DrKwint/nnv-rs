@@ -104,93 +104,7 @@ impl<'a> Engine<'a> {
             Option<&Vec<T>>,
         ) -> Vec<T>,
     ) -> Result<Vec<(RepresentationId, StepState<T>)>, ExecuteError> {
-        let mut internal_representations = HashMap::<OperationId, HashMap<usize, Vec<T>>>::new();
-
-        // Check that the inputs from operation_states do not collide with those from inputs
-        let operation_state_input_ids = operation_states
-            .iter()
-            .map(|(op_id, _, _)| {
-                let op = self.graph.get_operation_node(*op_id).unwrap();
-                op.get_output_ids().clone().into_iter()
-            })
-            .flatten()
-            .collect::<HashSet<RepresentationId>>();
-        let input_ids = inputs
-            .iter()
-            .map(|(repr_id, _)| *repr_id)
-            .collect::<HashSet<RepresentationId>>();
-        let id_intersection = operation_state_input_ids
-            .intersection(&input_ids)
-            .map(|&x| x)
-            .collect::<HashSet<_>>();
-        if !id_intersection.is_empty() {
-            return Err(ExecuteError::ReprIdGivenByInputsAndOpState {
-                repr_ids: id_intersection,
-            });
-        }
-
-        // 1. Manually run forward step input operations
-        let op_state_inputs = operation_states
-            .into_iter()
-            .map(|(op_id, step, in_repr)| {
-                let mut reprs = HashMap::<usize, Vec<T>>::new();
-                reprs.insert(step, in_repr);
-                let op_node = self.graph.get_operation_node(op_id).unwrap();
-                let op = op_node.get_operation();
-
-                for s in (step + 1)..(op.output_dims() as usize) {
-                    let step_inputs = reprs.get(&(s - 1));
-                    let step_outputs = visit(op, None, Some(s), step_inputs);
-                    reprs.insert(s, step_outputs);
-                }
-
-                internal_representations.insert(op_id, reprs);
-
-                reprs
-                    .get(&(op.output_dims() - 1))
-                    .unwrap()
-                    .iter()
-                    .zip(op_node.get_output_ids().iter())
-                    .map(|(repr, repr_id)| (*repr_id, repr.clone()))
-            })
-            .flatten();
-
-        // 2. Collect all inputs together to run the rest of the visitor
-        let inputs = inputs
-            .into_iter()
-            .chain(op_state_inputs)
-            .collect::<Vec<_>>();
-
-        // 3. Collect all output representation ids necessary.
-        let op_state_output_repr_ids = output_state_ids.iter().map(|(op_id, _)| -> OperationId {
-            let op = self.graph.get_operation_node(*op_id).unwrap();
-            op.get_output_ids().first().unwrap().clone()
-        });
-        let output_ids = output_ids
-            .iter()
-            .map(|&x| x)
-            .chain(op_state_output_repr_ids)
-            .collect::<Vec<_>>();
-
-        // 4. Run the visitor function for the graph
-        let step_visit = |op: &Box<dyn Operation>, inp| -> Vec<T> {
-            if op.is_activation() {
-                let mut reprs = HashMap::<usize, Vec<T>>::new();
-
-                (0..(op.output_dims() as usize)).for_each(|dim| {
-                    let step_inputs = reprs.get(&(dim - 1));
-                    let step_outputs = visit(op, inp, Some(dim), step_inputs);
-                    reprs.insert(dim, step_outputs);
-                });
-
-                reprs.get(&(op.output_dims() - 1)).unwrap().clone()
-            } else {
-                todo!()
-            }
-        };
-        let outputs = self.run(output_ids, inputs, step_visit);
-
-        todo!();
+        todo!()
     }
 
     /// Calculates the output of a visitor given the inputs
@@ -215,6 +129,96 @@ impl<'a> Engine<'a> {
         inputs: Vec<(RepresentationId, T)>,
         visit: impl FnMut(&Box<dyn Operation>, Vec<&T>) -> Vec<T>,
     ) -> Result<Vec<(RepresentationId, T)>, ExecuteError> {
+        self._run(output_ids, vec![], inputs, vec![], visit, None)
+            .map(|res| res.0)
+    }
+
+    fn _run<T: Clone + Debug>(
+        &self,
+        output_ids: Vec<RepresentationId>,
+        output_state_ids: Vec<(OperationId, usize)>,
+        inputs: Vec<(RepresentationId, T)>,
+        input_operation_states: Vec<(OperationId, usize, Vec<T>)>,
+        visit_node: impl FnMut(&Box<dyn Operation>, Vec<&T>) -> Vec<T>,
+        visit_step: Option<
+            impl FnMut(&Box<dyn Operation>, Option<Vec<&T>>, Option<usize>, Option<&Vec<T>>) -> Vec<T>,
+        >,
+    ) -> Result<
+        (
+            Vec<(RepresentationId, T)>,
+            Vec<(OperationId, usize, Vec<T>)>,
+        ),
+        ExecuteError,
+    > {
+        // Calculate input nodes from input_operation_states
+        let mut internal_representations = HashMap::<OperationId, HashMap<usize, Vec<T>>>::new();
+
+        // Check that the inputs from operation_states do not collide with those from inputs
+        let operation_state_input_ids = input_operation_states
+            .iter()
+            .map(|(op_id, _, _)| {
+                let op = self.graph.get_operation_node(*op_id).unwrap();
+                op.get_output_ids().clone().into_iter()
+            })
+            .flatten()
+            .collect::<HashSet<RepresentationId>>();
+        let input_ids = inputs
+            .iter()
+            .map(|(repr_id, _)| *repr_id)
+            .collect::<HashSet<RepresentationId>>();
+        let id_intersection = operation_state_input_ids
+            .intersection(&input_ids)
+            .map(|&x| x)
+            .collect::<HashSet<_>>();
+        if !id_intersection.is_empty() {
+            return Err(ExecuteError::ReprIdGivenByInputsAndOpState {
+                repr_ids: id_intersection,
+            });
+        }
+
+        // Pre-1. Manually run forward step input operations
+        let op_state_inputs = input_operation_states
+            .into_iter()
+            .map(|(op_id, step, in_repr)| {
+                let mut reprs = HashMap::<usize, Vec<T>>::new();
+                reprs.insert(step, in_repr);
+                let op_node = self.graph.get_operation_node(op_id).unwrap();
+                let op = op_node.get_operation();
+
+                for s in (step + 1)..(op.output_dims() as usize) {
+                    let step_inputs = reprs.get(&(s - 1));
+                    let step_outputs = visit_step.unwrap()(op, None, Some(s), step_inputs);
+                    reprs.insert(s, step_outputs);
+                }
+
+                internal_representations.insert(op_id, reprs);
+
+                reprs
+                    .get(&(op.output_dims() - 1))
+                    .unwrap()
+                    .iter()
+                    .zip(op_node.get_output_ids().iter())
+                    .map(|(repr, repr_id)| (*repr_id, repr.clone()))
+            })
+            .flatten();
+
+        // Pre-2. Collect all inputs together to run the rest of the visitor
+        let inputs = inputs
+            .into_iter()
+            .chain(op_state_inputs)
+            .collect::<Vec<_>>();
+
+        // Pre-3. Collect all output representation ids necessary.
+        let op_state_output_repr_ids = output_state_ids.iter().map(|(op_id, _)| -> OperationId {
+            let op = self.graph.get_operation_node(*op_id).unwrap();
+            op.get_output_ids().first().unwrap().clone()
+        });
+        let output_ids = output_ids
+            .iter()
+            .map(|&x| x)
+            .chain(op_state_output_repr_ids)
+            .collect::<Vec<_>>();
+
         // Calculate subgraph and path of operations to perform
         // 1. Walk back through operations BFS
         let operation_set = {
@@ -296,6 +300,7 @@ impl<'a> Engine<'a> {
                 .graph
                 .get_operation_node(op_id)
                 .ok_or(ExecuteError::OperationNotExist { op_id })?;
+            let op = op_node.get_operation();
 
             // Collect input references
             let inputs = op_node
@@ -307,8 +312,31 @@ impl<'a> Engine<'a> {
                     repr_ids: op_node.get_input_ids().clone(),
                 })?;
 
-            // Execute visitor
-            let outputs = visit(op_node.get_operation(), inputs);
+            let outputs = {
+                if let (Some(num_steps), Some(visit_step)) = (op.num_steps(), visit_step) {
+                    // Execute step visitors
+                    let mut reprs = HashMap::<usize, Vec<T>>::new();
+
+                    for step in 0..num_steps {
+                        let step_inputs = reprs.get(&(step - 1));
+                        let step_outputs = visit_step(op, Some(inputs), Some(step), step_inputs);
+                        reprs.insert(step, step_outputs);
+                    }
+
+                    internal_representations.insert(op_id, reprs);
+
+                    reprs
+                        .get(&(num_steps - 1))
+                        .unwrap()
+                        .iter()
+                        .map(|&x| x)
+                        .collect::<Vec<_>>()
+                } else {
+                    // Execute node visitor
+                    visit_node(op_node.get_operation(), inputs)
+                }
+            };
+
             if outputs.len() != op_node.get_output_ids().len() {
                 return Err(ExecuteError::IncorrectOutputsFromVisitor {
                     expected: outputs.len(),
@@ -331,7 +359,23 @@ impl<'a> Engine<'a> {
                 repr_ids: output_ids,
             })?;
 
-        Ok(output_representations)
+        let output_op_states = output_state_ids
+            .iter()
+            .map(|(op_id, step)| {
+                (
+                    *op_id,
+                    *step,
+                    internal_representations
+                        .get(op_id)
+                        .unwrap()
+                        .get(step)
+                        .unwrap()
+                        .clone(),
+                )
+            })
+            .collect::<Vec<_>>();
+
+        Ok((output_representations, output_op_states))
     }
 }
 
@@ -369,6 +413,10 @@ mod tests {
     impl Operation for DummyOperation {
         fn as_any(&self) -> &dyn Any {
             self
+        }
+
+        fn num_steps(&self) -> Option<usize> {
+            None
         }
 
         fn forward1(&self, input: &Array1<NNVFloat>) -> Array1<NNVFloat> {
