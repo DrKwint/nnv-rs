@@ -25,7 +25,7 @@ use std::ops::{Mul, MulAssign};
 
 pub type Bounds1 = Bounds<Ix2>;
 
-#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+#[derive(Clone, Default, Debug, PartialEq, Deserialize, Serialize)]
 pub struct Bounds<D: Dimension> {
     data: Array<NNVFloat, D>,
 }

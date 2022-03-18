@@ -4,6 +4,8 @@ use crate::bounds::{Bounds, Bounds1};
 use crate::dnn::dense::Dense;
 use crate::dnn::dnn::DNN;
 use crate::dnn::relu::ReLU;
+use crate::graph::RepresentationId;
+use crate::graph::{Graph, Operation};
 use crate::polytope::Polytope;
 use crate::star::Star2;
 use crate::starsets::Asterism;
@@ -93,13 +95,13 @@ prop_compose! {
                 .zip(repr_sizes.iter().skip(1));
             pairs.map(|(&x, &y)| affine2(x,y)).collect::<Vec<_>>()}
         ) -> DNN {
-            let mut dnn = DNN::default();
+            let mut layers: Vec<Box<dyn Operation>> = vec![];
             for aff in affines {
-                    let output_dim = aff.output_dim();
-                    dnn.add_layer(Box::new(Dense::new(aff)));
-                    dnn.add_layer(Box::new(ReLU::new(output_dim)));
-                }
-            dnn
+                let output_dim = aff.output_dim();
+                layers.push(Box::new(Dense::new(aff.clone())));
+                layers.push(Box::new(ReLU::new(output_dim)));
+            }
+            DNN::from_sequential(layers)
         }
 }
 

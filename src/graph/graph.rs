@@ -1,128 +1,57 @@
-use super::execute_engine::ExecuteError;
-use crate::affine::Affine2;
-use crate::bounds::Bounds1;
-use crate::star::Star2;
-use crate::star_node::StarNodeType;
-use crate::tensorshape::TensorShape;
-use crate::NNVFloat;
-use dyn_clone::DynClone;
-use ndarray::{Array1, Array2};
+use super::operation::Operation;
+use itertools::Itertools;
 use serde::{Deserialize, Serialize};
-use std::any::Any;
 use std::collections::HashMap;
-use std::fmt::{Debug, Display};
+use std::fmt::Debug;
 
-pub type RepresentationId = usize;
+/// Unique key for an operation scoped to a Graph.
 pub type OperationId = usize;
 
-#[derive(Debug)]
-pub enum GraphError {
-    GenericError,
-    AnotherOpProducesOutput,
+/// # Description
+///
+/// Unique key for a representation scoped to a Graph. I.e., something that is input/output of the graph ops.
+/// E.g., tensors, stars, bounds.
+#[derive(PartialEq, Eq, Debug, Clone, Serialize, Deserialize, Hash)]
+pub struct RepresentationId {
+    pub representation_node_id: usize, // usize used as unique key scoped to Graph
+    /// If this representation is internal to a stepped operation (i.e. is produced and consumed by that operation),
+    /// This field encodes the index of the step run to create this representation if this representation is intermediate,
+    /// and should be None on the final operation output
+    pub operation_step: Option<usize>,
 }
 
-#[typetag::serde(tag = "type")]
-pub trait Operation: DynClone + Display + Debug + Send + Sync {
-    fn as_any(&self) -> &dyn Any;
-
-    fn num_steps(&self) -> Option<usize>;
-
-    fn input_shape(&self) -> TensorShape {
-        panic!()
-    }
-
-    fn output_shape(&self) -> TensorShape {
-        panic!()
-    }
-
-    fn forward1(&self, input: &Array1<NNVFloat>) -> Array1<NNVFloat>;
-    fn forward2(&self, input: &Array2<NNVFloat>) -> Array2<NNVFloat>;
-    fn apply_bounds(
-        &self,
-        bounds: &Bounds1,
-        lower_aff: &Affine2,
-        upper_aff: &Affine2,
-    ) -> (Bounds1, (Affine2, Affine2));
-    fn apply_bounds_step(
-        &self,
-        _dim: usize,
-        _bounds: &Bounds1,
-        _lower_aff: &Affine2,
-        _upper_aff: &Affine2,
-    ) -> (Bounds1, (Affine2, Affine2)) {
-        panic!();
-    }
-
-    /// Returns the set of children stars with their input_bounds.
-    /// In the case that there is one, sets the bool to whether the output bounds can be copied.
-    fn forward_star(
-        &self,
-        star: &Star2,
-        activation_idx: Option<usize>,
-        input_bounds: Option<Bounds1>,
-        parent_bounds: Option<Bounds1>,
-    ) -> (Vec<Star2>, Vec<Option<Bounds1>>, bool);
-    fn construct_starnodetype(&self, child_ids: &[usize], dim: Option<usize>) -> StarNodeType;
-
-    fn input_dims(&self) -> usize {
-        self.input_shape().dims()
-    }
-
-    fn output_dims(&self) -> usize {
-        self.input_shape().dims()
-    }
-
-    fn is_activation(&self) -> bool {
-        // This should be implemented in activation layers to return true
-        false
-    }
-
-    fn get_activation_pattern(&self, _state: &Array2<NNVFloat>) -> Option<Array2<bool>> {
-        // This should only be Some in an activation layer (e.g. ReLU)
-        None
-    }
-}
-
-// This implements `Clone` for the trait
-dyn_clone::clone_trait_object!(Operation);
-
-/// Each RepresentationId is created uniquely by a single OperationNode
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct OperationNode {
-    operation: Box<dyn Operation>,
-    inputs: Vec<RepresentationId>,
-    outputs: Vec<RepresentationId>,
-}
-
-impl OperationNode {
-    pub fn new(
-        operation: Box<dyn Operation>,
-        inputs: Vec<RepresentationId>,
-        outputs: Vec<RepresentationId>,
-    ) -> Self {
+impl RepresentationId {
+    pub fn new(representation_node_id: usize, operation_step: Option<usize>) -> Self {
         Self {
-            operation,
-            inputs,
-            outputs,
+            representation_node_id,
+            operation_step,
         }
     }
+}
 
-    pub fn get_operation(&self) -> &Box<dyn Operation> {
-        &self.operation
-    }
+/// # Invariants:
+/// - Graph state has all the alive representations required to compute the output representations
+pub struct GraphState<T> {
+    output_representation_ids: Vec<RepresentationId>,
+    alive_representations: HashMap<RepresentationId, T>, // All representations required to run the remaining operations
+}
 
-    pub fn get_input_ids(&self) -> &Vec<RepresentationId> {
-        &self.inputs
-    }
-
-    pub fn get_output_ids(&self) -> &Vec<RepresentationId> {
-        &self.outputs
+impl<T> GraphState<T> {
+    pub fn new(
+        output_ids: Vec<RepresentationId>,
+        input_representations: HashMap<RepresentationId, T>,
+        graph: &Graph,
+    ) -> Self {
+        // Use the graph to ensure we construct a valid GraphState, i.e., alive representations are
+        // enough to calculate the output representations
+        todo!()
     }
 }
 
+/// A topo-sorted list of operations that transforms representations into representations.
 #[derive(Default, Debug, Clone, Serialize, Deserialize)]
 pub struct Graph {
-    representation_ops: HashMap<RepresentationId, OperationId>, // representation to idx of HashMap
+    representation_ops: HashMap<RepresentationId, OperationId>, // OperationId is the one that produces the RepresentationId
     operation_nodes: Vec<OperationNode>,                        // topo sorted list of operations
 }
 
@@ -132,12 +61,22 @@ impl Graph {
     /// # Arguments
     ///
     /// * `id` - Representation whose producing operation we are trying to retrieve
-    pub fn get_representation_op_id(&self, id: RepresentationId) -> Option<OperationId> {
+    pub fn get_representation_op_id(&self, id: &RepresentationId) -> Option<OperationId> {
         self.representation_ops.get(&id).cloned()
     }
 
-    pub fn get_operation_node(&self, id: OperationId) -> Option<&OperationNode> {
-        self.operation_nodes.get(id)
+    /// Get the ids of the operations that `id` feeds into
+    pub fn get_representation_input_op_ids(&self, id: &RepresentationId) -> Vec<OperationId> {
+        self.operation_nodes
+            .iter()
+            .enumerate()
+            .filter(|(idx, op_node)| op_node.get_input_ids().contains(id))
+            .map(|(idx, _)| idx)
+            .collect::<Vec<_>>()
+    }
+
+    pub fn get_operation_node(&self, id: &OperationId) -> Option<&OperationNode> {
+        self.operation_nodes.get(*id)
     }
 
     pub fn add_operation(
@@ -170,5 +109,45 @@ impl Graph {
         self.operation_nodes.push(node);
 
         Ok(node_id)
+    }
+}
+
+#[derive(Debug)]
+pub enum GraphError {
+    GenericError,
+    AnotherOpProducesOutput,
+}
+
+/// Each RepresentationId is created uniquely by a single OperationNode
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct OperationNode {
+    operation: Box<dyn Operation>,
+    inputs: Vec<RepresentationId>,
+    outputs: Vec<RepresentationId>,
+}
+
+impl OperationNode {
+    pub fn new(
+        operation: Box<dyn Operation>,
+        inputs: Vec<RepresentationId>,
+        outputs: Vec<RepresentationId>,
+    ) -> Self {
+        Self {
+            operation,
+            inputs,
+            outputs,
+        }
+    }
+
+    pub fn get_operation(&self) -> &Box<dyn Operation> {
+        &self.operation
+    }
+
+    pub fn get_input_ids(&self) -> &Vec<RepresentationId> {
+        &self.inputs
+    }
+
+    pub fn get_output_ids(&self) -> &Vec<RepresentationId> {
+        &self.outputs
     }
 }

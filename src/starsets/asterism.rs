@@ -1,6 +1,5 @@
 use crate::bounds::Bounds1;
 use crate::dnn::dnn::DNN;
-use crate::dnn::dnn_iter::DNNIndex;
 use crate::star::Star;
 use crate::star_node::StarNode;
 use crate::star_node::StarNodeType;

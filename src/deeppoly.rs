@@ -1,8 +1,8 @@
 use crate::affine::Affine2;
 use crate::bounds::Bounds1;
 use crate::dnn::dnn::DNN;
-use crate::dnn::dnn_iter::DNNIterator;
 use crate::graph::Engine;
+use crate::graph::RepresentationId;
 use crate::NNVFloat;
 use log::trace;
 use ndarray::Array1;
@@ -126,9 +126,26 @@ pub fn deep_poly_relu(
     (out, (lower_aff, upper_aff))
 }
 
-/// Runs deep poly on an entire network
+/// Runs deep poly on a network starting from a set of given starting nodes
+///
+/// # Description
+///
+/// Approximates output bounds on of a network given input bounds for specific inputs.
+///
+/// # Arguments
+///
+/// * `input_bounds` - The input bounds for each node in `input_nodes`, i.e., each input to the sub-network.
+/// * `dnn` - A reference to the original dnn
+/// * `input_nodes` - The id of the representation of the dnn that each `input_bounds`
+///     entry corresponds to. As such, the size of the vectors should be the same.
+///
 /// # Panics
-pub fn deep_poly(input_bounds: Vec<&Bounds1>, dnn: &DNN, sub_idx: Option<usize>) -> Vec<Bounds1> {
+pub fn deep_poly(
+    input_bounds: &Vec<Bounds1>,
+    dnn: &DNN,
+    input_nodes: Vec<(RepresentationId, Option<usize>, Vec<Bounds1>)>,
+) -> Vec<Bounds1> {
+    debug_assert_eq!(input_bounds.len(), input_nodes.len());
     trace!("with input bounds {:?}", input_bounds);
     debug_assert!(
         input_bounds
@@ -153,76 +170,64 @@ pub fn deep_poly(input_bounds: Vec<&Bounds1>, dnn: &DNN, sub_idx: Option<usize>)
         .collect::<Vec<_>>();
 
     let engine = Engine::new(dnn.get_graph());
-    let visit = |op, inputs| -> (&Bounds1, (Affine2, Affine2)) {
-        let out = idx.get_remaining_steps().map_or_else(
-            || layer.apply_bounds(&bounds_concrete, &laff, &uaff),
-            |dim| layer.apply_bounds_step(dim, &bounds_concrete, &laff, &uaff),
-        );
+
+    let visit = |op: &Box<dyn crate::graph::Operation>,
+                 inputs: Vec<&(Bounds1, (Affine2, Affine2))>,
+                 step: Option<usize>|
+     -> Vec<(Bounds1, (Affine2, Affine2))> {
+        let (bounds_concrete, (laff, uaff)) = inputs.iter().map(|&x| *x).unzip();
+
+        let out = if let Some(dim) = step {
+            op.apply_bounds_step(dim, &bounds_concrete, &laff, &uaff)
+        } else {
+            op.apply_bounds(&bounds_concrete, &laff, &uaff)
+        };
         debug_assert!(
-            out.0
+            out.iter().all(|o| o
+                .0
                 .bounds_iter()
                 .into_iter()
-                .all(|x| (x[[0]] <= x[[1]]) || (x[[0]] - x[[1]]) < 1e-4),
+                .all(|x| (x[[0]] <= x[[1]]) || (x[[0]] - x[[1]]) < 1e-4)),
             "Bounds: {:?}",
-            out.0
+            out.iter().map(|x| x.0).collect::<Vec<_>>()
         );
         if cfg!(debug_assertions) {
-            let lower_bounds = out.1 .0.signed_apply(input_bounds);
-            let upper_bounds = out.1 .1.signed_apply(input_bounds);
-            let realized_abstract_bounds = Bounds1::new(lower_bounds.lower(), upper_bounds.upper());
-            debug_assert!(
-                realized_abstract_bounds.subset(&out.0),
-                "\n\nRealized abstract: {:?}\nConcrete: {:?}\n\n",
-                realized_abstract_bounds,
-                bounds_concrete
-            );
-        }
-        out
-    };
-    engine.run(dnn.get_output_representation_ids().clone(), inputs, visit);
-
-    // Affine expressing bounds on each variable in current layer as a
-    // linear function of input bounds
-    let aff_bounds = dnn_iter.fold(
-        // Initialize with identity
-        (
-            input_bounds.clone(),
-            (Affine2::identity(ndim), Affine2::identity(ndim)),
-        ),
-        |(bounds_concrete, (laff, uaff)), idx| {
-            let layer = dnn.get_layer(idx.layer.unwrap()).unwrap();
-            let out = idx.get_remaining_steps().map_or_else(
-                || layer.apply_bounds(&bounds_concrete, &laff, &uaff),
-                |dim| layer.apply_bounds_step(dim, &bounds_concrete, &laff, &uaff),
-            );
-            debug_assert!(
-                out.0
-                    .bounds_iter()
-                    .into_iter()
-                    .all(|x| (x[[0]] <= x[[1]]) || (x[[0]] - x[[1]]) < 1e-4),
-                "Bounds: {:?}",
-                out.0
-            );
-            if cfg!(debug_assertions) {
-                let lower_bounds = out.1 .0.signed_apply(input_bounds);
-                let upper_bounds = out.1 .1.signed_apply(input_bounds);
+            for o in out {
+                let lower_bounds = o.1 .0.signed_apply(&input_bounds[0]);
+                let upper_bounds = o.1 .1.signed_apply(&input_bounds[0]);
                 let realized_abstract_bounds =
                     Bounds1::new(lower_bounds.lower(), upper_bounds.upper());
                 debug_assert!(
-                    realized_abstract_bounds.subset(&out.0),
+                    realized_abstract_bounds.subset(&o.0),
                     "\n\nRealized abstract: {:?}\nConcrete: {:?}\n\n",
                     realized_abstract_bounds,
                     bounds_concrete
                 );
             }
-            out
-        },
+        }
+        out
+    };
+
+    let aff_bounds = engine.run(
+        dnn.get_output_representation_ids().clone(),
+        inputs,
+        true,
+        visit,
     );
+
     // Final substitution to get output bounds
-    let lower_bounds = aff_bounds.1 .0.signed_apply(input_bounds);
-    let upper_bounds = aff_bounds.1 .1.signed_apply(input_bounds);
-    let bounds = Bounds1::new(lower_bounds.lower(), upper_bounds.upper());
-    debug_assert!(bounds.bounds_iter().into_iter().all(|x| x[[0]] <= x[[1]]));
+    let bounds = aff_bounds
+        .unwrap()
+        .into_iter()
+        .map(|(conc_bounds, (l_bounds, u_bounds))| -> Bounds1 {
+            todo!();
+            // let lower_bounds = l_bounds.signed_apply(input_bounds);
+            // let upper_bounds = u_bounds.signed_apply(input_bounds);
+            // let bounds = Bounds1::new(lower_bounds.lower(), upper_bounds.upper());
+            // debug_assert!(bounds.bounds_iter().into_iter().all(|x| x[[0]] <= x[[1]]));
+            // bounds
+        })
+        .collect::<Vec<_>>();
     bounds
 }
 
@@ -231,7 +236,6 @@ mod tests {
     use super::*;
     use crate::dnn::dense::Dense;
     use crate::dnn::dnn::DNN;
-    use crate::dnn::dnn_iter::DNNIndex;
     use crate::dnn::relu::ReLU;
     use crate::test_util::{bounds1, fc_dnn};
     use ndarray::Array2;
@@ -252,7 +256,7 @@ mod tests {
         );
         let dense2 = Dense::new(aff2);
         let relu2 = ReLU::new(2);
-        let _dnn = DNN::new(vec![
+        let _dnn = DNN::from_sequential(vec![
             Box::new(dense1),
             Box::new(relu1),
             Box::new(dense2),

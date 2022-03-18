@@ -2,8 +2,6 @@
 use crate::bounds::Bounds1;
 use crate::deeppoly::deep_poly;
 use crate::dnn::dnn::DNN;
-use crate::dnn::dnn_iter::DNNIndex;
-use crate::dnn::dnn_iter::DNNIterator;
 use crate::gaussian::GaussianDistribution;
 use crate::num::Float;
 use crate::polytope::Polytope;
@@ -95,8 +93,8 @@ impl StarNodeType {
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct StarNode<D: Dimension> {
-    star: Star<D>,
-    dnn_index: DNNIndex,
+    star: Star<D>,       // TODO: This will be covered by graph state
+    dnn_index: DNNIndex, // TODO: Replace with graph state
     star_cdf: Option<NNVFloat>,
     cdf_delta: NNVFloat,
     axis_aligned_input_bounds: Option<Bounds1>,

@@ -4,6 +4,7 @@
 #![feature(associated_type_bounds)]
 #![feature(generic_associated_types)]
 #![feature(box_syntax)]
+#![feature(let_chains)]
 
 extern crate approx;
 #[cfg(feature = "openblas-system")]
@@ -24,7 +25,7 @@ extern crate truncnorm;
 
 pub mod affine;
 pub mod bounds;
-pub mod deeppoly;
+// pub mod deeppoly;
 pub mod dnn;
 pub mod gaussian;
 pub mod graph;

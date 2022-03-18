@@ -1,6 +1,6 @@
 use crate::affine::Affine2;
 use crate::bounds::Bounds1;
-use crate::dnn::layer::Layer;
+use crate::graph::Operation;
 use crate::star::Star2;
 use crate::star_node::StarNodeType;
 use crate::tensorshape::TensorShape;
@@ -28,40 +28,45 @@ impl Dense {
 }
 
 #[typetag::serde]
-impl Layer for Dense {
-    fn input_shape(&self) -> TensorShape {
-        TensorShape::new(vec![Some(self.aff.input_dim())])
+impl Operation for Dense {
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
     }
 
-    fn output_shape(&self) -> TensorShape {
-        TensorShape::new(vec![Some(self.aff.output_dim())])
-    }
-    fn forward1(&self, input: &Array1<NNVFloat>) -> Array1<NNVFloat> {
-        debug_assert_eq!(input.ndim(), 1);
-        self.aff.apply(&input.view())
+    fn input_shapes(&self) -> Vec<TensorShape> {
+        vec![TensorShape::new(vec![Some(self.aff.input_dim())])]
     }
 
-    fn forward2(&self, input: &Array2<NNVFloat>) -> Array2<NNVFloat> {
-        self.aff.apply_matrix(&input.view())
+    fn output_shapes(&self) -> Vec<TensorShape> {
+        vec![TensorShape::new(vec![Some(self.aff.output_dim())])]
+    }
+    fn forward1(&self, input: &Vec<Array1<NNVFloat>>) -> Vec<Array1<NNVFloat>> {
+        debug_assert_eq!(input.len(), 1);
+        debug_assert_eq!(input[0].ndim(), 1);
+        vec![self.aff.apply(&input[0].view())]
+    }
+
+    fn forward2(&self, input: &Vec<Array2<NNVFloat>>) -> Vec<Array2<NNVFloat>> {
+        vec![self.aff.apply_matrix(&input[0].view())]
     }
 
     fn apply_bounds(
         &self,
-        bounds: &Bounds1,
-        lower_aff: &Affine2,
-        upper_aff: &Affine2,
-    ) -> (Bounds1, (Affine2, Affine2)) {
-        let new_lower = self.aff.signed_compose(lower_aff, upper_aff);
-        let new_upper = self.aff.signed_compose(upper_aff, lower_aff);
-        (self.aff.signed_apply(bounds), (new_lower, new_upper))
+        bounds: &Vec<Bounds1>,
+        lower_aff: &Vec<Affine2>,
+        upper_aff: &Vec<Affine2>,
+    ) -> Vec<(Bounds1, Affine2, Affine2)> {
+        let new_lower = self.aff.signed_compose(&lower_aff[0], &upper_aff[0]);
+        let new_upper = self.aff.signed_compose(&upper_aff[0], &lower_aff[0]);
+        vec![(self.aff.signed_apply(&bounds[0]), new_lower, new_upper)]
     }
 
     fn forward_star(
         &self,
         star: &Star2,
         _activation_idx: Option<usize>,
-        _input_bounds: Option<Bounds1>,
-        _parent_bounds: Option<Bounds1>,
+        _input_bounds: Option<Vec<Bounds1>>,
+        _parent_bounds: Option<Vec<Bounds1>>,
     ) -> (Vec<Star2>, Vec<Option<Bounds1>>, bool) {
         (vec![star.affine_map2(&self.aff)], vec![None], false)
     }
