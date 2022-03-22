@@ -152,7 +152,7 @@ pub trait ProbStarSet2: ProbStarSet<Ix2> + StarSet2 {
         let stability_eps = self.get_stability_eps();
         let max_accept_reject_iters = self.get_max_accept_reject_iters();
         let input_bounds_opt = self.get_input_bounds().clone();
-        self.get_node_mut(node_id).gaussian_sample(
+        let samples = self.get_node_mut(node_id).gaussian_sample(
             rng,
             loc.view(),
             scale.view(),
@@ -161,7 +161,8 @@ pub trait ProbStarSet2: ProbStarSet<Ix2> + StarSet2 {
             initialization_opt.as_ref(),
             stability_eps,
             &input_bounds_opt,
-        )
+        );
+        self.filter_node_member(node_id, samples)
     }
 
     /// # Panics
