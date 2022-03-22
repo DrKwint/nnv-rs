@@ -1,59 +1,72 @@
 [package]
 name = "nnv-rs"
-version = "0.6.0"
+version = "0.6.1"
 edition = "2021"
-description   = "Verification and Statistics on Deep Neural Networks"
-readme        = "README.md"
-repository    = "https://github.com/drkwint/nnv-rs"
-license       = "MIT"
-keywords      = ["ndarray", "statistics", "verification", "machine-learning", "deep-learning"]
-categories    = ["algorithms", "simulation", "science"]
-exclude = [
-    ".github",
+description = "Verification and Statistics on Deep Neural Networks"
+readme = "README.md"
+repository = "https://github.com/drkwint/nnv-rs"
+license = "MIT"
+keywords = [
+    "ndarray",
+    "statistics",
+    "verification",
+    "machine-learning",
+    "deep-learning",
 ]
+categories = ["algorithms", "simulation", "science"]
+exclude = [".github"]
 
 [features]
 lp_coincbc = ["good_lp/coin_cbc", "coin_cbc"]
 lp_gurobi = ["grb"]
 blas_intel-mkl = ["ndarray-linalg/intel-mkl", "truncnorm/intel-mkl"]
-blas_openblas-system = ["ndarray/blas", "blas-src", "openblas-src", "ndarray-linalg/openblas-system", "truncnorm/openblas-system"]
+blas_openblas-system = [
+    "ndarray/blas",
+    "blas-src",
+    "openblas-src",
+    "ndarray-linalg/openblas-system",
+    "truncnorm/openblas-system",
+]
 
 [lib]
 name = "nnv_rs"
 crate-type = ["lib"]
 
 [dependencies]
-approx = "^0.5.0"
+approx = "^0.5.1"
 blas-src = { version = "0.8", features = ["openblas"], optional = true }
 coin_cbc = { version = "^0.1.6", optional = true }
-cfg-if = "1.0.0"
-dyn-clone = "1.0.4"
-float-cmp = "0.9.0"
+cfg-if = "^1.0.0"
+dyn-clone = "^1.0.5"
+float-cmp = "^0.9.0"
 good_lp = { version = "^1.3.1", optional = true }
 grb = { version = "1.3.0", optional = true }
 itertools = "^0.10.3"
-log = "^0.4.14"
+log = "^0.4.16"
 ndarray = { version = "^0.15.4", features = ["serde"] }
 ndarray-linalg = "^0.14.1"
 ndarray-rand = "^0.14.0"
 ndarray-stats = "^0.5.0"
 log4rs = "^1.0.0"
 num = "^0.4.0"
-openblas-src = { version = "^0.10.4", features = ["cblas", "system"], optional = true }
-rand = "^0.8.4"
-truncnorm = "^0.5.0"
+openblas-src = { version = "^0.10.4", features = [
+    "cblas",
+    "system",
+], optional = true }
+rand = "^0.8.5"
+truncnorm = "^0.5.1"
 shh = "^1.0.1"
-ordered-float = "^2.8.0"
-serde = "^1.0.131"
-serde_json ="1.0"
-typetag = "0.1.8"
+ordered-float = "^2.10.0"
+serde = "^1.0.136"
+serde_json = "^1.0.79"
+typetag = "^0.1.8"
 more-asserts = "^0.2.2"
 
 [dev-dependencies]
 proptest = "1.0.0"
-proptest-derive = "0.2.0"
+proptest-derive = "0.3.0"
 criterion = { version = "0.3.5", features = ["html_reports"] }
-pprof = { version = "0.5", features = ["flamegraph", "criterion" ] }
+pprof = { version = "^0.7.0", features = ["flamegraph", "criterion"] }
 rand_pcg = "0.3.1"
 
 [profile.release]

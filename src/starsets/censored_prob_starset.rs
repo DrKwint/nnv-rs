@@ -482,8 +482,8 @@ pub trait CensoredProbStarSet2: CensoredProbStarSet<Ix2> + ProbStarSet2 {
                     fixed_array
                 })
             };
-            let node = self.get_node(current_node);
-            let bounds = self.get_input_bounds().as_ref();
+            let _node = self.get_node(current_node);
+            let _bounds = self.get_input_bounds().as_ref();
             if let Some(fix_part) = fixed_input_part {
                 sample_iter
                     .zip(iter::repeat(fix_part))
