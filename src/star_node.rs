@@ -1,8 +1,8 @@
 #![allow(clippy::module_name_repetitions)]
 use crate::bounds::Bounds1;
-use crate::deeppoly::deep_poly;
-use crate::dnn::dnn::DNN;
+use crate::dnn::DNN;
 use crate::gaussian::GaussianDistribution;
+use crate::graph::OperationId;
 use crate::num::Float;
 use crate::polytope::Polytope;
 use crate::star::Star;
@@ -91,10 +91,22 @@ impl StarNodeType {
     }
 }
 
+/// # Assumptions:
+/// children: Option<Vec<StarNodeId>>: None if not expanded.
+///                           Empty if actually no children, terminal node (does not necessarily mean node is an output).
+///                           1 node for many different options (affine, single child steprelu, etc.)
+///                           Multiple children if adding partition constraints.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct StarNodeRelationship {
+    pub operation_id: OperationId,
+    pub step: Option<usize>,
+    pub input_node_ids: Vec<usize>,
+    pub output_node_ids: Option<Vec<usize>>,
+}
+
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct StarNode<D: Dimension> {
-    star: Star<D>,       // TODO: This will be covered by graph state
-    dnn_index: DNNIndex, // TODO: Replace with graph state
+    star: Star<D>,
     star_cdf: Option<NNVFloat>,
     cdf_delta: NNVFloat,
     axis_aligned_input_bounds: Option<Bounds1>,
@@ -103,14 +115,9 @@ pub struct StarNode<D: Dimension> {
 }
 
 impl<D: Dimension> StarNode<D> {
-    pub fn default(
-        star: Star<D>,
-        axis_aligned_input_bounds: Option<Bounds1>,
-        initial_idx: DNNIndex,
-    ) -> Self {
+    pub fn default(star: Star<D>, axis_aligned_input_bounds: Option<Bounds1>) -> Self {
         Self {
             star,
-            dnn_index: initial_idx,
             star_cdf: None,
             cdf_delta: 0.,
             axis_aligned_input_bounds,
@@ -121,10 +128,6 @@ impl<D: Dimension> StarNode<D> {
 
     pub fn get_star(&self) -> &Star<D> {
         &self.star
-    }
-
-    pub fn get_dnn_index(&self) -> DNNIndex {
-        self.dnn_index
     }
 
     pub fn try_get_cdf(&self) -> Option<NNVFloat> {
@@ -162,7 +165,7 @@ impl StarNode<Ix2> {
         }
     }
 
-    pub fn get_reduced_input_polytope(&self, bounds: &Option<Bounds1>) -> Option<Polytope> {
+    pub fn get_reduced_input_polytope(&self, bounds: &Option<Vec<Bounds1>>) -> Option<Polytope> {
         self.star
             .input_space_polytope()
             .and_then(|x| x.reduce_fixed_inputs(bounds))
@@ -213,7 +216,6 @@ impl StarNode<Ix2> {
         let safe_star = self.star.get_safe_subset(safe_value);
         Self {
             star: safe_star,
-            dnn_index: self.dnn_index,
             star_cdf: None,
             cdf_delta: 0.,
             axis_aligned_input_bounds: None,
@@ -227,7 +229,6 @@ impl StarNode<Ix2> {
         let safe_star = self.star.get_safe_subset(safe_value);
         Self {
             star: safe_star,
-            dnn_index: self.dnn_index,
             star_cdf: None,
             cdf_delta: 0.,
             axis_aligned_input_bounds: None,
@@ -303,15 +304,16 @@ impl StarNode<Ix2> {
         output_fn: &dyn Fn(Bounds1) -> (NNVFloat, NNVFloat),
         outer_input_bounds: &Bounds1,
     ) -> (NNVFloat, NNVFloat) {
-        if self.output_bounds.is_none() {
-            trace!("get_output_bounds on star {:?}", self.star);
-            let dnn_iter = DNNIterator::new(dnn, self.dnn_index);
-            self.output_bounds = Some(output_fn(deep_poly(
-                self.get_axis_aligned_input_bounds(outer_input_bounds),
-                dnn,
-                dnn_iter,
-            )));
-        }
-        self.output_bounds.unwrap()
+        todo!();
+        //     if self.output_bounds.is_none() {
+        //         trace!("get_output_bounds on star {:?}", self.star);
+        //         let dnn_iter = DNNIterator::new(dnn, self.dnn_index);
+        //         self.output_bounds = Some(output_fn(deep_poly(
+        //             self.get_axis_aligned_input_bounds(outer_input_bounds),
+        //             dnn,
+        //             dnn_iter,
+        //         )));
+        //     }
+        //     self.output_bounds.unwrap()
     }
 }

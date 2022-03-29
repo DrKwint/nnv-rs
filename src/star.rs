@@ -94,11 +94,12 @@ impl<D: Dimension> Star<D> {
     #[must_use]
     /// # Panics
     pub fn remove_constraint(mut self, idx: usize) -> Self {
-        if let Some(ref mut constrs) = self.constraints {
-            constrs.remove_eqn(idx);
-        } else {
-            panic!();
-        }
+        self.constraints.as_mut().map_or_else(
+            || {
+                panic!();
+            },
+            |constrs| constrs.remove_eqn(idx),
+        );
         self
     }
 }
@@ -134,12 +135,13 @@ impl Star2 {
         stability_eps: NNVFloat,
         bounds_opt: &Option<Bounds1>,
     ) -> Option<GaussianDistribution> {
-        self.constraints
-            .as_ref()
-            .and_then(|x| x.reduce_fixed_inputs(bounds_opt))
-            .map(|poly| {
-                poly.get_truncnorm_distribution(mu, sigma, max_accept_reject_iters, stability_eps)
-            })
+        todo!();
+        // self.constraints
+        //     .as_ref()
+        //     .and_then(|x| x.reduce_fixed_inputs(bounds_opt))
+        //     .map(|poly| {
+        //         poly.get_truncnorm_distribution(mu, sigma, max_accept_reject_iters, stability_eps)
+        //     })
     }
 
     /// Create a new Star with given dimension.

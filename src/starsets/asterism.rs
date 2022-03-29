@@ -2,6 +2,7 @@ use crate::bounds::Bounds1;
 use crate::dnn::dnn::DNN;
 use crate::star::Star;
 use crate::star_node::StarNode;
+use crate::star_node::StarNodeRelationship;
 use crate::star_node::StarNodeType;
 use crate::starsets::CensoredProbStarSet2;
 use crate::starsets::ProbStarSet;
@@ -10,6 +11,7 @@ use crate::starsets::StarSet;
 use crate::starsets::StarSet2;
 use crate::util::ArenaLike;
 use crate::NNVFloat;
+use itertools::Itertools;
 use ndarray::Array2;
 use ndarray::ArrayView1;
 use ndarray::ArrayView2;
@@ -22,9 +24,12 @@ use super::CensoredProbStarSet;
 pub struct Asterism<D: Dimension> {
     // These are parallel arrays with an entry per node
     arena: Vec<StarNode<D>>,
-    node_type: Vec<Option<StarNodeType>>,
-    parents: Vec<Option<usize>>,
-    feasible: Vec<Option<bool>>, // Nodes are assumed to be feasible until proven otherwise
+    parents: Vec<Vec<usize>>,
+    children: Vec<Option<Vec<usize>>>,
+    producing_relationship: Vec<Option<usize>>,
+    feasible: Vec<Option<bool>>, // Nodes are assumed to be feasible until proven otherwise/*  */
+    // Relationships stores all relationships between nodes
+    relationships: Vec<StarNodeRelationship>,
     // These are values global to the struct
     loc: Array1<NNVFloat>,
     scale: Array2<NNVFloat>,
@@ -49,18 +54,21 @@ impl<D: Dimension> Asterism<D> {
         stability_eps: NNVFloat,
     ) -> Self {
         let arena = {
-            let initial_idx = DNNIndex::default();
-            let star_node = StarNode::default(input_star, None, initial_idx);
+            let star_node = StarNode::default(input_star, None);
             vec![star_node]
         };
-        let node_type = vec![None];
-        let parents = vec![None];
+        let parents = vec![vec![]];
+        let children = vec![None];
+        let producing_relationship = vec![None];
         let feasible = vec![None];
+        let relationships = vec![];
         Self {
             arena,
-            node_type,
             parents,
+            children,
+            producing_relationship,
             feasible,
+            relationships,
             loc,
             scale,
             safe_value,
@@ -83,24 +91,45 @@ impl<D: 'static + Dimension> StarSet<D> for Asterism<D> {
     }
 
     type NI<'a> = std::slice::Iter<'a, StarNode<D>>;
-    fn get_node_iter(&self) -> Self::NI<'_> {
-        self.arena.iter()
-    }
+    // fn get_node_iter(&self) -> Self::NI<'_> {
+    //     self.arena.iter()
+    // }
 
     type NTI<'a> = std::slice::Iter<'a, Option<StarNodeType>>;
-    fn get_node_type_iter(&self) -> Self::NTI<'_> {
-        self.node_type.iter()
-    }
+    // fn get_node_type_iter(&self) -> Self::NTI<'_> {
+    //     self.node_type.iter()
+    // }
 
-    fn add_node(&mut self, node: StarNode<D>, parent_id: usize) -> usize {
-        let child_idx = self.arena.new_node(node);
-        let fst_child_idx = self.node_type.new_node(None);
-        let snd_child_idx = self.parents.new_node(Some(parent_id));
-        let trd_child_idx = self.feasible.new_node(None);
+    fn add_node(&mut self, node: StarNode<D>) -> usize {
+        let child_idx = self.arena.push_node(node);
+        let fst_child_idx = self.parents.push_node(vec![]);
+        let snd_child_idx = self.children.push_node(None);
+        let trd_child_idx = self.producing_relationship.push_node(None);
+        let fth_child_idx = self.feasible.push_node(None);
         debug_assert_eq!(child_idx, fst_child_idx);
         debug_assert_eq!(child_idx, snd_child_idx);
         debug_assert_eq!(child_idx, trd_child_idx);
         child_idx
+    }
+
+    fn add_node_relationship(&mut self, rel: StarNodeRelationship) -> usize {
+        let rel_id = self.relationships.push_node(rel);
+        rel.output_node_ids
+            .unwrap()
+            .iter()
+            .for_each(|&output_id| self.producing_relationship[output_id] = Some(rel_id));
+
+        rel.input_node_ids
+            .iter()
+            .cartesian_product(rel.output_node_ids.unwrap().iter())
+            .for_each(|(&input_id, &output_id)| {
+                self.parents[output_id].push(input_id);
+                if self.children.get(input_id).is_none() {
+                    self.children[input_id] = Some(vec![]);
+                }
+                self.children[input_id].unwrap().push(output_id);
+            });
+        rel_id
     }
 
     fn get_input_bounds(&self) -> &Option<crate::bounds::Bounds1> {
@@ -111,81 +140,135 @@ impl<D: 'static + Dimension> StarSet<D> for Asterism<D> {
         &self.dnn
     }
 
-    fn try_get_node_parent_id(&self, node_id: usize) -> Option<usize> {
-        self.parents[node_id]
-    }
-
-    fn get_node_dnn_index(&self, node_id: usize) -> DNNIndex {
-        self.arena[node_id].get_dnn_index()
-    }
-
-    fn try_get_node_type(&self, node_id: usize) -> &Option<StarNodeType> {
-        &self.node_type[node_id]
-    }
-
-    fn set_node_type(&mut self, node_id: usize, children: StarNodeType) {
-        self.node_type[node_id] = Some(children);
+    fn try_get_node_parent_ids(&self, node_id: usize) -> Option<&Vec<usize>> {
+        self.parents.get(node_id)
     }
 
     fn reset_with_star(&mut self, input_star: Star<D>, input_bounds_opt: Option<Bounds1>) {
         self.arena = {
-            let initial_idx = DNNIndex::default();
-            let star_node = StarNode::default(input_star, None, initial_idx);
+            let star_node = StarNode::default(input_star, None);
             vec![star_node]
         };
-        self.node_type = vec![None];
-        self.parents = vec![None];
+        self.parents = vec![vec![]];
         self.feasible = vec![None];
         self.input_bounds_opt = input_bounds_opt;
+    }
+
+    fn get_parent_nodes(&self, node_id: usize) -> Vec<&StarNode<D>> {
+        self.parents
+            .get(node_id)
+            .unwrap_or(&vec![])
+            .into_iter()
+            .map(|&parent_id| self.get_node(parent_id))
+            .collect::<Vec<_>>()
+    }
+
+    fn get_child_nodes(&self, node_id: usize) -> Option<Vec<&StarNode<D>>> {
+        self.children
+            .get(node_id)
+            .map(|child_ids_opt| {
+                child_ids_opt.map(|child_ids| {
+                    child_ids
+                        .into_iter()
+                        .map(|child_id| self.get_node(child_id))
+                        .collect::<Vec<_>>()
+                })
+            })
+            .unwrap_or(None)
+    }
+
+    fn get_parent_ids(&self, node_id: usize) -> Vec<usize> {
+        self.parents[node_id]
+    }
+
+    fn get_child_ids(&self, node_id: usize) -> Option<Vec<usize>> {
+        self.children[node_id]
+    }
+
+    fn get_creating_relationship(
+        &self,
+        node_id: usize,
+    ) -> Option<&crate::star_node::StarNodeRelationship> {
+        todo!()
+    }
+
+    fn get_node_relationship(&self, rel_id: usize) -> &crate::star_node::StarNodeRelationship {
+        todo!()
+    }
+
+    fn get_node_relationship_mut(
+        &self,
+        rel_id: usize,
+    ) -> &mut crate::star_node::StarNodeRelationship {
+        todo!()
+    }
+
+    fn get_node_producing_relationship_id(&self, node_id: usize) -> usize {
+        todo!()
+    }
+
+    fn get_operation(&self, op_id: &crate::graph::OperationId) -> &dyn crate::graph::Operation {
+        todo!()
+    }
+
+    fn get_operation_node(
+        &self,
+        op_id: &crate::graph::OperationId,
+    ) -> &crate::graph::OperationNode {
+        todo!()
+    }
+
+    fn get_root_id(&self) -> usize {
+        0
     }
 }
 
 impl StarSet2 for Asterism<Ix2> {
-    /// Returns the children of a node
-    ///
-    /// Lazily loads children into the arena and returns a reference to them.
-    ///
-    /// # Arguments
-    ///
-    /// * `self` - The node to expand
-    /// * `node_arena` - The data structure storing star nodes
-    /// * `dnn_iter` - The iterator of operations in the dnn
-    ///
-    /// # Returns
-    /// * `children` - `StarNodeType<T>`
-    ///
-    /// # Panics
-    fn get_node_type(&mut self, node_id: usize) -> &StarNodeType {
-        if self
-            .node_type
-            .get(node_id)
-            .and_then(std::option::Option::as_ref)
-            .is_some()
-        {
-            self.node_type
-                .get(node_id)
-                .and_then(std::option::Option::as_ref)
-                .unwrap()
-        } else {
-            self.expand(node_id)
-        }
-    }
+    // Returns the children of a node
+    //
+    // Lazily loads children into the arena and returns a reference to them.
+    //
+    // # Arguments
+    //
+    // * `self` - The node to expand
+    // * `node_arena` - The data structure storing star nodes
+    // * `dnn_iter` - The iterator of operations in the dnn
+    //
+    // # Returns
+    // * `children` - `StarNodeType<T>`
+    //
+    // # Panics
+    // fn get_node_type(&mut self, node_id: usize) -> &StarNodeType {
+    //     if self
+    //         .node_type
+    //         .get(node_id)
+    //         .and_then(std::option::Option::as_ref)
+    //         .is_some()
+    //     {
+    //         self.node_type
+    //             .get(node_id)
+    //             .and_then(std::option::Option::as_ref)
+    //             .unwrap()
+    //     } else {
+    //         self.expand(node_id)
+    //     }
+    // }
 
-    fn get_node_type_mut(&mut self, node_id: usize) -> &mut StarNodeType {
-        if self
-            .node_type
-            .get(node_id)
-            .and_then(std::option::Option::as_ref)
-            .is_some()
-        {
-            self.node_type
-                .get_mut(node_id)
-                .and_then(std::option::Option::as_mut)
-                .unwrap()
-        } else {
-            self.expand(node_id)
-        }
-    }
+    // fn get_node_type_mut(&mut self, node_id: usize) -> &mut StarNodeType {
+    //     if self
+    //         .node_type
+    //         .get(node_id)
+    //         .and_then(std::option::Option::as_ref)
+    //         .is_some()
+    //     {
+    //         self.node_type
+    //             .get_mut(node_id)
+    //             .and_then(std::option::Option::as_mut)
+    //             .unwrap()
+    //     } else {
+    //         self.expand(node_id)
+    //     }
+    // }
 }
 
 impl<D: 'static + Dimension> ProbStarSet<D> for Asterism<D> {
@@ -226,7 +309,7 @@ impl ProbStarSet2 for Asterism<Ix2> {
         self.scale.view()
     }
 
-    fn set_scale(&mut self, val: Array2<NNVFloat>) {
+    fn set_scale(&mut self, val: Vec<Array2<NNVFloat>>) {
         self.scale = val;
     }
 

@@ -297,11 +297,15 @@ impl Polytope {
 
     /// # Panics
     /// Returns None if the reduced polytope is empty
-    pub fn reduce_fixed_inputs(&self, bounds_opt: &Option<Bounds1>) -> Option<Self> {
+    pub fn reduce_fixed_inputs(&self, bounds_opt: &Option<Vec<Bounds1>>) -> Option<Self> {
         if bounds_opt.is_none() {
             return Some(self.clone());
         }
-        let bounds = bounds_opt.as_ref().unwrap();
+        let bounds = bounds_opt
+            .as_ref()
+            .unwrap()
+            .iter()
+            .fold(Bounds1::default(0), Bounds1::append);
         let fixed_idxs = bounds.fixed_idxs();
         let fixed_vals = bounds.fixed_vals_or_zeros();
 

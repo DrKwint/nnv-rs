@@ -3,7 +3,6 @@ use crate::tensorshape::TensorShape;
 use crate::NNVFloat;
 use ndarray::Array1;
 use ndarray::Array2;
-use ndarray::Axis;
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
@@ -42,13 +41,15 @@ impl DNN {
     }
 
     pub fn from_sequential(layers: Vec<Box<dyn Operation>>) -> Self {
-        let graph = Graph::default();
+        let mut graph = Graph::default();
         for (i, layer) in layers.iter().enumerate() {
-            graph.add_operation(
-                layer.clone(),
-                vec![RepresentationId::new(i, None)],
-                vec![RepresentationId::new(i + 1, None)],
-            );
+            graph
+                .add_operation(
+                    layer.clone(),
+                    vec![RepresentationId::new(i, None)],
+                    vec![RepresentationId::new(i + 1, None)],
+                )
+                .unwrap();
         }
         let input_representation_ids = vec![RepresentationId::new(0, None)];
         let output_representation_ids = vec![RepresentationId::new(layers.len(), None)];
@@ -102,7 +103,7 @@ impl DNN {
     /// `Vec<(num_samples, dimension)>` where each entry is a layer's activations
     pub fn calculate_activation_pattern2(
         &self,
-        inputs: Vec<Array2<NNVFloat>>,
+        _inputs: Vec<Array2<NNVFloat>>,
     ) -> Vec<Array2<bool>> {
         todo!();
         // self.layers
@@ -115,7 +116,7 @@ impl DNN {
         //     .collect()
     }
 
-    pub fn calculate_activation_pattern1(&self, input: &Array1<NNVFloat>) -> Vec<Array1<bool>> {
+    pub fn calculate_activation_pattern1(&self, _input: &Array1<NNVFloat>) -> Vec<Array1<bool>> {
         todo!();
         // self.calculate_activation_pattern2(input.clone().insert_axis(Axis(1)))
         //     .into_iter()
@@ -123,7 +124,7 @@ impl DNN {
         //     .collect()
     }
 
-    pub fn forward1(&self, input: Array1<NNVFloat>) -> Array1<NNVFloat> {
+    pub fn forward1(&self, _input: Array1<NNVFloat>) -> Array1<NNVFloat> {
         todo!();
         // self.layers
         //     .iter()
@@ -132,7 +133,7 @@ impl DNN {
 
     pub fn forward_suffix1(
         &self,
-        input: Array1<NNVFloat>,
+        _input: Array1<NNVFloat>,
         // position: &DNNIndex,
     ) -> Array1<NNVFloat> {
         todo!();
@@ -148,18 +149,18 @@ impl DNN {
         self.input_representation_ids
             .iter()
             .map(|repr_id| {
-                let op_id = self
+                let op_id = *self
                     .graph
                     .get_representation_input_op_ids(repr_id)
                     .first()
                     .unwrap();
-                let op_node = self.graph.get_operation_node(op_id).unwrap();
+                let op_node = self.graph.get_operation_node(&op_id).unwrap();
                 let idx = op_node
                     .get_input_ids()
                     .into_iter()
                     .position(|x| *x == *repr_id)
                     .unwrap();
-                op_node.get_operation().input_shapes()[idx]
+                op_node.get_operation().input_shapes()[idx].clone()
             })
             .collect::<Vec<_>>()
     }
@@ -176,7 +177,7 @@ impl DNN {
                     .into_iter()
                     .position(|x| *x == *repr_id)
                     .unwrap();
-                op_node.get_operation().input_shapes()[idx]
+                op_node.get_operation().input_shapes()[idx].clone()
             })
             .collect::<Vec<_>>()
 

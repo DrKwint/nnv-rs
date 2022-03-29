@@ -8,8 +8,8 @@ use crate::graph::RepresentationId;
 use crate::graph::{Graph, Operation};
 use crate::polytope::Polytope;
 use crate::star::Star2;
-use crate::starsets::Asterism;
-use crate::starsets::Constellation;
+// use crate::starsets::Asterism;
+// use crate::starsets::Constellation;
 use ndarray::Array1;
 use ndarray::Array2;
 use ndarray::Array3;
@@ -105,29 +105,29 @@ prop_compose! {
         }
 }
 
-prop_compose! {
-    pub fn constellation(input_size: usize, output_size: usize, nlayers: usize, max_layer_width: usize)
-        (loc in array1(input_size), scale_diag in pos_def_array1(input_size), dnn in fc_dnn(input_size, output_size, nlayers, max_layer_width)) -> Constellation<Ix2>
-    {
-        let lbs = loc.clone() - 3.5 * scale_diag.clone();
-        let ubs = loc.clone() + 3.5 * scale_diag.clone();
-        let input_bounds = Bounds1::new(lbs.view(), ubs.view());
-        let star = Star2::new(Array2::eye(input_size), Array1::zeros(input_size));
-        Constellation::new(dnn, star, Some(input_bounds), loc, Array2::from_diag(&scale_diag).to_owned(), 4, 100, 1e-10)
-    }
-}
+// prop_compose! {
+//     pub fn constellation(input_size: usize, output_size: usize, nlayers: usize, max_layer_width: usize)
+//         (loc in array1(input_size), scale_diag in pos_def_array1(input_size), dnn in fc_dnn(input_size, output_size, nlayers, max_layer_width)) -> Constellation<Ix2>
+//     {
+//         let lbs = loc.clone() - 3.5 * scale_diag.clone();
+//         let ubs = loc.clone() + 3.5 * scale_diag.clone();
+//         let input_bounds = Bounds1::new(lbs.view(), ubs.view());
+//         let star = Star2::new(Array2::eye(input_size), Array1::zeros(input_size));
+//         Constellation::new(dnn, star, Some(input_bounds), loc, Array2::from_diag(&scale_diag).to_owned(), 4, 100, 1e-10)
+//     }
+// }
 
-prop_compose! {
-    pub fn asterism(input_size: usize, output_size: usize, nlayers: usize, max_layer_width: usize)
-        (loc in array1(input_size), scale_diag in pos_def_array1(input_size), dnn in fc_dnn(input_size, output_size, nlayers, max_layer_width)) -> Asterism<Ix2>
-    {
-        let lbs = loc.clone() - 3.5 * scale_diag.clone();
-        let ubs = loc.clone() + 3.5 * scale_diag.clone();
-        let input_bounds = Bounds1::new(lbs.view(), ubs.view());
-        let star = Star2::new(Array2::eye(input_size), Array1::zeros(input_size));
-        Asterism::new(dnn, star, loc, Array2::from_diag(&scale_diag).to_owned(), 1., Some(input_bounds), 4, 100, 1e-10)
-    }
-}
+// prop_compose! {
+//     pub fn asterism(input_size: usize, output_size: usize, nlayers: usize, max_layer_width: usize)
+//         (loc in array1(input_size), scale_diag in pos_def_array1(input_size), dnn in fc_dnn(input_size, output_size, nlayers, max_layer_width)) -> Asterism<Ix2>
+//     {
+//         let lbs = loc.clone() - 3.5 * scale_diag.clone();
+//         let ubs = loc.clone() + 3.5 * scale_diag.clone();
+//         let input_bounds = Bounds1::new(lbs.view(), ubs.view());
+//         let star = Star2::new(Array2::eye(input_size), Array1::zeros(input_size));
+//         Asterism::new(dnn, star, loc, Array2::from_diag(&scale_diag).to_owned(), 1., Some(input_bounds), 4, 100, 1e-10)
+//     }
+// }
 
 prop_compose! {
     pub fn polytope(num_dims: usize, num_constraints: usize)
@@ -316,23 +316,23 @@ prop_compose! {
     }
 }
 
-prop_compose! {
-    pub fn generic_constellation(max_input_size: usize, max_output_size: usize, max_nlayers: usize, max_layer_width: usize)
-        (input_size in 1..max_input_size, output_size in 1..max_output_size, nlayers in 1..max_nlayers)
-        (constellation in constellation(input_size, output_size, nlayers, max_layer_width)) -> Constellation<Ix2>
-        {
-            constellation
-        }
-}
+// prop_compose! {
+//     pub fn generic_constellation(max_input_size: usize, max_output_size: usize, max_nlayers: usize, max_layer_width: usize)
+//         (input_size in 1..max_input_size, output_size in 1..max_output_size, nlayers in 1..max_nlayers)
+//         (constellation in constellation(input_size, output_size, nlayers, max_layer_width)) -> Constellation<Ix2>
+//         {
+//             constellation
+//         }
+// }
 
-prop_compose! {
-    pub fn generic_asterism(max_input_size: usize, max_output_size: usize, max_nlayers: usize, max_layer_width: usize)
-        (input_size in 1..max_input_size, output_size in 1..max_output_size, nlayers in 1..max_nlayers)
-        (asterism in asterism(input_size, output_size, nlayers, max_layer_width)) -> Asterism<Ix2>
-        {
-            asterism
-        }
-}
+// prop_compose! {
+//     pub fn generic_asterism(max_input_size: usize, max_output_size: usize, max_nlayers: usize, max_layer_width: usize)
+//         (input_size in 1..max_input_size, output_size in 1..max_output_size, nlayers in 1..max_nlayers)
+//         (asterism in asterism(input_size, output_size, nlayers, max_layer_width)) -> Asterism<Ix2>
+//         {
+//             asterism
+//         }
+// }
 
 proptest! {
     #[test]

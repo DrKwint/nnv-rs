@@ -28,10 +28,10 @@ pub trait ProbStarSet2: ProbStarSet<Ix2> + StarSet2 {
         ArrayView2<NNVFloat>,
         &DNN,
     );
-    fn get_loc(&self) -> ArrayView1<NNVFloat>;
-    fn set_loc(&mut self, val: Array1<NNVFloat>);
-    fn get_scale(&self) -> ArrayView2<NNVFloat>;
-    fn set_scale(&mut self, val: Array2<NNVFloat>);
+    fn get_loc(&self) -> Vec<ArrayView1<NNVFloat>>;
+    fn set_loc(&mut self, val: Vec<Array1<NNVFloat>>);
+    fn get_scale(&self) -> Vec<ArrayView2<NNVFloat>>;
+    fn set_scale(&mut self, val: Vec<Array2<NNVFloat>>);
     fn get_max_accept_reject_iters(&self) -> usize;
     fn get_stability_eps(&self) -> NNVFloat;
     fn get_cdf_samples(&self) -> usize;
@@ -64,13 +64,20 @@ pub trait ProbStarSet2: ProbStarSet<Ix2> + StarSet2 {
         self.get_node(node_id).try_get_gaussian_distribution()
     }
 
-    fn sample_root_node<R: Rng>(&self, num_samples: usize, rng: &mut R) -> Array2<NNVFloat> {
-        let input_dim = self.get_loc().len();
-        let mut sample = Array2::random_using((num_samples, input_dim), StandardNormal, rng)
-            * self.get_scale().diag()
-            + self.get_loc();
-        sample.swap_axes(0, 1);
-        sample
+    fn sample_root_node<R: Rng>(&self, num_samples: usize, rng: &mut R) -> Vec<Array2<NNVFloat>> {
+        self.get_loc()
+            .iter()
+            .zip(self.get_scale().iter())
+            .map(|(&loc, &scale)| {
+                let input_dim = self.get_loc().len();
+                let mut sample =
+                    Array2::random_using((num_samples, input_dim), StandardNormal, rng)
+                        * scale.diag()
+                        + loc;
+                sample.swap_axes(0, 1);
+                sample
+            })
+            .collect()
     }
 
     fn get_node_gaussian_distribution(&mut self, node_id: usize) -> &mut GaussianDistribution {
@@ -94,14 +101,21 @@ pub trait ProbStarSet2: ProbStarSet<Ix2> + StarSet2 {
         max_accept_reject_iters: usize,
         stability_eps: NNVFloat,
     ) {
-        let parent_id = self.try_get_node_parent_id(node_id).unwrap();
+        let &first_parent_id = self
+            .try_get_node_parent_ids(node_id)
+            .unwrap()
+            .first()
+            .unwrap();
         let parent_tilting_soln = {
             debug_assert!(
-                self.try_get_node_gaussian_distribution(parent_id).is_some(),
+                self.try_get_node_gaussian_distribution(first_parent_id)
+                    .is_some(),
                 "parent_id: {}",
-                parent_id
+                first_parent_id
             );
-            let parent_distr = self.try_get_node_gaussian_distribution(parent_id).unwrap();
+            let parent_distr = self
+                .try_get_node_gaussian_distribution(first_parent_id)
+                .unwrap();
             // This isn't always the case because the parent may be unconstrained (if it's the root)
             //debug_assert!(parent_distr.try_get_tilting_solution().is_some());
             parent_distr.try_get_tilting_solution().cloned()

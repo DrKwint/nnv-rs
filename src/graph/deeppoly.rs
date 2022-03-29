@@ -2,7 +2,7 @@ use crate::affine::Affine2;
 use crate::bounds::Bounds1;
 use crate::dnn::DNN;
 use crate::graph::{Engine, Operation, RepresentationId};
-use itertools::MultiUnzip;
+use itertools::Itertools;
 use ndarray::{Array1, Array2, Axis, Slice};
 
 /// Calculates the output bounds of the output representations of the suffix `dnn` starting from `input_nodes`
@@ -27,7 +27,7 @@ pub fn deep_poly(dnn: &DNN, input_nodes: Vec<(RepresentationId, Bounds1)>) -> Ve
         // Calculate total input size
         let cum_size: Vec<usize> = input_nodes
             .iter()
-            .scan(0, |state, &(_, bounds)| {
+            .scan(0, |state, (_, bounds)| {
                 *state += bounds.ndim();
                 Some(*state)
             })
@@ -69,10 +69,13 @@ pub fn deep_poly(dnn: &DNN, input_nodes: Vec<(RepresentationId, Bounds1)>) -> Ve
     // op_step is None if nothing has run yet, output None as the step when the entire Op is done
     // This visitor, if a step is taken from None, should increment None -> 0 and then op.num_steps -> None
     let visitor = |op: &dyn Operation,
-                   inputs: Vec<&(Bounds1, Affine2, Affine2)>,
+                   inputs: &Vec<&(Bounds1, Affine2, Affine2)>,
                    op_step: Option<usize>|
      -> (Option<usize>, Vec<(Bounds1, Affine2, Affine2)>) {
-        let (bounds_concrete, laff, uaff) = inputs.iter().map(|&x| *x).multiunzip();
+        let (bounds_concrete, laff, uaff): (Vec<_>, Vec<_>, Vec<_>) = inputs
+            .into_iter()
+            .map(|&tup| (&tup.0, &tup.1, &tup.2))
+            .multiunzip();
         if let Some(step) = op_step {
             let new_step = if (step + 1) == (op.num_steps().unwrap() - 1) {
                 None

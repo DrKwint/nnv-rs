@@ -59,9 +59,9 @@ impl<D: 'static + Dimension> StarSet<D> for VecStarSet<D> {
     }
 
     fn add_node(&mut self, node: StarNode<D>, parent_id: usize) -> usize {
-        let child_idx = self.arena.new_node(node);
-        let other_child_idx = self.node_type.new_node(None);
-        let other_other_child_idx = self.parents.new_node(Some(parent_id));
+        let child_idx = self.arena.push_node(node);
+        let other_child_idx = self.node_type.push_node(None);
+        let other_other_child_idx = self.parents.push_node(Some(parent_id));
         debug_assert_eq!(child_idx, other_child_idx);
         debug_assert_eq!(child_idx, other_other_child_idx);
         child_idx

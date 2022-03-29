@@ -138,11 +138,11 @@ pub fn signed_dot<T: Float + Sum + Debug>(
 }
 
 pub trait ArenaLike<T> {
-    fn new_node(&mut self, data: T) -> usize;
+    fn push_node(&mut self, data: T) -> usize;
 }
 
 impl<T> ArenaLike<T> for Vec<T> {
-    fn new_node(&mut self, data: T) -> usize {
+    fn push_node(&mut self, data: T) -> usize {
         let new_id = self.len();
         self.push(data);
         new_id

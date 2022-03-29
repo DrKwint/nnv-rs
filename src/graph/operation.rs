@@ -1,7 +1,6 @@
 use crate::affine::Affine2;
 use crate::bounds::Bounds1;
-use crate::star::Star2;
-use crate::star_node::StarNodeType;
+// use crate::star::Star2;
 use crate::tensorshape::TensorShape;
 use crate::NNVFloat;
 use dyn_clone::DynClone;
@@ -13,7 +12,7 @@ use std::fmt::{Debug, Display};
 /// State may be simulated with additional inputs/outputs and with a steppable operation. Further, the number of outputs
 /// from a step operation must be equal to the number of outputs from the non-stepped version of the operation.
 #[typetag::serde(tag = "type")]
-pub(crate) trait Operation: DynClone + Display + Debug + Send + Sync {
+pub trait Operation: DynClone + Display + Debug + Send + Sync {
     fn as_any(&self) -> &dyn Any;
 
     fn num_steps(&self) -> Option<usize> {
@@ -28,34 +27,34 @@ pub(crate) trait Operation: DynClone + Display + Debug + Send + Sync {
         panic!()
     }
 
-    fn forward1(&self, input: &Vec<Array1<NNVFloat>>) -> Vec<Array1<NNVFloat>>;
-    fn forward2(&self, input: &Vec<Array2<NNVFloat>>) -> Vec<Array2<NNVFloat>>;
+    fn forward1(&self, input: &[&Array1<NNVFloat>]) -> Vec<Array1<NNVFloat>>;
+    fn forward2(&self, input: &[&Array2<NNVFloat>]) -> Vec<Array2<NNVFloat>>;
     fn apply_bounds(
         &self,
-        bounds: &Vec<Bounds1>,
-        lower_aff: &Vec<Affine2>,
-        upper_aff: &Vec<Affine2>,
+        bounds: &[Bounds1],
+        lower_aff: &[Affine2],
+        upper_aff: &[Affine2],
     ) -> Vec<(Bounds1, Affine2, Affine2)>;
     fn apply_bounds_step(
         &self,
         _dim: usize,
-        _bounds: &Vec<Bounds1>,
-        _lower_aff: &Vec<Affine2>,
-        _upper_aff: &Vec<Affine2>,
+        _bounds: &[Bounds1],
+        _lower_aff: &[Affine2],
+        _upper_aff: &[Affine2],
     ) -> Vec<(Bounds1, Affine2, Affine2)> {
         panic!();
     }
 
     /// Returns the set of children stars with their input_bounds.
     /// In the case that there is one, sets the bool to whether the output bounds can be copied.
-    fn forward_star(
-        &self,
-        star: &Star2,
-        activation_idx: Option<usize>,
-        input_bounds: Option<Vec<Bounds1>>,
-        parent_bounds: Option<Vec<Bounds1>>,
-    ) -> (Vec<Star2>, Vec<Option<Bounds1>>, bool);
-    fn construct_starnodetype(&self, child_ids: &[usize], dim: Option<usize>) -> StarNodeType;
+    // fn forward_star(
+    //     &self,
+    //     star: Vec<&Star2>,
+    //     activation_idx: Option<usize>,
+    //     input_bounds: Option<Bounds1>,
+    //     parent_bounds: Option<Vec<Bounds1>>,
+    // ) -> (Vec<Star2>, Vec<Option<Bounds1>>, bool);
+    // fn construct_starnodetype(&self, child_ids: &[usize], dim: Option<usize>) -> StarNodeType;
 
     fn inputs_dims(&self) -> Vec<usize> {
         self.input_shapes()

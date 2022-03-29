@@ -1,12 +1,15 @@
+use std::collections::HashSet;
 use std::iter;
 
 use crate::bounds::Bounds1;
 use crate::dnn::dnn::DNN;
-use crate::dnn::dnn_iter::DNNIndex;
-use crate::dnn::dnn_iter::DNNIterator;
+use crate::graph::Operation;
+use crate::graph::OperationId;
+use crate::graph::OperationNode;
 use crate::polytope::Polytope;
 use crate::star::Star;
 use crate::star_node::StarNode;
+use crate::star_node::StarNodeRelationship;
 use crate::star_node::StarNodeType;
 use crate::NNVFloat;
 use ndarray::concatenate;
@@ -29,53 +32,73 @@ pub trait StarSet<D: 'static + Dimension> {
 
     fn get_node(&self, node_id: usize) -> &StarNode<D>;
     fn get_node_mut(&mut self, node_id: usize) -> &mut StarNode<D>;
-    fn get_node_iter(&self) -> Self::NI<'_>;
-    fn get_node_type_iter(&self) -> Self::NTI<'_>;
-    fn add_node(&mut self, node: StarNode<D>, parent_id: usize) -> usize;
+    fn get_parent_nodes(&self, node_id: usize) -> Vec<&StarNode<D>>;
+    fn get_child_nodes(&self, node_id: usize) -> Option<Vec<&StarNode<D>>>;
+    fn get_parent_ids(&self, node_id: usize) -> Vec<usize>;
+    fn get_child_ids(&self, node_id: usize) -> Option<Vec<usize>>;
+    // fn get_node_iter(&self) -> Self::NI<'_>;
+    // fn get_node_type_iter(&self) -> Self::NTI<'_>;
+    fn get_creating_relationship(&self, node_id: usize) -> Option<&StarNodeRelationship>;
+    fn add_node(&mut self, node: StarNode<D>) -> usize;
+    fn add_node_relationship(&mut self, rel: StarNodeRelationship) -> usize;
+    fn get_node_relationship(&self, rel_id: usize) -> &StarNodeRelationship;
+    fn get_node_relationship_mut(&self, rel_id: usize) -> &mut StarNodeRelationship;
+    fn get_node_producing_relationship_id(&self, node_id: usize) -> usize;
     fn get_dnn(&self) -> &DNN;
-    fn get_input_bounds(&self) -> &Option<Bounds1>;
-    fn try_get_node_parent_id(&self, node_id: usize) -> Option<usize>;
-    fn get_node_dnn_index(&self, node_id: usize) -> DNNIndex;
-    fn try_get_node_type(&self, node_id: usize) -> &Option<StarNodeType>;
-    fn set_node_type(&mut self, node_id: usize, children: StarNodeType);
+    fn get_operation(&self, op_id: &OperationId) -> &dyn Operation;
+    fn get_operation_node(&self, op_id: &OperationId) -> &OperationNode;
+
+    /// If you have no bounds for a specific input, use the trivial bounds.
+    fn get_input_bounds(&self) -> &Option<Vec<Bounds1>>;
+    fn try_get_node_parent_ids(&self, node_id: usize) -> Option<&Vec<usize>>;
     fn reset_with_star(&mut self, input_star: Star<D>, input_bounds_opt: Option<Bounds1>);
 
     fn get_root_id(&self) -> usize {
         0
     }
 
-    fn is_node_leaf(&self, node_id: usize) -> bool {
-        match *self.try_get_node_type(node_id) {
-            Some(StarNodeType::Leaf { .. }) => true,
-            _ => false,
-        }
+    /// A leaf node returns `Some(vec)` to `get_children` where `vec.is_empty() == true`,
+    /// i.e. all non-leaf nodes have at least one child. Returns None if the node needs to
+    /// first be expanded before testing.
+    fn try_is_node_leaf(&self, node_id: usize) -> Option<bool> {
+        self.get_child_ids(node_id)
+            .map(|child_ids| child_ids.is_empty())
     }
 
+    /// Returns a set of node ids that are all ancestors of `node_id`
     /// # Panics
-    fn get_node_ancestors(&self, node_id: usize) -> Vec<usize> {
-        let mut ancestors = vec![];
-        let mut current_node = Some(node_id);
-        while let Some(idx) = current_node {
-            ancestors.push(idx);
-            current_node = self.try_get_node_parent_id(idx);
+    fn get_node_ancestors(&self, node_id: usize) -> HashSet<usize> {
+        let mut ancestors = HashSet::new();
+        let mut parent_stack = vec![node_id];
+        while let Some(current_id) = parent_stack.pop() {
+            if let Some(parent_ids) = self.try_get_node_parent_ids(current_id) {
+                parent_ids.into_iter().for_each(|&parent_id| {
+                    if !ancestors.contains(&parent_id) {
+                        parent_stack.push(parent_id);
+                        ancestors.insert(parent_id);
+                    }
+                })
+            }
         }
         ancestors
     }
 }
 
 pub trait StarSet2: StarSet<Ix2> {
-    fn get_node_type(&mut self, node_id: usize) -> &StarNodeType;
-    fn get_node_type_mut(&mut self, node_id: usize) -> &mut StarNodeType;
+    // fn get_node_type(&mut self, node_id: usize) -> &StarNodeType;
+    // fn get_node_type_mut(&mut self, node_id: usize) -> &mut StarNodeType;
 
     fn get_node_reduced_input_polytope(&self, node_id: usize) -> Option<Polytope> {
         self.get_node(node_id)
             .get_reduced_input_polytope(self.get_input_bounds())
     }
 
+    /// Checks if `point` is a member of the input space of the star contained by the node
     fn is_node_member(&self, node_id: usize, point: &ArrayView1<NNVFloat>) -> bool {
         self.get_node(node_id).is_input_member(point)
     }
 
+    /// Filters points to only those that are a member of the input set of the node corresponding to `node_id`.
     fn filter_node_member(
         &self,
         node_id: usize,
@@ -113,131 +136,139 @@ pub trait StarSet2: StarSet<Ix2> {
         }
     }
 
-    fn get_node_child_ids(&mut self, node_id: usize) -> Vec<usize> {
-        self.get_node_type(node_id).get_child_ids()
-    }
-
     fn can_node_maximize_output_idx(&self, node_id: usize, class_idx: usize) -> bool {
         self.get_node(node_id)
             .get_star()
             .can_maximize_output_idx(class_idx)
     }
 
-    fn expand(&mut self, node_id: usize) -> &mut StarNodeType {
-        let dnn_index = self.get_node_dnn_index(node_id);
-        let dnn_iter = &mut DNNIterator::new(self.get_dnn(), dnn_index);
+    /// Expands an operation from it's inputs to produce the children
+    ///
+    /// # Description
+    /// Each child node is stored as a separate StarNode in the StarSet. If an operation has multiple steps
+    fn expand(
+        &mut self,
+        operation_id: OperationId,
+        input_node_ids: Vec<usize>,
+    ) -> &mut StarNodeRelationship {
+        let op_node = self.get_operation_node(&operation_id);
+        assert_eq!(op_node.get_input_ids().len(), input_node_ids.len());
+        // let dnn_index = self.get_node_dnn_index(node_id);
+        // let dnn_iter = &mut DNNIterator::new(self.get_dnn(), dnn_index);
 
         // Get this node's operation from the dnn_iter
-        let op_idx = dnn_iter.next();
+        // let op_idx = dnn_iter.next();
 
-        // Do this node's operation to produce its children
-        let children = match op_idx {
-            None => StarNodeType::Leaf {
-                safe_idx: None,
-                unsafe_idx: None,
-            },
-            Some(op_idx) => {
-                let (child_stars, star_input_bounds, same_output_bounds) = match op_idx {
-                    DNNIndex {
-                        layer: Some(idx),
-                        remaining_steps: Some(dim),
-                    } => {
-                        let outer_bounds = &self.get_input_bounds().as_ref().cloned().unwrap();
-                        let parent_bounds = self
-                            .get_node_mut(node_id)
-                            .get_axis_aligned_input_bounds(outer_bounds)
-                            .clone();
-                        let star = self.get_node(node_id).get_star();
-                        let bounds = self.get_input_bounds().clone();
-                        self.get_dnn().get_layer(idx).unwrap().forward_star(
-                            star,
-                            Some(dim),
-                            bounds,
-                            Some(parent_bounds),
-                        )
-                    }
-                    DNNIndex {
-                        layer: Some(idx), ..
-                    } => {
-                        let layer = self.get_dnn().get_layer(idx).unwrap();
-                        layer.forward_star(self.get_node(node_id).get_star(), None, None, None)
-                    }
-                    DNNIndex { layer: None, .. } => panic!(),
-                };
-                debug_assert!(!child_stars.is_empty());
-                debug_assert!(child_stars.len() == star_input_bounds.len());
-                let mut child_ids = vec![];
-                for (star, input_bounds) in
-                    child_stars.into_iter().zip(star_input_bounds.into_iter())
-                {
-                    let node = StarNode::default(star, input_bounds, op_idx);
-                    let id = self.add_node(node, node_id);
-                    child_ids.push(id);
+        let mut operation_step = None;
+
+        if let Some(rel) = self.get_creating_relationship(*input_node_ids.first().unwrap()) {
+            if let Some(step) = rel.step {
+                assert_eq!(operation_id, rel.operation_id);
+                let op = self.get_operation(&rel.operation_id);
+                if let Some(num_steps) = op.num_steps() {
+                    // Continue a stepped operation
+                    operation_step = if step + 2 < num_steps {
+                        Some(step + 1)
+                    } else {
+                        None
+                    };
                 }
-
-                if child_ids.len() == 1 {
-                    if let Some(cdf) = self.get_node(node_id).try_get_cdf() {
-                        self.get_node_mut(child_ids[0]).set_cdf(cdf);
-                    }
-                    if let Some(dist) = self.get_node(node_id).try_get_gaussian_distribution() {
-                        let dist = dist.clone();
-                        self.get_node_mut(child_ids[0])
-                            .set_gaussian_distribution(dist);
-                    }
-
-                    if same_output_bounds {
-                        if let Some(bounds) = self.get_node(node_id).try_get_output_bounds() {
-                            self.get_node_mut(child_ids[0]).set_output_bounds(bounds);
-                        }
-                    }
-                }
-                self.get_dnn()
-                    .get_layer(op_idx.layer.unwrap())
-                    .unwrap()
-                    .construct_starnodetype(&child_ids, op_idx.get_remaining_steps())
             }
-        };
+        }
 
-        self.set_node_type(node_id, children);
-        self.get_node_type_mut(node_id)
+        let outer_bounds = &self.get_input_bounds().as_ref().cloned().unwrap();
+        let parent_bounds = input_node_ids
+            .iter()
+            .map(|&node_id| {
+                self.get_node_mut(node_id)
+                    .get_axis_aligned_input_bounds(outer_bounds)
+                    .clone()
+            })
+            .collect::<Vec<_>>();
+        let stars = input_node_ids
+            .iter()
+            .map(|&node_id| self.get_node(node_id).get_star())
+            .collect::<Vec<_>>();
+        let input_bounds = self.get_input_bounds().clone();
+
+        let (child_stars, child_input_bounds, same_output_bounds) = op_node
+            .get_operation()
+            .forward_star(stars, operation_step, input_bounds, Some(parent_bounds));
+
+        debug_assert!(!child_stars.is_empty());
+        debug_assert!(child_stars.len() == child_input_bounds.len());
+        let mut child_ids = vec![];
+        for (star, input_bounds) in child_stars.into_iter().zip(child_input_bounds.into_iter()) {
+            let node = StarNode::default(star, input_bounds);
+            let id = self.add_node(node);
+            child_ids.push(id);
+        }
+
+        if child_ids.len() == 1 && input_node_ids.len() == 1 {
+            let &parent_id = input_node_ids.first().unwrap();
+            if let Some(cdf) = self.get_node(parent_id).try_get_cdf() {
+                self.get_node_mut(child_ids[0]).set_cdf(cdf);
+            }
+            if let Some(dist) = self.get_node(parent_id).try_get_gaussian_distribution() {
+                let dist = dist.clone();
+                self.get_node_mut(child_ids[0])
+                    .set_gaussian_distribution(dist);
+            }
+
+            if same_output_bounds {
+                if let Some(bounds) = self.get_node(parent_id).try_get_output_bounds() {
+                    self.get_node_mut(child_ids[0]).set_output_bounds(bounds);
+                }
+            }
+        }
+
+        let rel = StarNodeRelationship {
+            operation_id,
+            step: operation_step,
+            input_node_ids,
+            output_node_ids: Some(child_ids),
+        };
+        let rel_id = self.add_node_relationship(rel);
+        self.get_node_relationship_mut(rel_id)
     }
 
     fn run_datum_to_leaf(&mut self, datum: &Array1<NNVFloat>) -> usize {
-        // Run through the input datum
-        let mut current_node_id = self.get_root_id();
-        let mut current_node_type = self.get_node_type(current_node_id).clone();
-        let activation_pattern = self.get_dnn().calculate_activation_pattern1(datum);
-        // For each ReLU layer activation pattern
-        for layer_activations in &activation_pattern {
-            // Go through the Affine
-            if let StarNodeType::Affine { child_idx } = current_node_type {
-                current_node_id = child_idx;
-            }
-            current_node_type = self.get_node_type(current_node_id).clone();
-            // For each activation
-            for activation in layer_activations {
-                // Select a child node based on the activation
-                if let StarNodeType::StepRelu {
-                    dim: _,
-                    fst_child_idx,
-                    snd_child_idx,
-                } = current_node_type
-                {
-                    if *activation {
-                        current_node_id = fst_child_idx;
-                    } else {
-                        current_node_id = snd_child_idx.expect("Error selecting a second child!");
-                    }
-                } else {
-                    panic!("Expected a ReLU layer!");
-                }
-                current_node_type = self.get_node_type(current_node_id).clone();
-            }
-        }
-        if let StarNodeType::Affine { child_idx } = current_node_type {
-            current_node_id = child_idx;
-            // current_node_type = self.get_node_type(current_node_id).clone();
-        }
-        current_node_id
+        todo!();
+        //     // Run through the input datum
+        //     let mut current_node_id = self.get_root_id();
+        //     let mut current_node_type = self.get_node_type(current_node_id).clone();
+        //     let activation_pattern = self.get_dnn().calculate_activation_pattern1(datum);
+        //     // For each ReLU layer activation pattern
+        //     for layer_activations in &activation_pattern {
+        //         // Go through the Affine
+        //         if let StarNodeType::Affine { child_idx } = current_node_type {
+        //             current_node_id = child_idx;
+        //         }
+        //         current_node_type = self.get_node_type(current_node_id).clone();
+        //         // For each activation
+        //         for activation in layer_activations {
+        //             // Select a child node based on the activation
+        //             if let StarNodeType::StepRelu {
+        //                 dim: _,
+        //                 fst_child_idx,
+        //                 snd_child_idx,
+        //             } = current_node_type
+        //             {
+        //                 if *activation {
+        //                     current_node_id = fst_child_idx;
+        //                 } else {
+        //                     current_node_id = snd_child_idx.expect("Error selecting a second child!");
+        //                 }
+        //             } else {
+        //                 panic!("Expected a ReLU layer!");
+        //             }
+        //             current_node_type = self.get_node_type(current_node_id).clone();
+        //         }
+        //     }
+        //     if let StarNodeType::Affine { child_idx } = current_node_type {
+        //         current_node_id = child_idx;
+        //         // current_node_type = self.get_node_type(current_node_id).clone();
+        //     }
+        //     current_node_id
     }
 }

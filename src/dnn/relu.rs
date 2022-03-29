@@ -1,8 +1,8 @@
 use crate::affine::Affine2;
 use crate::bounds::Bounds1;
 use crate::graph::Operation;
-use crate::star::Star2;
-use crate::star_node::StarNodeType;
+//use crate::star::Star2;
+//use crate::star_node::StarNodeType;
 use crate::NNVFloat;
 use ndarray::Array1;
 use ndarray::Array2;
@@ -50,19 +50,19 @@ impl Operation for ReLU {
         vec![self.ndims]
     }
 
-    fn forward1(&self, input: &Vec<Array1<NNVFloat>>) -> Vec<Array1<NNVFloat>> {
+    fn forward1(&self, input: &[&Array1<NNVFloat>]) -> Vec<Array1<NNVFloat>> {
         vec![input[0].mapv(|x| if x.lt(&0.) { 0. } else { x })]
     }
 
-    fn forward2(&self, input: &Vec<Array2<NNVFloat>>) -> Vec<Array2<NNVFloat>> {
+    fn forward2(&self, input: &[&Array2<NNVFloat>]) -> Vec<Array2<NNVFloat>> {
         vec![input[0].mapv(|x| if x.lt(&0.) { 0. } else { x })]
     }
 
     fn apply_bounds(
         &self,
-        bounds: &Vec<Bounds1>,
-        lower_aff: &Vec<Affine2>,
-        upper_aff: &Vec<Affine2>,
+        bounds: &[Bounds1],
+        lower_aff: &[Affine2],
+        upper_aff: &[Affine2],
     ) -> Vec<(Bounds1, Affine2, Affine2)> {
         if (self.ndims + 1) == bounds[0].ndim() {
             vec![deep_poly_relu(&bounds[0], &lower_aff[0], &upper_aff[0])]
@@ -83,9 +83,9 @@ impl Operation for ReLU {
     fn apply_bounds_step(
         &self,
         dim: usize,
-        bounds: &Vec<Bounds1>,
-        lower_aff: &Vec<Affine2>,
-        upper_aff: &Vec<Affine2>,
+        bounds: &[Bounds1],
+        lower_aff: &[Affine2],
+        upper_aff: &[Affine2],
     ) -> Vec<(Bounds1, Affine2, Affine2)> {
         vec![deep_poly_steprelu(
             dim,
@@ -100,6 +100,7 @@ impl Operation for ReLU {
         Some(vec![state[0].mapv(|x| x >= 0.0)])
     }
 
+    /*
     fn forward_star(
         &self,
         star: &Star2,
@@ -155,6 +156,7 @@ impl Operation for ReLU {
             snd_child_idx: child_ids.get(1).copied(),
         }
     }
+    */
 }
 
 /// # Panics

@@ -8,6 +8,7 @@
 //! setup like this to facilitate the use of new representations.
 use super::graph::{Graph, GraphState, OperationId, RepresentationId};
 use super::operation::Operation;
+use super::GraphError;
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::fmt::Debug;
@@ -51,7 +52,7 @@ impl<'a> Engine<'a> {
         &self,
         output_ids: Vec<RepresentationId>,
         inputs: Vec<(RepresentationId, T)>,
-        visit: impl FnMut(&dyn Operation, Vec<&T>, Option<usize>) -> (Option<usize>, Vec<T>),
+        mut visit: impl FnMut(&dyn Operation, &Vec<&T>, Option<usize>) -> (Option<usize>, Vec<T>),
     ) -> Result<Vec<(RepresentationId, T)>, ExecuteError> {
         let mut state = ExecutionState::<T>::default();
 
@@ -72,68 +73,8 @@ impl<'a> Engine<'a> {
 
         // Calculate subgraph and path of operations to perform
         // 1. Walk back through operations BFS
-        let operation_set: HashSet<OperationId> = {
-            // Set of representations that still need to be calculated
-            let mut active_representation_ids = output_ids.clone();
-
-            // set of ops indices required to produce the outputs
-            let mut op_node_set: HashSet<OperationId> = HashSet::new();
-
-            // Set of representations that have already been calculated by some previous op
-            let mut finished_representations: HashSet<RepresentationId> =
-                HashSet::from_iter(inputs.iter().map(|&(id, _)| id));
-
-            while !active_representation_ids.is_empty() {
-                // Get next representation we need
-                let active_repr_id = active_representation_ids
-                    .pop()
-                    .ok_or(ExecuteError::PoppedEmptyStack)?;
-
-                // The active id may already be added to finished representations if the producing
-                // operation has more than one output.
-                if finished_representations.contains(&active_repr_id) {
-                    continue;
-                }
-
-                // If not, try to get it from an operation
-                // `op_id` is the id of the operation that produces `active_repr_id`
-                let op_id = self.graph.get_representation_op_id(&active_repr_id).ok_or(
-                    ExecuteError::NoOpCreatesRepresentation {
-                        repr_id: active_repr_id,
-                    },
-                )?;
-
-                let op_node = self
-                    .graph
-                    .get_operation_node(&op_id)
-                    .ok_or(ExecuteError::OperationNotExist { op_id })?;
-                let op = op_node.get_operation();
-
-                // 1. Input representation is stepped
-                // 2. Output representation is stepped
-                // RepresentationId { node_id: _, step: Some(_) } is a stepped representation
-                // 3. Running is critical to transforming a representation (e.g., building a starset tree)
-
-                op_node_set.insert(op_id);
-                // Handle op outputs
-                if op_node
-                    .get_output_ids()
-                    .iter()
-                    .map(|x| finished_representations.insert(*x))
-                    .any(|x| !x)
-                {
-                    return Err(ExecuteError::AnotherOpProducesOutput { op_id });
-                }
-
-                // Handle op inputs
-                op_node.get_input_ids().iter().for_each(|&input_id| {
-                    if !finished_representations.contains(&input_id) {
-                        active_representation_ids.push(input_id);
-                    }
-                });
-            }
-            op_node_set
-        };
+        let input_ids = inputs.iter().map(|&(id, _)| id).collect::<Vec<_>>();
+        let operation_set = self.graph.get_operation_set(&output_ids, &input_ids)?;
 
         // 2. Order set via the graph's topological ordering.
         let mut op_node_vec: Vec<OperationId> = operation_set.into_iter().map(|x| x).collect();
@@ -158,33 +99,34 @@ impl<'a> Engine<'a> {
             let op = op_node.get_operation();
 
             // If `step_start[output_ids]` exist, then use them and the step.
-            let mut input_ids = op_node
+            let input_ids = op_node
                 .get_output_ids()
                 .iter()
-                .map(|out_id| state.get_step_start(*out_id))
+                .map(|out_id| state.get_step_start(*out_id).copied())
                 .collect::<Option<Vec<_>>>()
                 .unwrap_or(
                     op_node
                         .get_input_ids()
                         .iter()
-                        .map(|x| x)
+                        .map(|&x| x)
                         .collect::<Vec<_>>(),
                 );
-            let mut step = input_ids.first().unwrap().operation_step;
-
-            // Collect input references
-            let mut reprs = input_ids
-                .iter()
-                .map(|&id| state.get_representation(*id))
-                .collect::<Option<Vec<&T>>>()
-                .ok_or(ExecuteError::OneOfRepresentationsNotExist {
-                    repr_ids: op_node.get_input_ids().clone(),
-                })?;
+            let step = input_ids.first().unwrap().operation_step;
 
             // Loop over steps in the operation until the final output is returned.
             loop {
                 // Calculate outputs of (step) operation
-                let (new_step, outputs) = visit(op_node.get_operation().as_ref(), reprs, step);
+                // Representations of each input to `op_node`
+                let (new_step, outputs) = {
+                    let reprs = input_ids
+                        .iter()
+                        .map(|&id| state.get_representation(id))
+                        .collect::<Option<Vec<&T>>>()
+                        .ok_or(ExecuteError::OneOfRepresentationsNotExist {
+                            repr_ids: op_node.get_input_ids().clone(),
+                        })?;
+                    visit(op_node.get_operation().as_ref(), &reprs, step)
+                };
 
                 if outputs.len() != op_node.get_output_ids().len() {
                     return Err(ExecuteError::IncorrectOutputsFromVisitor {
@@ -195,7 +137,7 @@ impl<'a> Engine<'a> {
 
                 // Store outputs
                 for (&repr_id, repr) in op_node.get_output_ids().iter().zip(outputs.into_iter()) {
-                    let repr_id = repr_id.clone();
+                    let mut repr_id = repr_id.clone();
                     repr_id.operation_step = new_step;
                     state.set_representation(repr_id, repr)?;
                 }
@@ -247,8 +189,8 @@ impl<'a> Engine<'a> {
 
     pub fn run_graph_state_to<T: Clone + Debug>(
         &self,
-        state: GraphState<T>,
-        repr_id: RepresentationId,
+        _state: GraphState<T>,
+        _repr_id: RepresentationId,
     ) -> GraphState<T> {
         todo!()
     }
@@ -262,9 +204,9 @@ impl<'a> Engine<'a> {
     /// * `visitor` - Performs the intermediate calculations at each node
     pub fn run_node_visitor<T: Clone + Debug>(
         &self,
-        output_ids: Vec<RepresentationId>,
-        inputs: Vec<(RepresentationId, T)>,
-        visitor: &mut dyn OperationVisitor<T>,
+        _output_ids: Vec<RepresentationId>,
+        _inputs: Vec<(RepresentationId, T)>,
+        _visitor: &mut dyn OperationVisitor<T>,
     ) -> Result<Vec<(RepresentationId, T)>, ExecuteError> {
         todo!();
         // self.run_node_visit(output_ids, inputs, |op, inp| visitor.visit(op, inp))
@@ -287,6 +229,9 @@ impl<'a> Engine<'a> {
 pub enum ExecuteError {
     GenericError,
     PoppedEmptyStack,
+    GraphError {
+        err: GraphError,
+    },
     IncorrectOutputsFromVisitor {
         expected: usize,
         given: usize,
@@ -318,6 +263,12 @@ pub enum ExecuteError {
         new_step: usize,
         last_step: usize,
     },
+}
+
+impl From<GraphError> for ExecuteError {
+    fn from(err: GraphError) -> Self {
+        Self::GraphError { err }
+    }
 }
 
 pub trait OperationVisitor<T: Clone> {
@@ -405,258 +356,45 @@ impl<T: Clone> ExecutionState<T> {
     }
 }
 
-#[derive(Clone, Debug)]
-pub enum StepState<T: Clone + Debug> {
-    Repr(T),                     // A single representation
-    StepRepr(HashMap<usize, T>), // The representations within an operation
-}
+// #[derive(Clone, Debug)]
+// pub enum StepState<T: Clone + Debug> {
+//     Repr(T),                     // A single representation
+//     StepRepr(HashMap<usize, T>), // The representations within an operation
+// }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::affine::Affine2;
-    use crate::bounds::Bounds1;
-    use crate::graph::graph::OperationNode;
-    use crate::star::Star2;
-    use crate::NNVFloat;
-    use ndarray::Array1;
-    use ndarray::Array2;
-    use serde::{Deserialize, Serialize};
-    use std::any::Any;
-    use std::fmt;
-    use std::fmt::Debug;
+// #[cfg(test)]
+// mod tests {
+//     use super::*;
+//     use crate::affine::Affine2;
+//     use crate::bounds::Bounds1;
+//     use crate::graph::graph::OperationNode;
+//     // use crate::star::Star2;
+//     use crate::graph::Operation;
+//     use crate::NNVFloat;
+//     use ndarray::Array1;
+//     use ndarray::Array2;
+//     use serde::{Deserialize, Serialize};
+//     use std::any::Any;
+//     use std::fmt;
+//     use std::fmt::Debug;
 
-    #[derive(Default, Clone, Debug, Serialize, Deserialize)]
-    struct DummyOperation {
-        op_id: OperationId,
-    }
+//     #[derive(Default)]
+//     struct OrderVisitor {
+//         order: Vec<OperationId>,
+//     }
 
-    impl DummyOperation {
-        pub fn new(op_id: OperationId) -> Self {
-            Self { op_id }
-        }
+//     impl OrderVisitor {
+//         pub fn get_order(&self) -> &Vec<OperationId> {
+//             &self.order
+//         }
+//     }
 
-        pub fn get_op_id(&self) -> OperationId {
-            self.op_id
-        }
-    }
+//     impl OperationVisitor<usize> for OrderVisitor {
+//         fn visit(&mut self, operation: &Box<dyn Operation>, _inputs: Vec<&usize>) -> Vec<usize> {
+//             let op = operation.as_any().downcast_ref::<DummyOperation>().unwrap();
+//             self.order.push(op.get_op_id());
+//             vec![0]
+//         }
+//     }
 
-    #[typetag::serde]
-    impl Operation for DummyOperation {
-        fn as_any(&self) -> &dyn Any {
-            self
-        }
-
-        fn num_steps(&self) -> Option<usize> {
-            None
-        }
-
-        fn forward1(&self, input: &Vec<Array1<NNVFloat>>) -> Vec<Array1<NNVFloat>> {
-            todo!()
-        }
-
-        fn forward2(&self, input: &Vec<Array2<NNVFloat>>) -> Vec<Array2<NNVFloat>> {
-            todo!()
-        }
-
-        fn apply_bounds(
-            &self,
-            bounds: &Vec<Bounds1>,
-            lower_aff: &Vec<Affine2>,
-            upper_aff: &Vec<Affine2>,
-        ) -> Vec<(Bounds1, Affine2, Affine2)> {
-            todo!()
-        }
-
-        fn forward_star(
-            &self,
-            star: &Star2,
-            activation_idx: Option<usize>,
-            input_bounds: Option<Vec<Bounds1>>,
-            parent_bounds: Option<Vec<Bounds1>>,
-        ) -> (Vec<Star2>, Vec<Option<Bounds1>>, bool) {
-            todo!()
-        }
-
-        fn construct_starnodetype(
-            &self,
-            child_ids: &[usize],
-            dim: Option<usize>,
-        ) -> crate::star_node::StarNodeType {
-            todo!()
-        }
-
-        fn input_shapes(&self) -> Vec<crate::tensorshape::TensorShape> {
-            panic!()
-        }
-
-        fn output_shapes(&self) -> Vec<crate::tensorshape::TensorShape> {
-            panic!()
-        }
-
-        fn apply_bounds_step(
-            &self,
-            _dim: usize,
-            _bounds: &Vec<Bounds1>,
-            _lower_aff: &Vec<Affine2>,
-            _upper_aff: &Vec<Affine2>,
-        ) -> Vec<(Bounds1, Affine2, Affine2)> {
-            panic!();
-        }
-
-        fn inputs_dims(&self) -> Vec<usize> {
-            self.input_shapes()
-                .into_iter()
-                .map(|input| input.dims())
-                .collect()
-        }
-
-        fn outputs_dims(&self) -> Vec<usize> {
-            self.input_shapes()
-                .into_iter()
-                .map(|output| output.dims())
-                .collect()
-        }
-
-        fn is_activation(&self) -> bool {
-            // This should be implemented in activation layers to return true
-            false
-        }
-
-        fn get_activation_pattern(
-            &self,
-            _state: Vec<&Array2<NNVFloat>>,
-        ) -> Option<Vec<Array2<bool>>> {
-            // This should only be Some in an activation layer (e.g. ReLU)
-            None
-        }
-    }
-
-    impl fmt::Display for DummyOperation {
-        fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-            write!(f, "DummyOp")
-        }
-    }
-
-    #[derive(Default)]
-    struct OrderVisitor {
-        order: Vec<OperationId>,
-    }
-
-    impl OrderVisitor {
-        pub fn get_order(&self) -> &Vec<OperationId> {
-            &self.order
-        }
-    }
-
-    impl OperationVisitor<usize> for OrderVisitor {
-        fn visit(&mut self, operation: &Box<dyn Operation>, _inputs: Vec<&usize>) -> Vec<usize> {
-            let op = operation.as_any().downcast_ref::<DummyOperation>().unwrap();
-            self.order.push(op.get_op_id());
-            vec![0]
-        }
-    }
-
-    #[test]
-    /// Tests the following graph structure where letters indicate tensors and -> indicate operations:
-    /// Repr: A B C D E F
-    /// ID:   0 1 2 3 4 5
-    /// A -> B: Operation 0
-    /// B -> C: Operation 1
-    /// C -> D: Operation 2
-    /// B -> E: Operation 3
-    /// E -> F: Operation 4
-    fn test_y_structure_graph() {
-        let mut graph = Graph::default();
-        let repr_ids = (0..6)
-            .map(|id| RepresentationId::new(id, None))
-            .collect::<Vec<_>>();
-        let op_a_b = OperationNode::new(
-            Box::new(DummyOperation::new(0)),
-            vec![repr_ids[0]],
-            vec![repr_ids[1]],
-        );
-        let op_b_c = OperationNode::new(
-            Box::new(DummyOperation::new(1)),
-            vec![repr_ids[1]],
-            vec![repr_ids[2]],
-        );
-        let op_c_d = OperationNode::new(
-            Box::new(DummyOperation::new(2)),
-            vec![repr_ids[2]],
-            vec![repr_ids[3]],
-        );
-        let op_b_e = OperationNode::new(
-            Box::new(DummyOperation::new(3)),
-            vec![repr_ids[1]],
-            vec![repr_ids[4]],
-        );
-        let op_e_f = OperationNode::new(
-            Box::new(DummyOperation::new(4)),
-            vec![repr_ids[4]],
-            vec![repr_ids[5]],
-        );
-
-        let op_a_b_id_res = graph.add_operation_node(op_a_b);
-        let op_b_c_id_res = graph.add_operation_node(op_b_c);
-        let op_c_d_id_res = graph.add_operation_node(op_c_d);
-        let op_b_e_id_res = graph.add_operation_node(op_b_e);
-        let op_e_f_id_res = graph.add_operation_node(op_e_f);
-
-        assert!(op_a_b_id_res.is_ok());
-        assert!(op_b_c_id_res.is_ok());
-        assert!(op_c_d_id_res.is_ok());
-        assert!(op_b_e_id_res.is_ok());
-        assert!(op_e_f_id_res.is_ok());
-
-        let op_a_b_id = op_a_b_id_res.unwrap();
-        let op_b_c_id = op_b_c_id_res.unwrap();
-        let op_c_d_id = op_c_d_id_res.unwrap();
-        let op_b_e_id = op_b_e_id_res.unwrap();
-        let op_e_f_id = op_e_f_id_res.unwrap();
-
-        assert_eq!(op_a_b_id, 0);
-        assert_eq!(op_b_c_id, 1);
-        assert_eq!(op_c_d_id, 2);
-        assert_eq!(op_b_e_id, 3);
-        assert_eq!(op_e_f_id, 4);
-
-        let engine = Engine::new(&graph);
-
-        {
-            // Test 1: Tests the whole graph
-            let mut visitor = OrderVisitor::default();
-            let run_res = engine.run_node_visitor(
-                vec![repr_ids[3], repr_ids[5]],
-                vec![(repr_ids[0], 0 as usize)],
-                &mut visitor,
-            );
-            assert!(run_res.is_ok(), "{:?}", run_res);
-            assert_eq!(visitor.order, vec![0 as OperationId, 1, 2, 3, 4]);
-        }
-
-        {
-            // Test 2: Tests the subgraph (A -> B, B -> C, B -> E)
-            let mut visitor = OrderVisitor::default();
-            let run_res = engine.run_node_visitor(
-                vec![repr_ids[2], repr_ids[4]],
-                vec![(repr_ids[0], 0 as usize)],
-                &mut visitor,
-            );
-            assert!(run_res.is_ok(), "{:?}", run_res);
-            assert_eq!(visitor.order, vec![0 as OperationId, 1, 3]);
-        }
-
-        {
-            // Test 3: Tests the subgraph (B -> C, C -> D)
-            let mut visitor = OrderVisitor::default();
-            let run_res = engine.run_node_visitor(
-                vec![repr_ids[3]],
-                vec![(repr_ids[1], 0 as usize)],
-                &mut visitor,
-            );
-            assert!(run_res.is_ok(), "{:?}", run_res);
-            assert_eq!(visitor.order, vec![1 as OperationId, 2]);
-        }
-    }
-}
+// }

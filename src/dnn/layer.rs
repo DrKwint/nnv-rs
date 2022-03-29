@@ -1,7 +1,7 @@
 use crate::affine::Affine2;
 use crate::bounds::Bounds1;
-use crate::star::Star2;
-use crate::star_node::StarNodeType;
+//use crate::star::Star2;
+//use crate::star_node::StarNodeType;
 use crate::tensorshape::TensorShape;
 use crate::NNVFloat;
 use dyn_clone::DynClone;
@@ -37,6 +37,7 @@ pub trait Layer: DynClone + Display + Debug + Send + Sync {
         panic!();
     }
 
+    /*
     /// Returns the set of children stars with their input_bounds.
     /// In the case that there is one, sets the bool to whether the output bounds can be copied.
     fn forward_star(
@@ -47,6 +48,7 @@ pub trait Layer: DynClone + Display + Debug + Send + Sync {
         parent_bounds: Option<Bounds1>,
     ) -> (Vec<Star2>, Vec<Option<Bounds1>>, bool);
     fn construct_starnodetype(&self, child_ids: &[usize], dim: Option<usize>) -> StarNodeType;
+    */
 
     fn input_dims(&self) -> usize {
         self.input_shape().dims()
