@@ -99,7 +99,7 @@ impl<'a> Engine<'a> {
             let op = op_node.get_operation();
 
             // If `step_start[output_ids]` exist, then use them and the step.
-            let input_ids = op_node
+            let mut input_ids = op_node
                 .get_output_ids()
                 .iter()
                 .map(|out_id| state.get_step_start(*out_id).copied())
@@ -111,7 +111,7 @@ impl<'a> Engine<'a> {
                         .map(|&x| x)
                         .collect::<Vec<_>>(),
                 );
-            let step = input_ids.first().unwrap().operation_step;
+            let mut step = input_ids.first().unwrap().operation_step;
 
             // Loop over steps in the operation until the final output is returned.
             loop {
@@ -162,6 +162,12 @@ impl<'a> Engine<'a> {
                 // Check if the last representation was given
                 if new_step.is_none() {
                     break;
+                }
+
+                step = new_step;
+
+                if step.unwrap() == 0 {
+                    input_ids = op_node.get_output_ids().clone();
                 }
 
                 // Check if the last representation needed for the outputs was given
@@ -263,6 +269,9 @@ pub enum ExecuteError {
         new_step: usize,
         last_step: usize,
     },
+    StateAlreadyHasRepresentation {
+        rep_id: RepresentationId,
+    },
 }
 
 impl From<GraphError> for ExecuteError {
@@ -347,7 +356,9 @@ impl<T: Clone> ExecutionState<T> {
         // A representation should only ever be set once
         if self.representations.contains_key(&representation_id) {
             // TODO: Specify error
-            Err(ExecuteError::GenericError)
+            Err(ExecuteError::StateAlreadyHasRepresentation {
+                rep_id: representation_id,
+            })
         } else {
             self.representations
                 .insert(representation_id, representation);
@@ -362,39 +373,53 @@ impl<T: Clone> ExecutionState<T> {
 //     StepRepr(HashMap<usize, T>), // The representations within an operation
 // }
 
-// #[cfg(test)]
-// mod tests {
-//     use super::*;
-//     use crate::affine::Affine2;
-//     use crate::bounds::Bounds1;
-//     use crate::graph::graph::OperationNode;
-//     // use crate::star::Star2;
-//     use crate::graph::Operation;
-//     use crate::NNVFloat;
-//     use ndarray::Array1;
-//     use ndarray::Array2;
-//     use serde::{Deserialize, Serialize};
-//     use std::any::Any;
-//     use std::fmt;
-//     use std::fmt::Debug;
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::affine::Affine2;
+    use crate::bounds::Bounds1;
+    use crate::graph::graph::OperationNode;
+    // use crate::star::Star2;
+    use crate::graph::Operation;
+    use crate::test_util::*;
+    use crate::NNVFloat;
+    use proptest::prelude::*;
 
-//     #[derive(Default)]
-//     struct OrderVisitor {
-//         order: Vec<OperationId>,
-//     }
+    proptest! {
+        #[test]
+        fn test_execute_fc_dnn(dnn in fc_dnn(2,2,2,2)) {
+            let engine = Engine::new(dnn.get_graph());
 
-//     impl OrderVisitor {
-//         pub fn get_order(&self) -> &Vec<OperationId> {
-//             &self.order
-//         }
-//     }
+            prop_assert_eq!(1, dnn.get_output_representation_ids().len());
 
-//     impl OperationVisitor<usize> for OrderVisitor {
-//         fn visit(&mut self, operation: &Box<dyn Operation>, _inputs: Vec<&usize>) -> Vec<usize> {
-//             let op = operation.as_any().downcast_ref::<DummyOperation>().unwrap();
-//             self.order.push(op.get_op_id());
-//             vec![0]
-//         }
-//     }
+            let num_steps = 2*2; // 2 relu layers that each have 2 neurons.
+            let inputs = dnn.get_input_representation_ids().into_iter().map(|&id| (id, 0 as usize)).collect::<Vec<_>>();
+            println!("Starting");
+            let res = engine.run(dnn.get_output_representation_ids().clone(), inputs, |op, inputs, step| -> (Option<usize>, Vec<usize>) {
+                println!("Step {:?} {:?} {:?}", op, inputs, step);
+                let outputs = if let Some(num_steps) = op.num_steps() {
+                    let steps = inputs.into_iter().map(|&&x| x + 1).collect();
+                    if let Some(step) = step {
+                        if step + 2 == num_steps {
+                            (None, steps)
+                        } else {
+                            (Some(step + 1), steps)
+                        }
+                    } else {
+                        (Some(0), steps)
+                    }
+                } else {
+                    (None, inputs.into_iter().map(|&&x| x).collect())
+                };
+                println!("Step outputs: {:?}", outputs);
+                outputs
+            });
 
-// }
+            prop_assert!(res.is_ok(), "{:?}", res);
+            let res = res.unwrap();
+            prop_assert_eq!(1, res.len());
+            let calc_steps = res[0].1;
+            prop_assert_eq!(calc_steps, num_steps);
+        }
+    }
+}
