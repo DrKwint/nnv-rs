@@ -3,6 +3,7 @@ use crate::bounds::Bounds1;
 use crate::graph::Operation;
 //use crate::star::Star2;
 //use crate::star_node::StarNodeType;
+use crate::star::Star2;
 use crate::NNVFloat;
 use ndarray::Array1;
 use ndarray::Array2;
@@ -95,22 +96,25 @@ impl Operation for ReLU {
         )]
     }
 
-    fn get_activation_pattern(&self, state: Vec<&Array2<NNVFloat>>) -> Option<Vec<Array2<bool>>> {
+    fn get_activation_pattern(&self, state: &Vec<&Array2<NNVFloat>>) -> Option<Vec<Array2<bool>>> {
         // This should only be Some in an activation layer (e.g. ReLU)
         Some(vec![state[0].mapv(|x| x >= 0.0)])
     }
 
-    /*
     fn forward_star(
         &self,
-        star: &Star2,
+        stars: Vec<&Star2>,
         dim: Option<usize>,
-        input_bounds: Option<Vec<Bounds1>>,
+        input_bounds: Option<Bounds1>,
         parent_bounds: Option<Vec<Bounds1>>,
     ) -> (Vec<Star2>, Vec<Option<Bounds1>>, bool) {
+        assert_eq!(1, stars.len());
+        assert_eq!(1, parent_bounds.as_ref().unwrap().len());
+        let parent_bounds = &parent_bounds.as_ref().unwrap()[0];
+        let star = stars[0];
+
         let dim = dim.unwrap();
-        let child_stars = star.step_relu2(dim, &input_bounds.map(|x| x[0]));
-        let parent_bounds = parent_bounds.unwrap()[0];
+        let child_stars = star.step_relu2(dim, &input_bounds);
         let mut same_output_bounds = false;
         let mut stars = vec![];
         let mut star_input_bounds = vec![];
@@ -131,7 +135,7 @@ impl Operation for ReLU {
         }
 
         if let Some(mut upper_star) = child_stars.1 {
-            let mut bounds = parent_bounds;
+            let mut bounds = parent_bounds.clone();
             let mut lb = bounds.index_mut(dim);
             if lb[0].is_sign_negative() {
                 lb[0] = 0.;
@@ -147,16 +151,6 @@ impl Operation for ReLU {
         }
         (stars, star_input_bounds, same_output_bounds)
     }
-
-    fn construct_starnodetype(&self, child_ids: &[usize], dim: Option<usize>) -> StarNodeType {
-        debug_assert_gt!(child_ids.len(), 0);
-        StarNodeType::StepRelu {
-            dim: dim.unwrap(),
-            fst_child_idx: child_ids[0],
-            snd_child_idx: child_ids.get(1).copied(),
-        }
-    }
-    */
 }
 
 /// # Panics

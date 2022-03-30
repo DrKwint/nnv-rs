@@ -1,8 +1,9 @@
-use crate::graph::{Graph, GraphError, Operation, OperationId, RepresentationId};
+use crate::bounds::Bounds1;
+use crate::graph::{Engine, Graph, GraphError, Operation, OperationId, RepresentationId};
 use crate::tensorshape::TensorShape;
 use crate::NNVFloat;
-use ndarray::Array1;
 use ndarray::Array2;
+use ndarray::{Array1, Axis};
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
@@ -87,60 +88,75 @@ impl DNN {
         &self.graph
     }
 
-    // pub fn get_layer(&self, idx: usize) -> Option<&dyn Layer> {
-    //     self.layers.get(idx).map(Box::as_ref)
-    // }
-
-    // pub fn get_layers(&self) -> &[Box<dyn Layer>] {
-    //     &self.layers
-    // }
-
-    // pub fn iter(&self) -> DNNIterator {
-    //     DNNIterator::new(self, DNNIndex::default())
-    // }
-
     /// # Returns
     /// `Vec<(num_samples, dimension)>` where each entry is a layer's activations
-    pub fn calculate_activation_pattern2(
-        &self,
-        _inputs: Vec<Array2<NNVFloat>>,
-    ) -> Vec<Array2<bool>> {
-        todo!();
-        // self.layers
-        //     .iter()
-        //     .scan(input, |state, layer| {
-        //         *state = layer.forward2(state);
-        //         Some(layer.get_activation_pattern(state))
-        //     })
-        //     .flatten()
-        //     .collect()
+    pub fn calculate_activation_pattern2(&self, inputs: &[Array2<NNVFloat>]) -> Vec<Array2<bool>> {
+        assert_eq!(inputs.len(), self.get_input_representation_ids().len());
+        let mut activation_patterns = vec![];
+        let engine = Engine::new(&self.graph);
+        let inputs = self
+            .get_input_representation_ids()
+            .iter()
+            .zip(inputs.iter())
+            .map(|(&id, input)| (id, input.clone()))
+            .collect::<Vec<_>>();
+        let _ = engine.run(
+            self.get_output_representation_ids().clone(),
+            inputs,
+            |op, inputs, _| -> (Option<usize>, Vec<Array2<NNVFloat>>) {
+                if let Some(pattern) = op.get_activation_pattern(inputs) {
+                    activation_patterns.append(&mut pattern.clone());
+                }
+                (None, op.forward2(inputs))
+            },
+        );
+        activation_patterns
     }
 
-    pub fn calculate_activation_pattern1(&self, _input: &Array1<NNVFloat>) -> Vec<Array1<bool>> {
-        todo!();
-        // self.calculate_activation_pattern2(input.clone().insert_axis(Axis(1)))
-        //     .into_iter()
-        //     .map(|x| x.index_axis(Axis(1), 0).to_owned())
-        //     .collect()
+    pub fn calculate_activation_pattern1(&self, inputs: &[Array1<NNVFloat>]) -> Vec<Array1<bool>> {
+        self.calculate_activation_pattern2(
+            &inputs
+                .iter()
+                .map(|input| input.clone().insert_axis(Axis(1)))
+                .collect::<Vec<_>>(),
+        )
+        .into_iter()
+        .map(|x| x.index_axis(Axis(1), 0).to_owned())
+        .collect()
     }
 
-    pub fn forward1(&self, _input: Array1<NNVFloat>) -> Array1<NNVFloat> {
-        todo!();
-        // self.layers
-        //     .iter()
-        //     .fold(input, |x, layer| layer.forward1(&x))
+    pub fn forward1(&self, inputs: &[Array1<NNVFloat>]) -> Vec<Array1<NNVFloat>> {
+        assert_eq!(inputs.len(), self.get_input_representation_ids().len());
+        let engine = Engine::new(&self.graph);
+        let inputs = self
+            .get_input_representation_ids()
+            .iter()
+            .zip(inputs.iter())
+            .map(|(&id, input)| (id, input.clone()))
+            .collect::<Vec<_>>();
+        let res = engine.run(
+            self.get_output_representation_ids().clone(),
+            inputs,
+            |op: &dyn Operation, inputs, _| -> (Option<usize>, Vec<Array1<NNVFloat>>) {
+                (None, op.forward1(inputs))
+            },
+        );
+        res.unwrap().into_iter().map(|(_, output)| output).collect()
     }
 
     pub fn forward_suffix1(
         &self,
-        _input: Array1<NNVFloat>,
-        // position: &DNNIndex,
-    ) -> Array1<NNVFloat> {
-        todo!();
-        // self.layers
-        //     .iter()
-        //     .skip(position.get_layer_idx())
-        //     .fold(input, |x, layer| layer.forward1(&x))
+        inputs: Vec<(RepresentationId, Array1<NNVFloat>)>,
+    ) -> Vec<Array1<NNVFloat>> {
+        let engine = Engine::new(&self.graph);
+        let res = engine.run(
+            self.get_output_representation_ids().clone(),
+            inputs,
+            |op: &dyn Operation, inputs, _| -> (Option<usize>, Vec<Array1<NNVFloat>>) {
+                (None, op.forward1(inputs))
+            },
+        );
+        res.unwrap().into_iter().map(|(_, output)| output).collect()
     }
 }
 

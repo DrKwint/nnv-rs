@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use crate::graph::Operation;
+use crate::star::Star2;
 use crate::{affine::Affine2, bounds::Bounds1, graph::OperationId, NNVFloat};
 use ndarray::{Array1, Array2};
 use serde::{Deserialize, Serialize};
@@ -41,6 +42,16 @@ impl Operation for DummyOperation {
         _lower_aff: &[Affine2],
         _upper_aff: &[Affine2],
     ) -> Vec<(Bounds1, Affine2, Affine2)> {
+        todo!()
+    }
+
+    fn forward_star(
+        &self,
+        _stars: Vec<&Star2>,
+        _activation_idx: Option<usize>,
+        _input_bounds: Option<Bounds1>,
+        _parent_bounds: Option<Vec<Bounds1>>,
+    ) -> (Vec<Star2>, Vec<Option<Bounds1>>, bool) {
         todo!()
     }
 }

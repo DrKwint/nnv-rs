@@ -1,6 +1,7 @@
 use crate::affine::Affine2;
 use crate::bounds::Bounds1;
 use crate::graph::Operation;
+use crate::star::Star2;
 //use crate::star::Star2;
 //use crate::star_node::StarNodeType;
 use crate::tensorshape::TensorShape;
@@ -61,7 +62,6 @@ impl Operation for Dense {
         vec![(self.aff.signed_apply(&bounds[0]), new_lower, new_upper)]
     }
 
-    /*
     fn forward_star(
         &self,
         stars: Vec<&Star2>,
@@ -72,14 +72,6 @@ impl Operation for Dense {
         assert_eq!(stars.len(), 1);
         (vec![stars[0].affine_map2(&self.aff)], vec![None], false)
     }
-
-    fn construct_starnodetype(&self, child_ids: &[usize], _dim: Option<usize>) -> StarNodeType {
-        debug_assert_eq!(child_ids.len(), 1);
-        StarNodeType::Affine {
-            child_idx: child_ids[0],
-        }
-    }
-    */
 }
 
 impl fmt::Display for Dense {

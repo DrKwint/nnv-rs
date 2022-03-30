@@ -1,5 +1,6 @@
 use crate::affine::Affine2;
 use crate::bounds::Bounds1;
+use crate::star::Star2;
 // use crate::star::Star2;
 use crate::tensorshape::TensorShape;
 use crate::NNVFloat;
@@ -47,14 +48,13 @@ pub trait Operation: DynClone + Display + Debug + Send + Sync {
 
     /// Returns the set of children stars with their input_bounds.
     /// In the case that there is one, sets the bool to whether the output bounds can be copied.
-    // fn forward_star(
-    //     &self,
-    //     star: Vec<&Star2>,
-    //     activation_idx: Option<usize>,
-    //     input_bounds: Option<Bounds1>,
-    //     parent_bounds: Option<Vec<Bounds1>>,
-    // ) -> (Vec<Star2>, Vec<Option<Bounds1>>, bool);
-    // fn construct_starnodetype(&self, child_ids: &[usize], dim: Option<usize>) -> StarNodeType;
+    fn forward_star(
+        &self,
+        stars: Vec<&Star2>,
+        activation_idx: Option<usize>,
+        input_bounds: Option<Bounds1>,
+        parent_bounds: Option<Vec<Bounds1>>,
+    ) -> (Vec<Star2>, Vec<Option<Bounds1>>, bool);
 
     fn inputs_dims(&self) -> Vec<usize> {
         self.input_shapes()
@@ -75,7 +75,7 @@ pub trait Operation: DynClone + Display + Debug + Send + Sync {
         false
     }
 
-    fn get_activation_pattern(&self, _state: Vec<&Array2<NNVFloat>>) -> Option<Vec<Array2<bool>>> {
+    fn get_activation_pattern(&self, _state: &Vec<&Array2<NNVFloat>>) -> Option<Vec<Array2<bool>>> {
         // This should only be Some in an activation layer (e.g. ReLU)
         None
     }

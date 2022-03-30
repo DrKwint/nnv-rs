@@ -3,6 +3,7 @@
 use crate::affine::Affine2;
 use crate::bounds::Bounds1;
 use crate::graph::Operation;
+use crate::star::Star2;
 // use crate::star::Star2;
 use crate::tensorshape::TensorShape;
 use crate::NNVFloat;
@@ -225,22 +226,20 @@ impl Operation for Conv {
         self
     }
 
-    // fn forward_star(
-    //     &self,
-    //     star: &Star2,
-    //     _activation_idx: Option<usize>,
-    //     _input_bounds: Option<Bounds1>,
-    //     _parent_bounds: Option<Bounds1>,
-    // ) -> (Vec<Star2>, Vec<Option<Bounds1>>, bool) {
-    //     (vec![star.affine_map2(self.get_affine())], vec![None], false)
-    // }
-
-    // fn construct_starnodetype(&self, child_ids: &[usize], _dim: Option<usize>) -> StarNodeType {
-    //     debug_assert_eq!(child_ids.len(), 1);
-    //     StarNodeType::Conv {
-    //         child_idx: child_ids[0],
-    //     }
-    // }
+    fn forward_star(
+        &self,
+        stars: Vec<&Star2>,
+        _activation_idx: Option<usize>,
+        _input_bounds: Option<Bounds1>,
+        _parent_bounds: Option<Vec<Bounds1>>,
+    ) -> (Vec<Star2>, Vec<Option<Bounds1>>, bool) {
+        assert_eq!(1, stars.len());
+        (
+            vec![stars[0].affine_map2(self.get_affine())],
+            vec![None],
+            false,
+        )
+    }
 }
 
 impl fmt::Display for Conv {

@@ -1,9 +1,9 @@
 #![cfg(test)]
 
-use crate::affine::Affine2;
 use crate::bounds::Bounds1;
 use crate::graph::Operation;
 use crate::NNVFloat;
+use crate::{affine::Affine2, star::Star2};
 use ndarray::{Array, Array1, Array2};
 use serde::{Deserialize, Serialize};
 use std::{any::Any, fmt};
@@ -33,6 +33,16 @@ impl Operation for SimpleAdd {
         _lower_aff: &[Affine2],
         _upper_aff: &[Affine2],
     ) -> Vec<(Bounds1, Affine2, Affine2)> {
+        todo!()
+    }
+
+    fn forward_star(
+        &self,
+        _stars: Vec<&Star2>,
+        _activation_idx: Option<usize>,
+        _input_bounds: Option<Bounds1>,
+        _parent_bounds: Option<Vec<Bounds1>>,
+    ) -> (Vec<Star2>, Vec<Option<Bounds1>>, bool) {
         todo!()
     }
 }
@@ -70,6 +80,16 @@ impl Operation for SimpleMultiply {
     ) -> Vec<(Bounds1, Affine2, Affine2)> {
         todo!()
     }
+
+    fn forward_star(
+        &self,
+        _stars: Vec<&Star2>,
+        _activation_idx: Option<usize>,
+        _input_bounds: Option<Bounds1>,
+        _parent_bounds: Option<Vec<Bounds1>>,
+    ) -> (Vec<Star2>, Vec<Option<Bounds1>>, bool) {
+        todo!()
+    }
 }
 
 impl fmt::Display for SimpleMultiply {
@@ -101,6 +121,16 @@ impl Operation for SimpleSquare {
         _lower_aff: &[Affine2],
         _upper_aff: &[Affine2],
     ) -> Vec<(Bounds1, Affine2, Affine2)> {
+        todo!()
+    }
+
+    fn forward_star(
+        &self,
+        _stars: Vec<&Star2>,
+        _activation_idx: Option<usize>,
+        _input_bounds: Option<Bounds1>,
+        _parent_bounds: Option<Vec<Bounds1>>,
+    ) -> (Vec<Star2>, Vec<Option<Bounds1>>, bool) {
         todo!()
     }
 }

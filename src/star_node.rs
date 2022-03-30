@@ -104,6 +104,8 @@ pub struct StarNodeRelationship {
     pub output_node_ids: Option<Vec<usize>>,
 }
 
+/// StarNodes exist in a lattice and correspond to a star generated from a prefix of the network along with other calculated properties.
+///
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct StarNode<D: Dimension> {
     star: Star<D>,
@@ -297,23 +299,23 @@ impl StarNode<Ix2> {
         self.axis_aligned_input_bounds.as_ref().unwrap()
     }
 
-    /// # Panics
-    pub fn get_output_bounds(
-        &mut self,
-        dnn: &DNN,
-        output_fn: &dyn Fn(Bounds1) -> (NNVFloat, NNVFloat),
-        outer_input_bounds: &Bounds1,
-    ) -> (NNVFloat, NNVFloat) {
-        todo!();
-        //     if self.output_bounds.is_none() {
-        //         trace!("get_output_bounds on star {:?}", self.star);
-        //         let dnn_iter = DNNIterator::new(dnn, self.dnn_index);
-        //         self.output_bounds = Some(output_fn(deep_poly(
-        //             self.get_axis_aligned_input_bounds(outer_input_bounds),
-        //             dnn,
-        //             dnn_iter,
-        //         )));
-        //     }
-        //     self.output_bounds.unwrap()
-    }
+    // /// # Panics
+    // pub fn get_output_bounds(
+    //     &mut self,
+    //     dnn: &DNN,
+    //     output_fn: &dyn Fn(Bounds1) -> (NNVFloat, NNVFloat),
+    //     outer_input_bounds: &Bounds1,
+    // ) -> (NNVFloat, NNVFloat) {
+    //     todo!();
+    //     //     if self.output_bounds.is_none() {
+    //     //         trace!("get_output_bounds on star {:?}", self.star);
+    //     //         let dnn_iter = DNNIterator::new(dnn, self.dnn_index);
+    //     //         self.output_bounds = Some(output_fn(deep_poly(
+    //     //             self.get_axis_aligned_input_bounds(outer_input_bounds),
+    //     //             dnn,
+    //     //             dnn_iter,
+    //     //         )));
+    //     //     }
+    //     //     self.output_bounds.unwrap()
+    // }
 }
