@@ -1,7 +1,8 @@
 use super::operation::Operation;
+use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
-use std::fmt::Debug;
+use std::fmt::{self, Debug};
 
 /// Unique key for an operation scoped to a Graph.
 pub type OperationId = usize;
@@ -25,6 +26,11 @@ impl RepresentationId {
             representation_node_id,
             operation_step,
         }
+    }
+
+    pub fn with_step(mut self, operation_step: Option<usize>) -> Self {
+        self.operation_step = operation_step;
+        self
     }
 }
 
@@ -67,7 +73,7 @@ impl<T: Debug + Clone> GraphState<T> {
 }
 
 /// A topo-sorted list of operations that transforms representations into representations.
-#[derive(Default, Debug, Clone, Serialize, Deserialize)]
+#[derive(Default, Clone, Serialize, Deserialize)]
 pub struct Graph {
     representation_ops: HashMap<RepresentationId, OperationId>, // OperationId is the one that produces the RepresentationId
     operation_nodes: Vec<OperationNode>,                        // topo sorted list of operations
@@ -296,6 +302,27 @@ impl Graph {
             });
         }
         Ok(op_node_set)
+    }
+}
+
+impl fmt::Debug for Graph {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let repr_ops_str = self
+            .representation_ops
+            .iter()
+            .map(|entry| format!("\t{:?}", entry))
+            .join("\n");
+        let op_strs = self
+            .operation_nodes
+            .iter()
+            .map(|node| format!("\t{:?}", node))
+            .join("\n");
+
+        write!(
+            f,
+            "Graph {{\nrepresentation_ops: \n{}\noperation_nodes: \n{}\n}}",
+            &repr_ops_str, &op_strs
+        )
     }
 }
 

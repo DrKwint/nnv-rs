@@ -169,6 +169,10 @@ impl<'a> Engine<'a> {
                 if step.unwrap() == 0 {
                     input_ids = op_node.get_output_ids().clone();
                 }
+                input_ids = input_ids
+                    .into_iter()
+                    .map(|id| id.clone().with_step(step))
+                    .collect();
 
                 // Check if the last representation needed for the outputs was given
                 for &repr_id in op_node.get_output_ids() {
@@ -376,13 +380,7 @@ impl<T: Clone> ExecutionState<T> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::affine::Affine2;
-    use crate::bounds::Bounds1;
-    use crate::graph::graph::OperationNode;
-    // use crate::star::Star2;
-    use crate::graph::Operation;
     use crate::test_util::*;
-    use crate::NNVFloat;
     use proptest::prelude::*;
 
     proptest! {
@@ -392,12 +390,10 @@ mod tests {
 
             prop_assert_eq!(1, dnn.get_output_representation_ids().len());
 
-            let num_steps = 2*2; // 2 relu layers that each have 2 neurons.
+            let num_steps = 1+1+2;
             let inputs = dnn.get_input_representation_ids().into_iter().map(|&id| (id, 0 as usize)).collect::<Vec<_>>();
-            println!("Starting");
             let res = engine.run(dnn.get_output_representation_ids().clone(), inputs, |op, inputs, step| -> (Option<usize>, Vec<usize>) {
-                println!("Step {:?} {:?} {:?}", op, inputs, step);
-                let outputs = if let Some(num_steps) = op.num_steps() {
+                if let Some(num_steps) = op.num_steps() {
                     let steps = inputs.into_iter().map(|&&x| x + 1).collect();
                     if let Some(step) = step {
                         if step + 2 == num_steps {
@@ -406,13 +402,15 @@ mod tests {
                             (Some(step + 1), steps)
                         }
                     } else {
-                        (Some(0), steps)
+                        if num_steps == 1 {
+                            (None, steps)
+                        } else {
+                            (Some(0), steps)
+                        }
                     }
                 } else {
                     (None, inputs.into_iter().map(|&&x| x).collect())
-                };
-                println!("Step outputs: {:?}", outputs);
-                outputs
+                }
             });
 
             prop_assert!(res.is_ok(), "{:?}", res);
