@@ -12,6 +12,7 @@
 2. Construct an `ExecuteEngine` using the graph.
 3. Construct inputs in the form of `Vec<(RepresentationId, Array1)>`, where the `Array1` value is a flattened tensor.
 4. Call `run` on the engine instance, passing in the desired output `RepresentationId`s and a function that runs each operation on their inputs. An example is show below:
+
 ```
 let res = engine.run(output_ids, inputs, |op, inputs, _| -> (Option<usize>, Vec<Array1>) {
     (None, op.forward1(inputs))
@@ -44,20 +45,36 @@ Branching operations are those that can divide a star's input set (e.g. ReLU) or
 
 ### Prob StarSets
 
-[TODO: talk about stochastic input variables and stochastic operations, as well as what can be calculated with this abstraction]
+Starsets can be interpreted in a probabilistic way. Given a stochastic input variable, we can calculate the likelihood of an output by calculating the likelihood that an input sample falls into the corresponding input set. The other source of stochasticity is the set of probabilistic operations in the DNN (e.g., dropout).
 
 ### Safe StarSets
 
-[TODO: talk about ]
+[TODO]
 
-### Starset Tree
+### DNN and Starset structure
 
-In the case that the DNN is entirely sequential, the Starset will take the form of a tree. Specifically, it will branch at certain operations 
+Let's consider the relationship between DNN representations and Starset stars. At the input representation, there's a 1:1 relationship, but as branching operations are applied, the number of DNN represetations stays constant while the number of stars grows exponentially. Generally, the starset is arranged into a tree, where there is a unique path from the root star to any star in the set. Consider the following diamond DNN where each tensor is of shape `()`:
 
-### Starset Lattice
+```Python
+w = tf.keras.Input()
+x = tf.keras.Linear(w)
+y = tf.keras.Linear(w)
+z = x + y
+```
 
-There is not a 1:1 relationship between starsets and DNN representations.
+The operation graph forms a simple diamond, but the star set will be a little more sophisticated. Let's consider the set of valid representation sets: `{w}, {wx}, {wy}, {xy}, {z}`. This is pretty straightforward, but that's only because the DNN doesn't have any branching operations. Let's now consider the following DNN that adds stepReLUs:
 
-In a sequential model, because there is a single input and single output to every operation, we can work with a starset tree. There is a unique path from root starnode to leaf starnode because every operation must be run sequentially and we only need to worry about one representation at a time (i.e., once we update from R1 -> R2, R1 is obsolete).
+```Python
+a = tf.keras.Input()
+b = tf.keras.Linear(a)
+c = tf.keras.ReLU(b)
+d = tf.keras.Linear(a)
+e = tf.keras.ReLU(d)
+f = c + e
+```
 
-However, in the graph model, we now need to think about branching networks. This means that the
+This network is only slightly more complex in terms of the operation graph, but let's think about what the star set looks like now. The 'H's and 'L's correspond to high and low outputs from the stepReLU operation.
+
+![Starset])(/images/graphviz.svg)
+
+We notice that there are many stars that correspond to the representation produced by a sequence of operations. Specifically, representation `f` has 4 stars corresponding to it. Note, as well, that the input set of some of the stars might be empty. Consider the constraints on `a` included in the `c` and `e` stars. WLOG, assume the `c` threshold is less than the `e` threshold, so the input set of `a` is partitioned into 3 groups. By the pidgeonhole principle, because each `f` star's input set is an intersection of the parent stars', one of the `f` stars must be empty. `f1` and `f4` will have non-empty inputs because they correspond to both `c` and `e` being low and high respectively. The middle set corresponds to the input set of `f3`, the intersection of the `ch` and `el` stars. Thus, `f2`'s input set, the intersection of `cl` and `eh` is empty. In practice, we check whether each star is empty before adding it to the starset, excluding it if that's the case.
