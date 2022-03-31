@@ -323,15 +323,10 @@ impl Polytope {
     /// both lower and upper.
     ///
     /// # Panics
-    pub fn is_empty(&self, bounds_opt: &Option<Bounds1>) -> bool {
+    pub fn is_empty(&self, bounds_opt: Option<&Bounds1>) -> bool {
         let c = Array1::ones(self.num_dims());
 
-        let solved = solve(
-            self.coeffs().rows(),
-            self.rhs(),
-            c.view(),
-            bounds_opt.as_ref(),
-        );
+        let solved = solve(self.coeffs().rows(), self.rhs(), c.view(), bounds_opt);
 
         !matches!(
             solved,

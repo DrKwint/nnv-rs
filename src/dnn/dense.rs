@@ -2,8 +2,6 @@ use crate::affine::Affine2;
 use crate::bounds::Bounds1;
 use crate::graph::Operation;
 use crate::star::Star2;
-//use crate::star::Star2;
-//use crate::star_node::StarNodeType;
 use crate::tensorshape::TensorShape;
 use crate::NNVFloat;
 use ndarray::Array1;
@@ -66,11 +64,15 @@ impl Operation for Dense {
         &self,
         stars: Vec<&Star2>,
         _activation_idx: Option<usize>,
-        _input_bounds: Option<Bounds1>,
-        _parent_bounds: Option<Vec<Bounds1>>,
-    ) -> (Vec<Star2>, Vec<Option<Bounds1>>, bool) {
+        parent_axis_aligned_input_bounds: Vec<&Bounds1>,
+    ) -> (Vec<Star2>, Vec<Bounds1>, bool) {
         assert_eq!(stars.len(), 1);
-        (vec![stars[0].affine_map2(&self.aff)], vec![None], false)
+        assert_eq!(parent_axis_aligned_input_bounds.len(), 1);
+        (
+            vec![stars[0].affine_map2(&self.aff)],
+            vec![parent_axis_aligned_input_bounds[0].clone()],
+            false,
+        )
     }
 }
 

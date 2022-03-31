@@ -230,13 +230,13 @@ impl Operation for Conv {
         &self,
         stars: Vec<&Star2>,
         _activation_idx: Option<usize>,
-        _input_bounds: Option<Bounds1>,
-        _parent_bounds: Option<Vec<Bounds1>>,
-    ) -> (Vec<Star2>, Vec<Option<Bounds1>>, bool) {
+        parent_axis_aligned_input_bounds: Vec<&Bounds1>,
+    ) -> (Vec<Star2>, Vec<Bounds1>, bool) {
         assert_eq!(1, stars.len());
+        assert_eq!(1, parent_axis_aligned_input_bounds.len());
         (
             vec![stars[0].affine_map2(self.get_affine())],
-            vec![None],
+            vec![parent_axis_aligned_input_bounds[0].clone()],
             false,
         )
     }

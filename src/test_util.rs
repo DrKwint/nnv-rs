@@ -82,9 +82,22 @@ prop_compose! {
 }
 
 prop_compose! {
-    pub fn fc_dnn(input_size: usize, output_size: usize, nlayers: usize, max_layer_width: usize)
-        (repr_sizes in Vec::lift1_with(1..max_layer_width,
-                                       SizeRange::new(nlayers..=nlayers))
+    /// Construct a sequential network
+    ///
+    /// # Description
+    ///
+    /// Constructs `n_hidden_layers` hidden layers each with between 1 and `max_layer_width` neurons.
+    ///
+    /// # Arguments
+    ///
+    /// * `input_size` - Input dimension
+    /// * `output_size` - Output dimension
+    /// * `nlayers` - Number of dense/relu layer pairs
+    /// * `max_layer_width` - Maximum number of dimensions in a hidden layer
+    pub fn fc_dnn(input_size: usize, output_size: usize, n_hidden_layers: usize, max_layer_width: usize)
+        // len(repr_sizes) == n_hidden_layers + 2
+        (repr_sizes in Vec::lift1_with(1..max_layer_width+1,
+                                       SizeRange::new(n_hidden_layers..=n_hidden_layers))
          .prop_map(move |mut x| {
              x.insert(0, input_size);
              x.push(output_size);
@@ -237,7 +250,7 @@ prop_compose! {
             constraints in non_empty_polytope(num_dims, num_constraints)
         ) -> Star2 {
             let star = Star2::new(basis, center).with_constraints(constraints);
-            assert!(!star.is_empty(&None));
+            assert!(!star.is_empty(None));
             star
         }
 }
@@ -343,17 +356,17 @@ proptest! {
 
     #[test]
     fn test_empty_polytope(poly in generic_empty_polytope(2, 4)) {
-        prop_assert!(poly.is_empty(&None));
+        prop_assert!(poly.is_empty(None));
     }
 
     #[test]
     fn test_non_empty_polytope(poly in generic_non_empty_polytope(2, 4)) {
-        prop_assert!(!poly.is_empty(&None));
+        prop_assert!(!poly.is_empty(None));
     }
 
     #[test]
     fn test_non_empty_star(star in generic_non_empty_star(2, 4)) {
-        prop_assert!(!star.is_empty(&None));
+        prop_assert!(!star.is_empty(None));
     }
 
     #[test]

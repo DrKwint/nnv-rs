@@ -1,13 +1,11 @@
 #![allow(clippy::module_name_repetitions)]
 use crate::bounds::Bounds1;
-use crate::dnn::DNN;
 use crate::gaussian::GaussianDistribution;
 use crate::graph::OperationId;
 use crate::num::Float;
 use crate::polytope::Polytope;
 use crate::star::Star;
 use crate::NNVFloat;
-use log::trace;
 use ndarray::Array1;
 use ndarray::ArrayView1;
 use ndarray::ArrayView2;
@@ -17,79 +15,6 @@ use rand::Rng;
 use serde::{Deserialize, Serialize};
 use std::fmt::Debug;
 use truncnorm::tilting::TiltingSolution;
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub enum StarNodeType {
-    Interpolate {
-        child_idx: usize,
-    },
-    Leaf {
-        safe_idx: Option<usize>,
-        unsafe_idx: Option<usize>,
-    },
-    Affine {
-        child_idx: usize,
-    },
-    Conv {
-        child_idx: usize,
-    },
-    StepRelu {
-        dim: usize,
-        fst_child_idx: usize,
-        snd_child_idx: Option<usize>,
-    },
-    StepReluDropOut {
-        dim: usize,
-        dropout_prob: NNVFloat,
-        fst_child_idx: usize,
-        snd_child_idx: Option<usize>,
-        trd_child_idx: Option<usize>,
-    },
-}
-
-impl StarNodeType {
-    pub fn get_child_ids(&self) -> Vec<usize> {
-        match self {
-            StarNodeType::Leaf {
-                safe_idx,
-                unsafe_idx,
-            } => IntoIterator::into_iter(vec![safe_idx, unsafe_idx])
-                .filter_map(|&x| x)
-                .collect(),
-            StarNodeType::Affine { child_idx }
-            | StarNodeType::Conv { child_idx }
-            | StarNodeType::Interpolate { child_idx } => {
-                vec![*child_idx]
-            }
-            StarNodeType::StepRelu {
-                dim: _,
-                fst_child_idx,
-                snd_child_idx,
-            } => {
-                let mut child_ids: Vec<usize> = vec![*fst_child_idx];
-                if let Some(idx) = snd_child_idx {
-                    child_ids.push(*idx);
-                }
-                child_ids
-            }
-            StarNodeType::StepReluDropOut {
-                fst_child_idx,
-                snd_child_idx,
-                trd_child_idx,
-                ..
-            } => {
-                let mut child_ids: Vec<usize> = vec![*fst_child_idx];
-                if let Some(idx) = snd_child_idx {
-                    child_ids.push(*idx);
-                }
-                if let Some(idx) = trd_child_idx {
-                    child_ids.push(*idx);
-                }
-                child_ids
-            }
-        }
-    }
-}
 
 /// # Assumptions:
 /// children: Option<Vec<StarNodeId>>: None if not expanded.

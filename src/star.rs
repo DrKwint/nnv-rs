@@ -178,7 +178,7 @@ impl Star2 {
     }
 
     /// Get the dimension of the input space
-    pub fn input_space_dim(&self) -> usize {
+    pub fn input_dim(&self) -> usize {
         self.representation.input_dim()
     }
 
@@ -201,7 +201,7 @@ impl Star2 {
     pub fn step_relu2(
         &self,
         index: usize,
-        input_bounds_opt: &Option<Bounds1>,
+        input_bounds_opt: Option<&Bounds1>,
     ) -> (Option<Self>, Option<Self>) {
         let (coeffs, shift) = {
             let aff = self.representation.get_eqn(index);
@@ -230,7 +230,7 @@ impl Star2 {
     pub fn step_relu2_dropout(
         &self,
         index: usize,
-        input_bounds_opt: &Option<Bounds1>,
+        input_bounds_opt: Option<&Bounds1>,
     ) -> (Option<Self>, Option<Self>, Option<Self>) {
         let mut dropout_star = self.clone();
         dropout_star.representation.zero_eqn(index);
@@ -393,7 +393,7 @@ impl Star2 {
     }
 
     /// Check whether the Star set is empty.
-    pub fn is_empty(&self, input_bounds_opt: &Option<Bounds1>) -> bool {
+    pub fn is_empty(&self, input_bounds_opt: Option<&Bounds1>) -> bool {
         self.constraints
             .as_ref()
             .map_or(false, |x| x.is_empty(input_bounds_opt))

@@ -48,13 +48,26 @@ pub trait Operation: DynClone + Display + Debug + Send + Sync {
 
     /// Returns the set of children stars with their input_bounds.
     /// In the case that there is one, sets the bool to whether the output bounds can be copied.
+    ///
+    /// We pass axis_aligned_input_bounds through each operation because it's very cheap to update and expensive to calculate.
+    ///
+    /// # Arguments
+    ///
+    /// * `parent_stars` - The stars used as input to the operation.
+    /// * `step_id` - The (optional) step of the operation.
+    /// * `axis_aligned_input_bounds` - Optional outer bounds on the entire DNN's input set, must be passed if it's defined on the StarSet
+    ///
+    /// # Returns
+    ///
+    /// * `child_stars` -
+    /// * `children_axis_aligned_input_bounds` -
+    /// * `same_output_bounds` - Whether the children have the same output bounds as the parents. See assumptions above.
     fn forward_star(
         &self,
-        stars: Vec<&Star2>,
-        activation_idx: Option<usize>,
-        input_bounds: Option<Bounds1>,
-        parent_bounds: Option<Vec<Bounds1>>,
-    ) -> (Vec<Star2>, Vec<Option<Bounds1>>, bool);
+        parent_stars: Vec<&Star2>,
+        step_id: Option<usize>,
+        parent_axis_aligned_input_bounds: Vec<&Bounds1>,
+    ) -> (Vec<Star2>, Vec<Bounds1>, bool);
 
     fn inputs_dims(&self) -> Vec<usize> {
         self.input_shapes()

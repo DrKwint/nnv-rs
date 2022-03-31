@@ -11,7 +11,7 @@ pub type OperationId = usize;
 ///
 /// Unique key for a representation scoped to a Graph. I.e., something that is input/output of the graph ops.
 /// E.g., tensors, stars, bounds.
-#[derive(PartialEq, Eq, Debug, Clone, Copy, Serialize, Deserialize, Hash)]
+#[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Clone, Copy, Serialize, Deserialize, Hash)]
 pub struct RepresentationId {
     pub representation_node_id: usize, // usize used as unique key scoped to Graph
     /// If this representation is internal to a stepped operation (i.e. is produced and consumed by that operation),

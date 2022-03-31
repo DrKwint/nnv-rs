@@ -40,9 +40,8 @@ impl Operation for SimpleAdd {
         &self,
         _stars: Vec<&Star2>,
         _activation_idx: Option<usize>,
-        _input_bounds: Option<Bounds1>,
-        _parent_bounds: Option<Vec<Bounds1>>,
-    ) -> (Vec<Star2>, Vec<Option<Bounds1>>, bool) {
+        _parent_axis_aligned_input_bounds: Vec<&Bounds1>,
+    ) -> (Vec<Star2>, Vec<Bounds1>, bool) {
         todo!()
     }
 }
@@ -85,9 +84,8 @@ impl Operation for SimpleMultiply {
         &self,
         _stars: Vec<&Star2>,
         _activation_idx: Option<usize>,
-        _input_bounds: Option<Bounds1>,
-        _parent_bounds: Option<Vec<Bounds1>>,
-    ) -> (Vec<Star2>, Vec<Option<Bounds1>>, bool) {
+        _parent_bounds: Vec<&Bounds1>,
+    ) -> (Vec<Star2>, Vec<Bounds1>, bool) {
         todo!()
     }
 }
@@ -128,9 +126,8 @@ impl Operation for SimpleSquare {
         &self,
         _stars: Vec<&Star2>,
         _activation_idx: Option<usize>,
-        _input_bounds: Option<Bounds1>,
-        _parent_bounds: Option<Vec<Bounds1>>,
-    ) -> (Vec<Star2>, Vec<Option<Bounds1>>, bool) {
+        _parent_bounds: Vec<&Bounds1>,
+    ) -> (Vec<Star2>, Vec<Bounds1>, bool) {
         todo!()
     }
 }
