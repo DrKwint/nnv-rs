@@ -114,7 +114,7 @@ prop_compose! {
                 layers.push(Box::new(Dense::new(aff.clone())));
                 layers.push(Box::new(ReLU::new(output_dim)));
             }
-            DNN::from_sequential(layers)
+            DNN::from_sequential(&layers)
         }
 }
 

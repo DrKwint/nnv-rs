@@ -88,7 +88,7 @@ pub trait Operation: DynClone + Display + Debug + Send + Sync {
         false
     }
 
-    fn get_activation_pattern(&self, _state: &Vec<&Array2<NNVFloat>>) -> Option<Vec<Array2<bool>>> {
+    fn get_activation_pattern(&self, _state: &[&Array2<NNVFloat>]) -> Option<Vec<Array2<bool>>> {
         // This should only be Some in an activation layer (e.g. ReLU)
         None
     }

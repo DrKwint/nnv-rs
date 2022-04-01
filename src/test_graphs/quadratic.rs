@@ -74,7 +74,7 @@ proptest! {
         let engine = Engine::new(&graph);
         let run_res = engine.run(
             vec![repr_ids[8]],
-            vec![(repr_ids[0], x.clone()), (repr_ids[1], a.clone()), (repr_ids[2], b.clone()), (repr_ids[3], c.clone())],
+            &vec![(repr_ids[0], x.clone()), (repr_ids[1], a.clone()), (repr_ids[2], b.clone()), (repr_ids[3], c.clone())],
             |operation: &dyn Operation, input, _| -> (Option<usize>, Vec<Array1<NNVFloat>>) {
                 let output = operation.forward1(input);
                 (None, output)

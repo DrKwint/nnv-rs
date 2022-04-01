@@ -1,6 +1,7 @@
 #![warn(clippy::all, clippy::pedantic, clippy::nursery, clippy::cargo)]
 #![allow(clippy::must_use_candidate)]
 #![allow(clippy::similar_names)]
+#![allow(clippy::too_many_arguments)]
 #![feature(binary_heap_into_iter_sorted)]
 #![feature(associated_type_bounds)]
 #![feature(generic_associated_types)]
@@ -11,7 +12,6 @@ extern crate approx;
 #[cfg(feature = "openblas-system")]
 extern crate blas_src;
 extern crate itertools;
-#[macro_use]
 extern crate more_asserts;
 extern crate ndarray;
 extern crate ndarray_linalg;

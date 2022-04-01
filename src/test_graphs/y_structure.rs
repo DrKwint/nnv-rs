@@ -49,7 +49,7 @@ fn test_y_structure_graph_whole_graph() {
     let mut order = vec![];
     let run_res = engine.run(
         vec![repr_ids[3], repr_ids[5]],
-        vec![(repr_ids[0], 0 as usize)],
+        &vec![(repr_ids[0], 0 as usize)],
         |operation: &dyn Operation, _, _| -> (Option<usize>, Vec<usize>) {
             let op = operation.as_any().downcast_ref::<DummyOperation>().unwrap();
             order.push(op.get_op_id());
@@ -68,7 +68,7 @@ fn test_y_structure_subgraph() {
     let mut order = vec![];
     let run_res = engine.run(
         vec![repr_ids[2], repr_ids[4]],
-        vec![(repr_ids[0], 0 as usize)],
+        &vec![(repr_ids[0], 0 as usize)],
         |operation: &(dyn Operation), _, _| -> (Option<usize>, Vec<usize>) {
             let op = operation.as_any().downcast_ref::<DummyOperation>().unwrap();
             order.push(op.get_op_id());
@@ -86,7 +86,7 @@ fn test_y_structure_short_sub() {
     let mut order = vec![];
     let run_res = engine.run(
         vec![repr_ids[3]],
-        vec![(repr_ids[1], 0 as usize)],
+        &vec![(repr_ids[1], 0 as usize)],
         |operation: &(dyn Operation), _, _| -> (Option<usize>, Vec<usize>) {
             let op = operation.as_any().downcast_ref::<DummyOperation>().unwrap();
             order.push(op.get_op_id());

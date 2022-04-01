@@ -1,5 +1,5 @@
 use super::new_starset::{StarId, StarRelationship, StarRelationshipId, StarSet, StarSet2};
-use crate::bounds::Bounds1;
+use crate::bounds::{Bounds, Bounds1};
 use crate::dnn::DNN;
 use crate::graph::RepresentationId;
 use crate::star::Star;
@@ -11,21 +11,25 @@ use serde::{Deserialize, Serialize};
 pub struct GraphStarset<D: 'static + Dimension> {
     /// The network for which the starset is generated
     dnn: DNN,
+    // Parallel arrays
     /// Storage structure for stars
     arena: Vec<Star<D>>,
     /// The RepresentationId that each star represents
-    star_representation_map: Vec<RepresentationId>,
+    representations: Vec<RepresentationId>,
+    input_bounds: Vec<Bounds<D>>,
+
     /// The relationships between stars, includes the associated graph operation
     relationships: Vec<StarRelationship>,
 }
 
 impl<D: Dimension> GraphStarset<D> {
-    pub fn new(dnn: DNN, input_star: Star<D>) -> Self {
+    pub fn new(dnn: DNN, input_star: Star<D>, input_bounds: Bounds<D>) -> Self {
         Self {
-            arena: vec![input_star],
-            star_representation_map: vec![RepresentationId::new(0, None)],
-            relationships: vec![],
             dnn,
+            arena: vec![input_star],
+            representations: vec![RepresentationId::new(0, None)],
+            input_bounds: vec![input_bounds],
+            relationships: vec![],
         }
     }
 }
@@ -36,7 +40,7 @@ impl<D: 'static + Dimension> StarSet<D> for GraphStarset<D> {
     }
 
     fn get_star_representation_id(&self, star_id: usize) -> RepresentationId {
-        self.star_representation_map[star_id]
+        self.representations[star_id]
     }
 
     fn get_graph(&self) -> &crate::graph::Graph {
@@ -56,8 +60,8 @@ impl<D: 'static + Dimension> StarSet<D> for GraphStarset<D> {
     fn add_star(&mut self, star: Star<D>, representation_id: RepresentationId) -> StarId {
         let star_id = self.arena.len();
         self.arena.push(star);
-        self.star_representation_map.push(representation_id);
-        assert_eq!(self.arena.len(), self.star_representation_map.len());
+        self.representations.push(representation_id);
+        assert_eq!(self.arena.len(), self.representations.len());
         star_id
     }
 
@@ -77,13 +81,8 @@ impl StarSet2 for GraphStarset<Ix2> {
         self.arena[0].input_dim()
     }
 
-    /// Get the fixed part of the input
-    fn get_input_bounds(&self, star_id: StarId) -> Bounds1 {
-        todo!();
-    }
-
     /// TODO: Implement with a cache because it is expensive
-    fn get_axis_aligned_input_bounds(&self, star_id: StarId, outer_bounds: &Bounds1) -> &Bounds1 {
-        todo!();
+    fn get_axis_aligned_input_bounds(&self, star_id: StarId) -> &Bounds1 {
+        &self.input_bounds[star_id]
     }
 }

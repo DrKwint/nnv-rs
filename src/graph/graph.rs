@@ -21,14 +21,15 @@ pub struct RepresentationId {
 }
 
 impl RepresentationId {
-    pub fn new(representation_node_id: usize, operation_step: Option<usize>) -> Self {
+    pub const fn new(representation_node_id: usize, operation_step: Option<usize>) -> Self {
         Self {
             representation_node_id,
             operation_step,
         }
     }
 
-    pub fn with_step(mut self, operation_step: Option<usize>) -> Self {
+    #[must_use]
+    pub const fn with_step(mut self, operation_step: Option<usize>) -> Self {
         self.operation_step = operation_step;
         self
     }
@@ -86,7 +87,7 @@ impl Graph {
     ///
     /// * `id` - Representation whose producing operation we are trying to retrieve
     pub fn get_representation_op_id(&self, id: &RepresentationId) -> Option<OperationId> {
-        self.representation_ops.get(&id).cloned()
+        self.representation_ops.get(id).copied()
     }
 
     /// Get the ids of the operations that `id` feeds into.
@@ -104,7 +105,7 @@ impl Graph {
                 .map(|(idx, _)| idx)
                 .collect::<Vec<_>>()
         } else {
-            let mut id_no_step = id.clone();
+            let mut id_no_step = *id;
             id_no_step.operation_step = None;
             self.operation_nodes
                 .iter()
@@ -119,6 +120,8 @@ impl Graph {
         self.operation_nodes.get(*id)
     }
 
+    /// # Errors
+    /// TODO
     pub fn add_operation(
         &mut self,
         op: Box<dyn Operation>,
@@ -134,6 +137,9 @@ impl Graph {
     /// # Arguments
     ///
     /// * `node`: The node to add
+    ///
+    /// # Errors
+    /// TODO
     pub fn add_operation_node(&mut self, node: OperationNode) -> Result<OperationId, GraphError> {
         let node_id = self.operation_nodes.len();
 
@@ -142,7 +148,7 @@ impl Graph {
             .iter()
             .map(|&id| self.representation_ops.insert(id, node_id))
             .filter(|&old_id| old_id.is_some())
-            .map(|old_id| old_id.unwrap())
+            .map(std::option::Option::unwrap)
             .next()
         {
             return Err(GraphError::AnotherOpProducesOutput { op_id });
@@ -154,31 +160,28 @@ impl Graph {
     }
 
     /// Given a `GraphState`, finds the next operation to perform in the graph
+    ///
+    /// # Panics
     pub fn get_next_operation<T: Clone + Debug>(
         &self,
         state: &GraphState<T>,
     ) -> (OperationId, Option<usize>) {
         // 1. Collect all operations that take the alive representations as input
-        let possible_ops = state
-            .alive_representations
-            .iter()
-            .map(|(repr_id, _)| {
-                self.get_representation_input_op_ids(repr_id)
-                    .into_iter()
-                    .map(|op_id| (op_id, *repr_id))
-            })
-            .flatten()
-            .collect::<Vec<_>>();
+        let possible_ops = state.alive_representations.iter().flat_map(|(repr_id, _)| {
+            self.get_representation_input_op_ids(repr_id)
+                .into_iter()
+                .map(|op_id| (op_id, *repr_id))
+        });
 
         // 2. Find the next operation in the topo-sorted subgraph
-        let mut sorted_ops = possible_ops.into_iter().collect::<Vec<_>>();
+        let mut sorted_ops = possible_ops.collect::<Vec<_>>();
         sorted_ops.sort_by(|a, b| a.0.cmp(&b.0));
         let &(op, repr_id) = sorted_ops.first().unwrap();
 
         (op, repr_id.operation_step)
     }
 
-    ///  Gets the reference counts of the input_ids
+    ///  Gets the reference counts of the `input_ids`
     ///
     /// # Description
     ///
@@ -187,23 +190,27 @@ impl Graph {
     ///
     /// This operation is expensive as it needs to calculate the subgraph and should be run as few
     /// times as necessary.
+    ///
+    /// # Panics
     pub fn get_reference_counts(
         &self,
         output_ids: &[RepresentationId],
         input_ids: &[RepresentationId],
     ) -> HashMap<RepresentationId, usize> {
-        let mut reference_counts: HashMap<RepresentationId, usize> =
-            HashMap::from_iter(input_ids.into_iter().map(|&repr_id| (repr_id, 0 as usize)));
+        let mut reference_counts: HashMap<RepresentationId, usize> = input_ids
+            .iter()
+            .map(|&repr_id| (repr_id, 0_usize))
+            .collect();
 
         let operation_set = self.get_operation_set(output_ids, input_ids).unwrap();
 
-        output_ids.iter().for_each(|out_id| {
+        for out_id in output_ids {
             if let Some(ref_count) = reference_counts.get_mut(out_id) {
                 *ref_count += 1;
             }
-        });
+        }
 
-        operation_set.iter().for_each(|op_id| {
+        for op_id in &operation_set {
             let op_node = self.get_operation_node(op_id).unwrap();
 
             let mut step_inputs_found = false;
@@ -225,7 +232,7 @@ impl Graph {
             });
 
             if step_inputs_found {
-                return;
+                continue;
             }
 
             op_node.get_input_ids().iter().for_each(|in_id| {
@@ -233,12 +240,14 @@ impl Graph {
                     *ref_count += 1;
                 }
             });
-        });
+        }
 
         reference_counts
     }
 
     /// Calculates a subgraph of operations necessary to compute the outputs from the inputs
+    ///
+    /// # Errors
     pub fn get_operation_set(
         &self,
         output_ids: &[RepresentationId],
@@ -252,7 +261,7 @@ impl Graph {
 
         // Set of representations that have already been calculated by some previous op
         let mut finished_representations: HashSet<RepresentationId> =
-            HashSet::from_iter(input_ids.iter().map(|&x| x));
+            input_ids.iter().copied().collect();
 
         while !active_representation_ids.is_empty() {
             // Get next representation we need
@@ -262,13 +271,13 @@ impl Graph {
 
             // The active id may already be added to finished representations if the producing
             // operation has more than one output.
-            if finished_representations.contains(&active_repr_id) {
+            if finished_representations.contains(active_repr_id) {
                 continue;
             }
 
             // If not, try to get it from an operation
             // `op_id` is the id of the operation that produces `active_repr_id`
-            let op_id = self.get_representation_op_id(&active_repr_id).ok_or(
+            let op_id = self.get_representation_op_id(active_repr_id).ok_or(
                 GraphError::NoOpCreatesRepresentation {
                     repr_id: *active_repr_id,
                 },
@@ -335,7 +344,7 @@ pub enum GraphError {
     AnotherOpProducesOutput { op_id: OperationId },
 }
 
-/// Each RepresentationId is created uniquely by a single OperationNode
+/// Each `RepresentationId` is created uniquely by a single `OperationNode`
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct OperationNode {
     operation: Box<dyn Operation>,
@@ -356,15 +365,15 @@ impl OperationNode {
         }
     }
 
-    pub fn get_operation(&self) -> &Box<dyn Operation> {
-        &self.operation
+    pub fn get_operation(&self) -> &dyn Operation {
+        self.operation.as_ref()
     }
 
-    pub fn get_input_ids(&self) -> &Vec<RepresentationId> {
+    pub const fn get_input_ids(&self) -> &Vec<RepresentationId> {
         &self.inputs
     }
 
-    pub fn get_output_ids(&self) -> &Vec<RepresentationId> {
+    pub const fn get_output_ids(&self) -> &Vec<RepresentationId> {
         &self.outputs
     }
 }

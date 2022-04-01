@@ -1,4 +1,10 @@
-#![allow(non_snake_case, clippy::module_name_repetitions)]
+#![allow(
+    non_snake_case,
+    clippy::module_name_repetitions,
+    clippy::cast_precision_loss,
+    clippy::cast_sign_loss,
+    clippy::cast_possible_truncation
+)]
 //! Representation of affine transformations
 use crate::affine::Affine2;
 use crate::bounds::Bounds1;
@@ -20,7 +26,7 @@ pub enum InterpolateMethod {
 }
 
 /// Assumes that data is always in a flattened state.
-/// Weights are of the shape: (kernel_w, kernel_h, channels_in, channels_out)
+/// Weights are of the shape: (`kernel_w`, `kernel_h`, `channels_in`, `channels_out`)
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct Interpolate {
     input_shape: TensorShape,
@@ -95,31 +101,28 @@ impl Interpolate {
 
             let output_idx = y_out * (w_out * c) + x_out * c + c_out;
 
+            let input_idx_11 = y_1 * (w_in * c) + x_1 * c + c_out;
             if x_1 == x_2 && y_1 == y_2 {
-                let input_idx = y_1 * (w_in * c) + x_1 * c + c_out;
-                weight[[output_idx, input_idx]] = 1.;
+                weight[[output_idx, input_idx_11]] = 1.;
             } else if x_1 == x_2 {
-                let input_idx_1 = y_1 * (w_in * c) + x_1 * c + c_out;
                 let input_idx_2 = y_2 * (w_in * c) + x_2 * c + c_out;
                 let prop_width = x_2 as f64 / w_out as f64 - x_1 as f64 / w_in as f64;
                 let weight_1 =
                     (x_out as f64 / w_out as f64 - x_1 as f64 / w_in as f64) / prop_width;
                 let weight_2 =
                     (x_2 as f64 / w_out as f64 - x_out as f64 / w_in as f64) / prop_width;
-                weight[[output_idx, input_idx_1]] = weight_1;
+                weight[[output_idx, input_idx_11]] = weight_1;
                 weight[[output_idx, input_idx_2]] = weight_2;
             } else if y_1 == y_2 {
-                let input_idx_1 = y_1 * (w_in * c) + x_1 * c + c_out;
                 let input_idx_2 = y_2 * (w_in * c) + x_2 * c + c_out;
                 let prop_height = y_2 as f64 / h_out as f64 - y_1 as f64 / h_in as f64;
                 let weight_1 =
                     (y_out as f64 / h_out as f64 - y_1 as f64 / h_in as f64) / prop_height;
                 let weight_2 =
                     (y_2 as f64 / h_out as f64 - y_out as f64 / h_in as f64) / prop_height;
-                weight[[output_idx, input_idx_1]] = weight_1;
+                weight[[output_idx, input_idx_11]] = weight_1;
                 weight[[output_idx, input_idx_2]] = weight_2;
             } else {
-                let input_idx_11 = y_1 * (w_in * c) + x_1 * c + c_out;
                 let input_idx_12 = y_1 * (w_in * c) + x_2 * c + c_out;
                 let input_idx_21 = y_2 * (w_in * c) + x_1 * c + c_out;
                 let input_idx_22 = y_2 * (w_in * c) + x_2 * c + c_out;
@@ -143,7 +146,7 @@ impl Interpolate {
             }
         }
         let bias = Array1::<NNVFloat>::zeros(h_out * w_out * c);
-        self.affine = Some(Affine2::new(weight, bias))
+        self.affine = Some(Affine2::new(weight, bias));
     }
 }
 

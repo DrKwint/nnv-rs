@@ -23,7 +23,7 @@ pub struct StarRelationship {
 pub trait StarSet<D: 'static + Dimension> {
     /// Get the id of the root star in the starset.
     fn get_root_id(&self) -> StarId;
-    /// Get the DNN/Graph RepresentationId that a star corresponds to
+    /// Get the DNN/Graph `RepresentationId` that a star corresponds to
     fn get_star_representation_id(&self, star_id: StarId) -> RepresentationId;
     /// Get the Graph from the DNN
     fn get_graph(&self) -> &Graph;
@@ -43,16 +43,14 @@ pub trait StarSet2: StarSet<Ix2> {
 
     /// Get the dimension of the DNN input
     fn get_input_dim(&self) -> usize;
-    /// Get the fixed part of the input
-    fn get_input_bounds(&self, star_id: StarId) -> Bounds1;
     /// TODO: Implement with a cache because it is expensive
-    fn get_axis_aligned_input_bounds(&self, star_id: StarId, outer_bounds: &Bounds1) -> &Bounds1;
+    fn get_axis_aligned_input_bounds(&self, star_id: StarId) -> &Bounds1;
 
-    /// Expand an operation from its inputs to produce the children and adds them to the StarSet.
+    /// Expand an operation from its inputs to produce the children and adds them to the `StarSet`.
     ///
     /// # Description
     ///
-    /// Each non-empty child star is stored as a separate StarNode in the StarSet.
+    /// Each non-empty child star is stored as a separate `StarNode` in the `StarSet`.
     ///
     /// # Invariants
     ///
@@ -100,10 +98,9 @@ pub trait StarSet2: StarSet<Ix2> {
         };
 
         // 1. Calculate output stars
-        let outer_bounds = self.get_input_bounds(self.get_root_id());
         let parent_bounds = input_star_ids
             .iter()
-            .map(|&star_id| self.get_axis_aligned_input_bounds(star_id, &outer_bounds))
+            .map(|&star_id| self.get_axis_aligned_input_bounds(star_id))
             .collect::<Vec<_>>();
         let stars = input_star_ids
             .iter()
@@ -139,8 +136,8 @@ mod tests {
 
     proptest! {
         #[test]
-        fn test_expand(input_star in non_empty_star(2, 2), dnn in fc_dnn(2,2,2,2)) {
-            let mut starset = GraphStarset::new(dnn, input_star);
+        fn test_expand( dnn in fc_dnn(2,2,2,2), input_star in non_empty_star(2, 2), input_bounds in bounds1(2)) {
+            let mut starset = GraphStarset::new(dnn, input_star, input_bounds);
 
             // First operation is a dense
             let rel_id = starset.expand(0, vec![starset.get_root_id()]);

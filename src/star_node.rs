@@ -29,7 +29,7 @@ pub struct StarNodeRelationship {
     pub output_node_ids: Option<Vec<usize>>,
 }
 
-/// StarNodes exist in a lattice and correspond to a star generated from a prefix of the network along with other calculated properties.
+/// `StarNodes` exist in a lattice and correspond to a star generated from a prefix of the network along with other calculated properties.
 ///
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct StarNode<D: Dimension> {
