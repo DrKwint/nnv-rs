@@ -9,16 +9,22 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct GraphStarset<D: 'static + Dimension> {
-    arena: Vec<Star<D>>,
-    star_representation_map: Vec<RepresentationId>,
+    /// The network for which the starset is generated
     dnn: DNN,
+    /// Storage structure for stars
+    arena: Vec<Star<D>>,
+    /// The RepresentationId that each star represents
+    star_representation_map: Vec<RepresentationId>,
+    /// The relationships between stars, includes the associated graph operation
+    relationships: Vec<StarRelationship>,
 }
 
 impl<D: Dimension> GraphStarset<D> {
-    fn new(dnn: DNN, input_star: Star<D>) -> Self {
+    pub fn new(dnn: DNN, input_star: Star<D>) -> Self {
         Self {
             arena: vec![input_star],
             star_representation_map: vec![RepresentationId::new(0, None)],
+            relationships: vec![],
             dnn,
         }
     }
@@ -38,22 +44,31 @@ impl<D: 'static + Dimension> StarSet<D> for GraphStarset<D> {
     }
 
     fn get_star(&self, star_id: StarId) -> &Star<D> {
-        todo!()
+        assert!(star_id < self.arena.len());
+        &self.arena[star_id]
     }
 
     fn get_relationship(&self, relationship_id: StarRelationshipId) -> &StarRelationship {
-        todo!()
+        assert!(relationship_id < self.relationships.len());
+        &self.relationships[relationship_id]
     }
 
-    fn add_star(&mut self, star: Star<D>) -> StarId {
-        todo!()
+    fn add_star(&mut self, star: Star<D>, representation_id: RepresentationId) -> StarId {
+        let star_id = self.arena.len();
+        self.arena.push(star);
+        self.star_representation_map.push(representation_id);
+        assert_eq!(self.arena.len(), self.star_representation_map.len());
+        star_id
     }
 
     fn add_relationship(
         &mut self,
         star_rel: super::new_starset::StarRelationship,
     ) -> StarRelationshipId {
-        todo!()
+        // TODO: Do checks about relationship to cache properties
+        let rel_id = self.relationships.len();
+        self.relationships.push(star_rel);
+        rel_id
     }
 }
 

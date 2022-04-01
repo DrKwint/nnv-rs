@@ -15,7 +15,7 @@ pub struct StarRelationship {
     pub operation_id: OperationId,
     pub step: Option<usize>,
     pub input_star_ids: Vec<usize>,
-    pub output_star_ids: Option<Vec<usize>>,
+    pub output_star_ids: Vec<usize>,
 }
 
 /// We assume there's a root star that is the ordered concatenation of the DNN's input variables.
@@ -32,7 +32,7 @@ pub trait StarSet<D: 'static + Dimension> {
     /// Gets a relationship
     fn get_relationship(&self, relationship_id: StarRelationshipId) -> &StarRelationship;
     /// Add a star
-    fn add_star(&mut self, star: Star<D>) -> StarId;
+    fn add_star(&mut self, star: Star<D>, representation_id: RepresentationId) -> StarId;
     /// Adds a relationship
     fn add_relationship(&mut self, star_rel: StarRelationship) -> StarRelationshipId;
 }
@@ -110,20 +110,21 @@ pub trait StarSet2: StarSet<Ix2> {
             .map(|&node_id| self.get_star(node_id))
             .collect::<Vec<_>>();
 
-        let (child_stars, child_input_bounds, same_output_bounds) = operation_node
+        let (child_stars, _child_input_bounds, _same_output_bounds) = operation_node
             .get_operation()
             .forward_star(stars, next_step_opt, parent_bounds);
 
         // 2. Add child stars and StarRelationship
         let child_star_ids = child_stars
             .into_iter()
-            .map(|star| self.add_star(star))
+            .zip(operation_node.get_output_ids().clone().into_iter())
+            .map(|(star, repr_id)| self.add_star(star, repr_id))
             .collect();
         let star_rel = StarRelationship {
             operation_id,
             step: next_step_opt,
             input_star_ids,
-            output_star_ids: Some(child_star_ids),
+            output_star_ids: child_star_ids,
         };
         self.add_relationship(star_rel)
     }
@@ -132,17 +133,25 @@ pub trait StarSet2: StarSet<Ix2> {
 #[cfg(test)]
 mod tests {
     use super::super::new_graph_starset::GraphStarset;
+    use super::*;
     use crate::test_util::*;
     use proptest::prelude::*;
 
     proptest! {
         #[test]
-        fn test_expand(dnn in fc_dnn(2,2,2,2)) {
-            todo!()
-            // let input_star = Star2::default();
-            // let startset = GraphStarset::new(dnn, input_star);
+        fn test_expand(input_star in non_empty_star(2, 2), dnn in fc_dnn(2,2,2,2)) {
+            let mut starset = GraphStarset::new(dnn, input_star);
 
-            // dnn.get_operation_node
+            // First operation is a dense
+            let rel_id = starset.expand(0, vec![starset.get_root_id()]);
+            let rel = starset.get_relationship(rel_id);
+            prop_assert_eq!(0, rel.operation_id);
+            prop_assert_eq!(None, rel.step);
+            prop_assert_eq!(rel.input_star_ids.len(), 1);
+            prop_assert_eq!(rel.output_star_ids.len(), 1);
+            prop_assert!(rel.output_star_ids[0] > rel.input_star_ids[0]);
+
+
         }
     }
 }
