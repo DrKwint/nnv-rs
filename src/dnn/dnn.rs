@@ -1,5 +1,6 @@
-use crate::bounds::Bounds1;
-use crate::graph::{Engine, Graph, GraphError, Operation, OperationId, RepresentationId};
+use crate::graph::{
+    Engine, ExecuteError, Graph, GraphError, Operation, OperationId, RepresentationId,
+};
 use crate::tensorshape::TensorShape;
 use crate::NNVFloat;
 use ndarray::Array2;
@@ -41,7 +42,9 @@ impl DNN {
         }
     }
 
-    pub fn from_sequential(layers: Vec<Box<dyn Operation>>) -> Self {
+    /// # Panics
+    /// TODO
+    pub fn from_sequential(layers: &[Box<dyn Operation>]) -> Self {
         let mut graph = Graph::default();
         for (i, layer) in layers.iter().enumerate() {
             graph
@@ -61,6 +64,7 @@ impl DNN {
         }
     }
 
+    /// # Errors
     pub fn add_operation(
         &mut self,
         op: Box<dyn Operation>,
@@ -73,58 +77,72 @@ impl DNN {
     pub fn get_operation(&self, id: OperationId) -> Option<&dyn Operation> {
         self.graph
             .get_operation_node(&id)
-            .map(|node| node.get_operation().as_ref())
+            .map(crate::graph::OperationNode::get_operation)
     }
 
-    pub fn get_input_representation_ids(&self) -> &Vec<RepresentationId> {
+    pub const fn get_input_representation_ids(&self) -> &Vec<RepresentationId> {
         &self.input_representation_ids
     }
 
-    pub fn get_output_representation_ids(&self) -> &Vec<RepresentationId> {
+    pub const fn get_output_representation_ids(&self) -> &Vec<RepresentationId> {
         &self.output_representation_ids
     }
 
-    pub fn get_graph(&self) -> &Graph {
+    pub const fn get_graph(&self) -> &Graph {
         &self.graph
     }
 
     /// # Returns
     /// `Vec<(num_samples, dimension)>` where each entry is a layer's activations
-    pub fn calculate_activation_pattern2(&self, inputs: &[Array2<NNVFloat>]) -> Vec<Array2<bool>> {
+    ///
+    /// # Results
+    /// TODO
+    ///
+    /// # Panics
+    /// TODO
+    pub fn calculate_activation_pattern2(
+        &self,
+        inputs: &[Array2<NNVFloat>],
+    ) -> Result<Vec<Array2<bool>>, ExecuteError> {
         assert_eq!(inputs.len(), self.get_input_representation_ids().len());
         let mut activation_patterns = vec![];
-        let engine = Engine::new(&self.graph);
         let inputs = self
             .get_input_representation_ids()
             .iter()
             .zip(inputs.iter())
             .map(|(&id, input)| (id, input.clone()))
             .collect::<Vec<_>>();
-        let _ = engine.run(
+        Engine::new(&self.graph).run(
             self.get_output_representation_ids().clone(),
-            inputs,
+            &inputs,
             |op, inputs, _| -> (Option<usize>, Vec<Array2<NNVFloat>>) {
-                if let Some(pattern) = op.get_activation_pattern(inputs) {
-                    activation_patterns.append(&mut pattern.clone());
+                if let Some(mut pattern) = op.get_activation_pattern(inputs) {
+                    activation_patterns.append(&mut pattern);
                 }
                 (None, op.forward2(inputs))
             },
-        );
-        activation_patterns
+        )?;
+        Ok(activation_patterns)
     }
 
-    pub fn calculate_activation_pattern1(&self, inputs: &[Array1<NNVFloat>]) -> Vec<Array1<bool>> {
-        self.calculate_activation_pattern2(
-            &inputs
-                .iter()
-                .map(|input| input.clone().insert_axis(Axis(1)))
-                .collect::<Vec<_>>(),
-        )
-        .into_iter()
-        .map(|x| x.index_axis(Axis(1), 0).to_owned())
-        .collect()
+    pub fn calculate_activation_pattern1(
+        &self,
+        inputs: &[Array1<NNVFloat>],
+    ) -> Result<Vec<Array1<bool>>, ExecuteError> {
+        Ok(self
+            .calculate_activation_pattern2(
+                &inputs
+                    .iter()
+                    .map(|input| input.clone().insert_axis(Axis(1)))
+                    .collect::<Vec<_>>(),
+            )?
+            .into_iter()
+            .map(|x| x.index_axis(Axis(1), 0).to_owned())
+            .collect())
     }
 
+    /// # Panics
+    /// TODO
     pub fn forward1(&self, inputs: &[Array1<NNVFloat>]) -> Vec<Array1<NNVFloat>> {
         assert_eq!(inputs.len(), self.get_input_representation_ids().len());
         let engine = Engine::new(&self.graph);
@@ -136,7 +154,7 @@ impl DNN {
             .collect::<Vec<_>>();
         let res = engine.run(
             self.get_output_representation_ids().clone(),
-            inputs,
+            &inputs,
             |op: &dyn Operation, inputs, _| -> (Option<usize>, Vec<Array1<NNVFloat>>) {
                 (None, op.forward1(inputs))
             },
@@ -144,14 +162,16 @@ impl DNN {
         res.unwrap().into_iter().map(|(_, output)| output).collect()
     }
 
+    /// # Panics
+    /// TODO
     pub fn forward_suffix1(
         &self,
-        inputs: Vec<(RepresentationId, Array1<NNVFloat>)>,
+        inputs: &[(RepresentationId, Array1<NNVFloat>)],
     ) -> Vec<Array1<NNVFloat>> {
         let engine = Engine::new(&self.graph);
         let res = engine.run(
             self.get_output_representation_ids().clone(),
-            inputs,
+            &inputs,
             |op: &dyn Operation, inputs, _| -> (Option<usize>, Vec<Array1<NNVFloat>>) {
                 (None, op.forward1(inputs))
             },
@@ -161,6 +181,8 @@ impl DNN {
 }
 
 impl DNN {
+    /// # Panics
+    /// TODO
     pub fn input_shapes(&self) -> Vec<TensorShape> {
         self.input_representation_ids
             .iter()
@@ -173,7 +195,7 @@ impl DNN {
                 let op_node = self.graph.get_operation_node(&op_id).unwrap();
                 let idx = op_node
                     .get_input_ids()
-                    .into_iter()
+                    .iter()
                     .position(|x| *x == *repr_id)
                     .unwrap();
                 op_node.get_operation().input_shapes()[idx].clone()
@@ -190,7 +212,7 @@ impl DNN {
                 let op_node = self.graph.get_operation_node(&op_id).unwrap();
                 let idx = op_node
                     .get_input_ids()
-                    .into_iter()
+                    .iter()
                     .position(|x| *x == *repr_id)
                     .unwrap();
                 op_node.get_operation().input_shapes()[idx].clone()

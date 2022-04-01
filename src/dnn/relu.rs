@@ -94,7 +94,7 @@ impl Operation for ReLU {
         )]
     }
 
-    fn get_activation_pattern(&self, state: &Vec<&Array2<NNVFloat>>) -> Option<Vec<Array2<bool>>> {
+    fn get_activation_pattern(&self, state: &[&Array2<NNVFloat>]) -> Option<Vec<Array2<bool>>> {
         // This should only be Some in an activation layer (e.g. ReLU)
         Some(vec![state[0].mapv(|x| x >= 0.0)])
     }

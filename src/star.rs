@@ -127,6 +127,8 @@ impl Star2 {
             .map_or(Some(other.clone()), |x| Some(x.intersect(other)));
     }
 
+    /// # Panics
+    /// TODO
     pub fn get_input_trunc_gaussian(
         &self,
         mu: ArrayView1<NNVFloat>,

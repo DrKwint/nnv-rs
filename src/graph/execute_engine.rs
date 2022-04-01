@@ -18,7 +18,7 @@ pub struct Engine<'a> {
 }
 
 impl<'a> Engine<'a> {
-    pub fn new(graph: &'a Graph) -> Self {
+    pub const fn new(graph: &'a Graph) -> Self {
         Self { graph }
     }
 
@@ -48,10 +48,16 @@ impl<'a> Engine<'a> {
     /// # Returns
     ///
     /// * `outputs` - The outputs for each id in `output_ids`
+    ///
+    /// # Errors
+    /// TODO
+    ///
+    /// # Panics
+    /// TODO
     pub fn run<T: Clone + Debug>(
         &self,
         output_ids: Vec<RepresentationId>,
-        inputs: Vec<(RepresentationId, T)>,
+        inputs: &[(RepresentationId, T)],
         mut visit: impl FnMut(&dyn Operation, &Vec<&T>, Option<usize>) -> (Option<usize>, Vec<T>),
     ) -> Result<Vec<(RepresentationId, T)>, ExecuteError> {
         let mut state = ExecutionState::<T>::default();
@@ -77,10 +83,10 @@ impl<'a> Engine<'a> {
         let operation_set = self.graph.get_operation_set(&output_ids, &input_ids)?;
 
         // 2. Order set via the graph's topological ordering.
-        let mut op_node_vec: Vec<OperationId> = operation_set.into_iter().map(|x| x).collect();
+        let mut op_node_vec: Vec<OperationId> = operation_set.into_iter().collect();
 
         // This ordering is actually just the ascending ordering of OperationIds
-        op_node_vec.sort();
+        op_node_vec.sort_unstable();
 
         if inputs
             .iter()
@@ -104,13 +110,7 @@ impl<'a> Engine<'a> {
                 .iter()
                 .map(|out_id| state.get_step_start(*out_id).copied())
                 .collect::<Option<Vec<_>>>()
-                .unwrap_or(
-                    op_node
-                        .get_input_ids()
-                        .iter()
-                        .map(|&x| x)
-                        .collect::<Vec<_>>(),
-                );
+                .unwrap_or_else(|| op_node.get_input_ids().clone());
             let mut step = input_ids.first().unwrap().operation_step;
 
             // Loop over steps in the operation until the final output is returned.
@@ -125,7 +125,7 @@ impl<'a> Engine<'a> {
                         .ok_or(ExecuteError::OneOfRepresentationsNotExist {
                             repr_ids: op_node.get_input_ids().clone(),
                         })?;
-                    visit(op_node.get_operation().as_ref(), &reprs, step)
+                    visit(op_node.get_operation(), &reprs, step)
                 };
 
                 if outputs.len() != op_node.get_output_ids().len() {
@@ -137,7 +137,7 @@ impl<'a> Engine<'a> {
 
                 // Store outputs
                 for (&repr_id, repr) in op_node.get_output_ids().iter().zip(outputs.into_iter()) {
-                    let mut repr_id = repr_id.clone();
+                    let mut repr_id = repr_id;
                     repr_id.operation_step = new_step;
                     state.set_representation(repr_id, repr)?;
                 }
@@ -169,10 +169,7 @@ impl<'a> Engine<'a> {
                 if step.unwrap() == 0 {
                     input_ids = op_node.get_output_ids().clone();
                 }
-                input_ids = input_ids
-                    .into_iter()
-                    .map(|id| id.clone().with_step(step))
-                    .collect();
+                input_ids = input_ids.into_iter().map(|id| id.with_step(step)).collect();
 
                 // Check if the last representation needed for the outputs was given
                 for &repr_id in op_node.get_output_ids() {
@@ -197,9 +194,11 @@ impl<'a> Engine<'a> {
         Ok(outputs)
     }
 
+    /// # Panics
+    /// TODO
     pub fn run_graph_state_to<T: Clone + Debug>(
         &self,
-        _state: GraphState<T>,
+        _state: &GraphState<T>,
         _repr_id: RepresentationId,
     ) -> GraphState<T> {
         todo!()
@@ -212,10 +211,16 @@ impl<'a> Engine<'a> {
     /// * `outputs` - Set of representations to calculate
     /// * `inputs` - Set of starting inputs required to calculate outputs
     /// * `visitor` - Performs the intermediate calculations at each node
+    ///
+    /// # Panics
+    /// TODO
+    ///
+    /// # Errors
+    /// TODO
     pub fn run_node_visitor<T: Clone + Debug>(
         &self,
-        _output_ids: Vec<RepresentationId>,
-        _inputs: Vec<(RepresentationId, T)>,
+        _output_ids: &[RepresentationId],
+        _inputs: &[(RepresentationId, T)],
         _visitor: &mut dyn OperationVisitor<T>,
     ) -> Result<Vec<(RepresentationId, T)>, ExecuteError> {
         todo!();
@@ -291,7 +296,7 @@ pub trait OperationVisitor<T: Clone> {
     ///
     /// * `operation` - The operation being visited
     /// * `inputs` - Inputs to the operation
-    fn visit(&mut self, operation: &Box<dyn Operation>, inputs: Vec<&T>) -> Vec<T>;
+    fn visit(&mut self, operation: &dyn Operation, inputs: Vec<&T>) -> Vec<T>;
 }
 
 pub struct ExecutionState<T: Clone> {
@@ -314,17 +319,19 @@ impl<T: Clone> ExecutionState<T> {
     ) -> Self {
         Self {
             representations,
-            step_starts: HashMap::from_iter(
-                step_starts
-                    .iter()
-                    .map(|&repr_id| (repr_id.representation_node_id, repr_id)),
-            ),
-            step_ends: HashMap::from_iter(step_ends.iter().map(|repr_id| {
-                (
-                    repr_id.representation_node_id,
-                    repr_id.operation_step.unwrap(),
-                )
-            })),
+            step_starts: step_starts
+                .iter()
+                .map(|&repr_id| (repr_id.representation_node_id, repr_id))
+                .collect(),
+            step_ends: step_ends
+                .iter()
+                .map(|repr_id| {
+                    (
+                        repr_id.representation_node_id,
+                        repr_id.operation_step.unwrap(),
+                    )
+                })
+                .collect(),
         }
     }
 
@@ -357,16 +364,16 @@ impl<T: Clone> ExecutionState<T> {
         representation_id: RepresentationId,
         representation: T,
     ) -> Result<(), ExecuteError> {
-        // A representation should only ever be set once
-        if self.representations.contains_key(&representation_id) {
+        if let std::collections::hash_map::Entry::Vacant(e) =
+            self.representations.entry(representation_id)
+        {
+            e.insert(representation);
+            Ok(())
+        } else {
             // TODO: Specify error
             Err(ExecuteError::StateAlreadyHasRepresentation {
                 rep_id: representation_id,
             })
-        } else {
-            self.representations
-                .insert(representation_id, representation);
-            Ok(())
         }
     }
 }
