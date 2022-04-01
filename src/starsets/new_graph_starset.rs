@@ -16,6 +16,7 @@ pub struct GraphStarset<D: 'static + Dimension> {
     arena: Vec<Star<D>>,
     /// The RepresentationId that each star represents
     representations: Vec<RepresentationId>,
+    /// Axis aligned input bounds for each star
     input_bounds: Vec<Bounds<D>>,
 
     /// The relationships between stars, includes the associated graph operation
@@ -57,10 +58,16 @@ impl<D: 'static + Dimension> StarSet<D> for GraphStarset<D> {
         &self.relationships[relationship_id]
     }
 
-    fn add_star(&mut self, star: Star<D>, representation_id: RepresentationId) -> StarId {
+    fn add_star(
+        &mut self,
+        star: Star<D>,
+        representation_id: RepresentationId,
+        axis_aligned_input_bounds: Bounds<D>,
+    ) -> StarId {
         let star_id = self.arena.len();
         self.arena.push(star);
         self.representations.push(representation_id);
+        self.input_bounds.push(axis_aligned_input_bounds);
         assert_eq!(self.arena.len(), self.representations.len());
         star_id
     }
@@ -83,6 +90,7 @@ impl StarSet2 for GraphStarset<Ix2> {
 
     /// TODO: Implement with a cache because it is expensive
     fn get_axis_aligned_input_bounds(&self, star_id: StarId) -> &Bounds1 {
+        assert!(star_id < self.input_bounds.len());
         &self.input_bounds[star_id]
     }
 }

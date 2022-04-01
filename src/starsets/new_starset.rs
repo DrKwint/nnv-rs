@@ -1,3 +1,4 @@
+use crate::bounds::Bounds;
 use crate::bounds::Bounds1;
 use crate::graph::Graph;
 use crate::graph::OperationId;
@@ -32,7 +33,12 @@ pub trait StarSet<D: 'static + Dimension> {
     /// Gets a relationship
     fn get_relationship(&self, relationship_id: StarRelationshipId) -> &StarRelationship;
     /// Add a star
-    fn add_star(&mut self, star: Star<D>, representation_id: RepresentationId) -> StarId;
+    fn add_star(
+        &mut self,
+        star: Star<D>,
+        representation_id: RepresentationId,
+        axis_aligned_input_bounds: Bounds<D>,
+    ) -> StarId;
     /// Adds a relationship
     fn add_relationship(&mut self, star_rel: StarRelationship) -> StarRelationshipId;
 }
@@ -107,7 +113,7 @@ pub trait StarSet2: StarSet<Ix2> {
             .map(|&node_id| self.get_star(node_id))
             .collect::<Vec<_>>();
 
-        let (child_stars, _child_input_bounds, _same_output_bounds) = operation_node
+        let (child_stars, child_input_bounds, _same_output_bounds) = operation_node
             .get_operation()
             .forward_star(stars, next_step_opt, parent_bounds);
 
@@ -115,7 +121,10 @@ pub trait StarSet2: StarSet<Ix2> {
         let child_star_ids = child_stars
             .into_iter()
             .zip(operation_node.get_output_ids().clone().into_iter())
-            .map(|(star, repr_id)| self.add_star(star, repr_id))
+            .zip(child_input_bounds.into_iter())
+            .map(|((star, repr_id), child_input_bounds)| {
+                self.add_star(star, repr_id, child_input_bounds)
+            })
             .collect();
         let star_rel = StarRelationship {
             operation_id,
@@ -136,7 +145,7 @@ mod tests {
 
     proptest! {
         #[test]
-        fn test_expand( dnn in fc_dnn(2,2,2,2), input_star in non_empty_star(2, 2), input_bounds in bounds1(2)) {
+        fn test_expand(dnn in fc_dnn(2,2,2,2), input_star in non_empty_star(2, 2), input_bounds in bounds1(2)) {
             let mut starset = GraphStarset::new(dnn, input_star, input_bounds);
 
             // First operation is a dense

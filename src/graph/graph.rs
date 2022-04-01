@@ -116,6 +116,10 @@ impl Graph {
         }
     }
 
+    pub fn get_operations(&self) -> &Vec<OperationNode> {
+        &self.operation_nodes
+    }
+
     pub fn get_operation_node(&self, id: &OperationId) -> Option<&OperationNode> {
         self.operation_nodes.get(*id)
     }

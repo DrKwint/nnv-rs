@@ -186,13 +186,15 @@ prop_compose! {
 prop_compose! {
     pub fn non_empty_polytope(num_dims: usize, num_constraints: usize)
         (
-            _poly in polytope_including_zero(num_dims, num_constraints)
+            poly in polytope_including_zero(num_dims, num_constraints)
                 .prop_filter("Non-zero intercepts",
                              |i| !i.rhs().iter().any(|x| *x == 0.0_f64))
         ) -> Polytope {
             // Make a box bigger than possible inner inequalities
             //let box_bounds: Bounds1 = Bounds1::new(Array1::from_elem(num_dims, -20.).view(), Array1::from_elem(num_dims, -20.).view());
-            Polytope::new(Array2::zeros([1, num_dims]), Array1::zeros(1))
+            // let polytope = Polytope::new(Array2::zeros([1, num_dims]), Array1::zeros(1));
+            // assert!(!poly.is_empty(None));
+            poly
         }
 }
 

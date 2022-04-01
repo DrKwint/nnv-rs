@@ -392,12 +392,15 @@ mod tests {
 
     proptest! {
         #[test]
-        fn test_execute_fc_dnn(dnn in fc_dnn(2,2,2,2)) {
+        fn test_execute_fc_dnn(dnn in generic_fc_dnn(4,4,6,6)) {
             let engine = Engine::new(dnn.get_graph());
 
             prop_assert_eq!(1, dnn.get_output_representation_ids().len());
 
-            let num_steps = 1+1+2;
+            let num_steps = dnn.get_graph().get_operations().into_iter().fold(0, |acc, x| acc +
+                x.get_operation().num_steps().unwrap_or(0)
+            );
+
             let inputs = dnn.get_input_representation_ids().into_iter().map(|&id| (id, 0 as usize)).collect::<Vec<_>>();
             let res = engine.run(dnn.get_output_representation_ids().clone(), &inputs, |op, inputs, step| -> (Option<usize>, Vec<usize>) {
                 if let Some(num_steps) = op.num_steps() {
