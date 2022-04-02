@@ -1,5 +1,6 @@
 use crate::bounds::Bounds;
 use crate::bounds::Bounds1;
+use crate::dnn::DNN;
 use crate::graph::Graph;
 use crate::graph::OperationId;
 use crate::graph::RepresentationId;
@@ -22,12 +23,14 @@ pub struct StarRelationship {
 /// We assume there's a root star that is the ordered concatenation of the DNN's input variables.
 /// This facilitates the representation of each star.
 pub trait StarSet<D: 'static + Dimension> {
+    /// Get the Graph from the DNN
+    fn get_graph(&self) -> &Graph;
+    /// Get DNN
+    fn get_dnn(&self) -> &DNN;
     /// Get the id of the root star in the starset.
     fn get_root_id(&self) -> StarId;
     /// Get the DNN/Graph `RepresentationId` that a star corresponds to
     fn get_star_representation_id(&self, star_id: StarId) -> RepresentationId;
-    /// Get the Graph from the DNN
-    fn get_graph(&self) -> &Graph;
     /// Get a reference to a star
     fn get_star(&self, star_id: StarId) -> &Star<D>;
     /// Gets a relationship
@@ -140,12 +143,41 @@ pub trait StarSet2: StarSet<Ix2> {
 mod tests {
     use super::super::new_graph_starset::GraphStarset;
     use super::*;
+    use crate::dnn::DNN;
+    use crate::graph::Engine;
+    use crate::star::Star2;
     use crate::test_util::*;
     use proptest::prelude::*;
 
+    #[must_use = "strategies do nothing unless used"]
+    fn generic_test_inputs(
+        max_input_dim: usize,
+        max_output_dim: usize,
+        max_n_hidden_layers: usize,
+        max_layer_width: usize,
+        max_num_constraints: usize,
+    ) -> impl Strategy<Value = (DNN, Star2, Bounds1)> {
+        let strat = (
+            1..(max_input_dim + 1),
+            1..(max_output_dim + 1),
+            1..(max_n_hidden_layers + 1),
+            1..(max_num_constraints + 1),
+        );
+        Strategy::prop_flat_map(
+            strat,
+            move |(input_dim, output_dim, n_hidden_layers, num_constraints)| {
+                (
+                    fc_dnn(input_dim, output_dim, n_hidden_layers, max_layer_width),
+                    non_empty_star(input_dim, num_constraints),
+                    bounds1(input_dim),
+                )
+            },
+        )
+    }
+
     proptest! {
         #[test]
-        fn test_expand(dnn in fc_dnn(2,2,2,2), input_star in non_empty_star(2, 2), input_bounds in bounds1(2)) {
+        fn test_expand((dnn, input_star, input_bounds) in generic_test_inputs(2,2,2,2,4)) {
             let mut starset = GraphStarset::new(dnn, input_star, input_bounds);
 
             // First operation is a dense
@@ -156,8 +188,32 @@ mod tests {
             prop_assert_eq!(rel.input_star_ids.len(), 1);
             prop_assert_eq!(rel.output_star_ids.len(), 1);
             prop_assert!(rel.output_star_ids[0] > rel.input_star_ids[0]);
+        }
 
+        #[test]
+        fn test_expand_whole_tree((dnn, input_star, input_bounds) in generic_test_inputs(2,2,2,2,4)) {
+            let mut starset = GraphStarset::new(dnn, input_star, input_bounds);
+            let dnn = starset.get_dnn();
+            let engine = Engine::new(starset.get_graph());
+            // Expand all nodes in the starset tree
+            // 1. Create a frontier
+            let frontier = vec![(starset.get_dnn().get_input_representation_ids()[0].clone(), starset.get_root_id())];
 
+            // 2. Visit each operation in order
+            let inputs = vec![(starset.get_dnn().get_input_representation_ids()[0].clone(), vec![starset.get_root_id()])];
+            let res = engine.run(dnn.get_output_representation_ids().clone(), &inputs, |op, inputs, step| -> (Option<usize>, Vec<Vec<usize>>){
+
+                todo!()
+            });
+
+            // First operation is a dense
+            let rel_id = starset.expand(0, vec![starset.get_root_id()]);
+            let rel = starset.get_relationship(rel_id);
+            prop_assert_eq!(0, rel.operation_id);
+            prop_assert_eq!(None, rel.step);
+            prop_assert_eq!(rel.input_star_ids.len(), 1);
+            prop_assert_eq!(rel.output_star_ids.len(), 1);
+            prop_assert!(rel.output_star_ids[0] > rel.input_star_ids[0]);
         }
     }
 }

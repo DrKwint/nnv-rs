@@ -1,7 +1,7 @@
 use super::new_starset::{StarId, StarRelationship, StarRelationshipId, StarSet, StarSet2};
 use crate::bounds::{Bounds, Bounds1};
 use crate::dnn::DNN;
-use crate::graph::RepresentationId;
+use crate::graph::{Graph, RepresentationId};
 use crate::star::Star;
 use ndarray::Dimension;
 use ndarray::Ix2;
@@ -36,16 +36,20 @@ impl<D: Dimension> GraphStarset<D> {
 }
 
 impl<D: 'static + Dimension> StarSet<D> for GraphStarset<D> {
+    fn get_graph(&self) -> &Graph {
+        self.dnn.get_graph()
+    }
+
+    fn get_dnn(&self) -> &DNN {
+        &self.dnn
+    }
+
     fn get_root_id(&self) -> StarId {
         0
     }
 
     fn get_star_representation_id(&self, star_id: usize) -> RepresentationId {
         self.representations[star_id]
-    }
-
-    fn get_graph(&self) -> &crate::graph::Graph {
-        self.dnn.get_graph()
     }
 
     fn get_star(&self, star_id: StarId) -> &Star<D> {
