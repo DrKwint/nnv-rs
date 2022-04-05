@@ -2,18 +2,26 @@ use crate::affine::Affine2;
 use crate::bounds::Bounds1;
 use crate::star::Star2;
 // use crate::star::Star2;
+use crate::dnn::{Conv, Dense, Interpolate, ReLU};
+use crate::graph::PhysicalOp;
 use crate::tensorshape::TensorShape;
 use crate::NNVFloat;
-use dyn_clone::DynClone;
+use enum_dispatch::enum_dispatch;
 use ndarray::{Array1, Array2};
 use std::any::Any;
 use std::fmt::{Debug, Display};
+use std::ops::Deref;
+
+#[cfg(test)]
+use crate::test_graphs::DummyOperation;
+#[cfg(test)]
+use crate::test_graphs::{SimpleAdd, SimpleMultiply, SimpleSquare};
 
 /// Operations may not be stateful. I.e., they must deterministically produce identical outputs from identical inputs.
 /// State may be simulated with additional inputs/outputs and with a steppable operation. Further, the number of outputs
 /// from a step operation must be equal to the number of outputs from the non-stepped version of the operation.
-#[typetag::serde(tag = "type")]
-pub trait Operation: DynClone + Display + Debug + Send + Sync {
+#[enum_dispatch]
+pub trait Operation: Clone + Debug + Send + Sync {
     fn as_any(&self) -> &dyn Any;
 
     fn num_steps(&self) -> Option<usize> {
@@ -62,11 +70,11 @@ pub trait Operation: DynClone + Display + Debug + Send + Sync {
     /// * `child_stars` -
     /// * `children_axis_aligned_input_bounds` -
     /// * `same_output_bounds` - Whether the children have the same output bounds as the parents. See assumptions above.
-    fn forward_star(
+    fn forward_star<StarRef: Deref<Target = Star2>, Bounds1Ref: Deref<Target = Bounds1>>(
         &self,
-        parent_stars: Vec<&Star2>,
+        parent_stars: Vec<StarRef>,
         step_id: Option<usize>,
-        parent_axis_aligned_input_bounds: Vec<&Bounds1>,
+        parent_axis_aligned_input_bounds: Vec<Bounds1Ref>,
     ) -> (Vec<Star2>, Vec<Bounds1>, bool);
 
     fn inputs_dims(&self) -> Vec<usize> {
@@ -93,6 +101,3 @@ pub trait Operation: DynClone + Display + Debug + Send + Sync {
         None
     }
 }
-
-// This implements `Clone` for the trait
-dyn_clone::clone_trait_object!(Operation);

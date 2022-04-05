@@ -4,8 +4,8 @@ use crate::bounds::{Bounds, Bounds1};
 use crate::dnn::dense::Dense;
 use crate::dnn::dnn::DNN;
 use crate::dnn::relu::ReLU;
-use crate::graph::RepresentationId;
 use crate::graph::{Graph, Operation};
+use crate::graph::{PhysicalOp, RepresentationId};
 use crate::polytope::Polytope;
 use crate::star::Star2;
 // use crate::starsets::Asterism;
@@ -108,11 +108,11 @@ prop_compose! {
                 .zip(repr_sizes.iter().skip(1));
             pairs.map(|(&x, &y)| affine2(x,y)).collect::<Vec<_>>()}
         ) -> DNN {
-            let mut layers: Vec<Box<dyn Operation>> = vec![];
+            let mut layers: Vec<PhysicalOp> = vec![];
             for aff in affines {
                 let output_dim = aff.output_dim();
-                layers.push(Box::new(Dense::new(aff.clone())));
-                layers.push(Box::new(ReLU::new(output_dim)));
+                layers.push(PhysicalOp::from(Dense::new(aff.clone())));
+                layers.push(PhysicalOp::from(ReLU::new(output_dim)));
             }
             DNN::from_sequential(&layers)
         }
@@ -252,7 +252,7 @@ prop_compose! {
             constraints in non_empty_polytope(num_dims, num_constraints)
         ) -> Star2 {
             let star = Star2::new(basis, center).with_constraints(constraints);
-            assert!(!star.is_empty(None));
+            assert!(!star.is_empty::<&Bounds1>(None));
             star
         }
 }
@@ -349,6 +349,26 @@ prop_compose! {
 //         }
 // }
 
+pub fn take_single_step(num_steps: Option<usize>, step: Option<usize>) -> Option<usize> {
+    if let Some(num_steps) = num_steps {
+        if let Some(step) = step {
+            if step + 2 == num_steps {
+                None
+            } else {
+                Some(step + 1)
+            }
+        } else {
+            if num_steps == 1 {
+                None
+            } else {
+                Some(0)
+            }
+        }
+    } else {
+        None
+    }
+}
+
 proptest! {
     #[test]
     fn test_inequality_including_zero(ineq in generic_polytope_including_zero(2, 4)) {
@@ -358,17 +378,17 @@ proptest! {
 
     #[test]
     fn test_empty_polytope(poly in generic_empty_polytope(2, 4)) {
-        prop_assert!(poly.is_empty(None));
+        prop_assert!(poly.is_empty::<&Bounds1>(None));
     }
 
     #[test]
     fn test_non_empty_polytope(poly in generic_non_empty_polytope(2, 4)) {
-        prop_assert!(!poly.is_empty(None));
+        prop_assert!(!poly.is_empty::<&Bounds1>(None));
     }
 
     #[test]
     fn test_non_empty_star(star in generic_non_empty_star(2, 4)) {
-        prop_assert!(!star.is_empty(None));
+        prop_assert!(!star.is_empty::<&Bounds1>(None));
     }
 
     #[test]

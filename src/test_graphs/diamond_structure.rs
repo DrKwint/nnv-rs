@@ -1,7 +1,9 @@
 #![cfg(test)]
 /// Performs tests on a diamond graph, i.e. a graph with one input to two nodes which are used to calculate an output.
 use super::DummyOperation;
-use crate::graph::{Engine, Graph, Operation, OperationId, OperationNode, RepresentationId};
+use crate::graph::{
+    Engine, Graph, Operation, OperationId, OperationNode, PhysicalOp, RepresentationId,
+};
 
 /// Tests the following graph structure where letters indicate tensors and -> indicate operations:
 /// Repr: A B C D
@@ -20,7 +22,7 @@ pub fn diamond_structure_graph() -> (Graph, Vec<RepresentationId>, Vec<usize>) {
         .enumerate()
         .map(|(i, (input, output))| {
             OperationNode::new(
-                Box::new(DummyOperation::new(i)),
+                PhysicalOp::from(DummyOperation::new(i)),
                 input.into_iter().map(|i| repr_ids[i]).collect::<Vec<_>>(),
                 vec![repr_ids[output]],
             )
@@ -48,7 +50,7 @@ fn test_diamond_structure_whole_graph() {
     let run_res = engine.run(
         vec![repr_ids[3]],
         &vec![(repr_ids[0], 0 as usize)],
-        |operation: &dyn Operation, _, _| -> (Option<usize>, Vec<usize>) {
+        |operation: &PhysicalOp, _, _| -> (Option<usize>, Vec<usize>) {
             let op = operation.as_any().downcast_ref::<DummyOperation>().unwrap();
             order.push(op.get_op_id());
             (None, vec![0])
@@ -66,7 +68,7 @@ fn test_diamond_structure_subgraph_output() {
     let run_res = engine.run(
         vec![repr_ids[2]],
         &vec![(repr_ids[0], 0 as usize)],
-        |operation: &(dyn Operation), _, _| -> (Option<usize>, Vec<usize>) {
+        |operation: &PhysicalOp, _, _| -> (Option<usize>, Vec<usize>) {
             let op = operation.as_any().downcast_ref::<DummyOperation>().unwrap();
             order.push(op.get_op_id());
             (None, vec![0])

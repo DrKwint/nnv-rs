@@ -13,6 +13,7 @@ use serde::{Deserialize, Serialize};
 use std::any::Any;
 use std::fmt;
 use std::fmt::Debug;
+use std::ops::Deref;
 
 /// Assumes that data is always in a flattened state.
 /// Weights are of the shape: (`kernel_w`, `kernel_h`, `channels_in`, `channels_out`)
@@ -182,7 +183,6 @@ impl Conv {
     }
 }
 
-#[typetag::serde]
 impl Operation for Conv {
     fn input_shapes(&self) -> Vec<TensorShape> {
         vec![TensorShape::new(vec![Some(self.get_affine().input_dim())])]
@@ -226,11 +226,11 @@ impl Operation for Conv {
         self
     }
 
-    fn forward_star(
+    fn forward_star<StarRef: Deref<Target = Star2>, Bounds1Ref: Deref<Target = Bounds1>>(
         &self,
-        stars: Vec<&Star2>,
+        stars: Vec<StarRef>,
         _activation_idx: Option<usize>,
-        parent_axis_aligned_input_bounds: Vec<&Bounds1>,
+        parent_axis_aligned_input_bounds: Vec<Bounds1Ref>,
     ) -> (Vec<Star2>, Vec<Bounds1>, bool) {
         assert_eq!(1, stars.len());
         assert_eq!(1, parent_axis_aligned_input_bounds.len());

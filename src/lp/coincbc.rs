@@ -7,6 +7,7 @@ use good_lp::Solution;
 use good_lp::{variable, ResolutionError, SolverModel};
 use good_lp::{Expression, IntoAffineExpression, ProblemVariables, Variable};
 use ndarray::{Array1, ArrayView1};
+use std::ops::Deref;
 
 /// An linear expression without a constant component
 #[derive(Clone)]
@@ -25,11 +26,11 @@ impl IntoAffineExpression for LinearExpression {
 
 /// Minimizes the expression `c` given the constraint `Ax < b`.
 /// # Panics
-pub fn solve<'a, I, J>(
+pub fn solve<'a, I, J, Bounds1Ref: Deref<Target = Bounds1>>(
     A: I,
     b: J,
     var_coeffs: ArrayView1<NNVFloat>,
-    var_bounds_opt: Option<&Bounds1>,
+    var_bounds_opt: Option<Bounds1Ref>,
 ) -> LinearSolution
 where
     I: IntoIterator<Item = ArrayView1<'a, NNVFloat>>,

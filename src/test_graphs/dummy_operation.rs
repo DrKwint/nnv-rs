@@ -5,6 +5,7 @@ use crate::star::Star2;
 use crate::{affine::Affine2, bounds::Bounds1, graph::OperationId, NNVFloat};
 use ndarray::{Array1, Array2};
 use serde::{Deserialize, Serialize};
+use std::ops::Deref;
 use std::{any::Any, fmt};
 
 #[derive(Default, Clone, Debug, Serialize, Deserialize)]
@@ -22,7 +23,6 @@ impl DummyOperation {
     }
 }
 
-#[typetag::serde]
 impl Operation for DummyOperation {
     fn as_any(&self) -> &dyn Any {
         self
@@ -45,11 +45,11 @@ impl Operation for DummyOperation {
         todo!()
     }
 
-    fn forward_star(
+    fn forward_star<StarRef: Deref<Target = Star2>, Bounds1Ref: Deref<Target = Bounds1>>(
         &self,
-        _stars: Vec<&Star2>,
-        _activation_idx: Option<usize>,
-        _parent_axis_aligned_input_bounds: Vec<&Bounds1>,
+        _parent_stars: Vec<StarRef>,
+        _step_id: Option<usize>,
+        _parent_axis_aligned_input_bounds: Vec<Bounds1Ref>,
     ) -> (Vec<Star2>, Vec<Bounds1>, bool) {
         todo!()
     }

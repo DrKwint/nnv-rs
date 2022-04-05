@@ -19,6 +19,7 @@ use ndarray::{Axis, Ix2};
 use num::Float;
 use serde::{Deserialize, Serialize};
 use std::fmt::Debug;
+use std::ops::Deref;
 
 pub type Star2 = Star<Ix2>;
 pub type Star4 = Star<Ix4>;
@@ -200,10 +201,10 @@ impl Star2 {
         }
     }
 
-    pub fn step_relu2(
+    pub fn step_relu2<Bounds1Ref: Deref<Target = Bounds1> + Copy>(
         &self,
         index: usize,
-        input_bounds_opt: Option<&Bounds1>,
+        input_bounds_opt: Option<Bounds1Ref>,
     ) -> (Option<Self>, Option<Self>) {
         let (coeffs, shift) = {
             let aff = self.representation.get_eqn(index);
@@ -395,7 +396,10 @@ impl Star2 {
     }
 
     /// Check whether the Star set is empty.
-    pub fn is_empty(&self, input_bounds_opt: Option<&Bounds1>) -> bool {
+    pub fn is_empty<Bounds1Ref: Deref<Target = Bounds1>>(
+        &self,
+        input_bounds_opt: Option<Bounds1Ref>,
+    ) -> bool {
         self.constraints
             .as_ref()
             .map_or(false, |x| x.is_empty(input_bounds_opt))

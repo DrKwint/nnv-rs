@@ -1,7 +1,7 @@
 #![cfg(test)]
 /// Computes values of f(x) = ax^2 + bx + c using graph computation
 use super::{SimpleAdd, SimpleMultiply, SimpleSquare};
-use crate::graph::{Engine, Graph, Operation, OperationNode, RepresentationId};
+use crate::graph::{Engine, Graph, Operation, OperationNode, PhysicalOp, RepresentationId};
 use crate::test_util::*;
 use crate::NNVFloat;
 use ndarray::Array1;
@@ -24,31 +24,31 @@ pub fn quadratic_graph() -> (Graph, Vec<RepresentationId>, Vec<usize>) {
     let ops = vec![
         // x -> x^2
         OperationNode::new(
-            Box::new(SimpleSquare::default()),
+            PhysicalOp::from(SimpleSquare::default()),
             vec![repr_ids[0]],
             vec![repr_ids[4]],
         ),
         // (a, x^2) -> ax^2
         OperationNode::new(
-            Box::new(SimpleMultiply::default()),
+            PhysicalOp::from(SimpleMultiply::default()),
             vec![repr_ids[1], repr_ids[4]],
             vec![repr_ids[5]],
         ),
         // (b, x) -> bx
         OperationNode::new(
-            Box::new(SimpleMultiply::default()),
+            PhysicalOp::from(SimpleMultiply::default()),
             vec![repr_ids[2], repr_ids[0]],
             vec![repr_ids[6]],
         ),
         // (ax^2, bx) -> ax^2+bx
         OperationNode::new(
-            Box::new(SimpleAdd::default()),
+            PhysicalOp::from(SimpleAdd::default()),
             vec![repr_ids[5], repr_ids[6]],
             vec![repr_ids[7]],
         ),
         // (ax^2+bx, c) -> ax^2+bx+c
         OperationNode::new(
-            Box::new(SimpleAdd::default()),
+            PhysicalOp::from(SimpleAdd::default()),
             vec![repr_ids[7], repr_ids[3]],
             vec![repr_ids[8]],
         ),
@@ -75,7 +75,7 @@ proptest! {
         let run_res = engine.run(
             vec![repr_ids[8]],
             &vec![(repr_ids[0], x.clone()), (repr_ids[1], a.clone()), (repr_ids[2], b.clone()), (repr_ids[3], c.clone())],
-            |operation: &dyn Operation, input, _| -> (Option<usize>, Vec<Array1<NNVFloat>>) {
+            |operation: &PhysicalOp, input, _| -> (Option<usize>, Vec<Array1<NNVFloat>>) {
                 let output = operation.forward1(input);
                 (None, output)
             },

@@ -1,7 +1,9 @@
 #![cfg(test)]
 /// Performs tests on a y-structure graph, i.e. a graph with one input and two outputs.
 use super::DummyOperation;
-use crate::graph::{Engine, Graph, Operation, OperationId, OperationNode, RepresentationId};
+use crate::graph::{
+    Engine, Graph, Operation, OperationId, OperationNode, PhysicalOp, RepresentationId,
+};
 
 /// Tests the following graph structure where letters indicate tensors and -> indicate operations:
 /// Repr: A B C D E F
@@ -22,7 +24,7 @@ pub fn y_structure_graph() -> (Graph, Vec<RepresentationId>, Vec<usize>) {
         .enumerate()
         .map(|(i, (input, output))| {
             OperationNode::new(
-                Box::new(DummyOperation::new(i)),
+                PhysicalOp::from(DummyOperation::new(i)),
                 vec![repr_ids[input]],
                 vec![repr_ids[output]],
             )
@@ -50,7 +52,7 @@ fn test_y_structure_graph_whole_graph() {
     let run_res = engine.run(
         vec![repr_ids[3], repr_ids[5]],
         &vec![(repr_ids[0], 0 as usize)],
-        |operation: &dyn Operation, _, _| -> (Option<usize>, Vec<usize>) {
+        |operation: &PhysicalOp, _, _| -> (Option<usize>, Vec<usize>) {
             let op = operation.as_any().downcast_ref::<DummyOperation>().unwrap();
             order.push(op.get_op_id());
             (None, vec![0])
@@ -69,7 +71,7 @@ fn test_y_structure_subgraph() {
     let run_res = engine.run(
         vec![repr_ids[2], repr_ids[4]],
         &vec![(repr_ids[0], 0 as usize)],
-        |operation: &(dyn Operation), _, _| -> (Option<usize>, Vec<usize>) {
+        |operation: &PhysicalOp, _, _| -> (Option<usize>, Vec<usize>) {
             let op = operation.as_any().downcast_ref::<DummyOperation>().unwrap();
             order.push(op.get_op_id());
             (None, vec![0])
@@ -87,7 +89,7 @@ fn test_y_structure_short_sub() {
     let run_res = engine.run(
         vec![repr_ids[3]],
         &vec![(repr_ids[1], 0 as usize)],
-        |operation: &(dyn Operation), _, _| -> (Option<usize>, Vec<usize>) {
+        |operation: &PhysicalOp, _, _| -> (Option<usize>, Vec<usize>) {
             let op = operation.as_any().downcast_ref::<DummyOperation>().unwrap();
             order.push(op.get_op_id());
             (None, vec![0])

@@ -2,12 +2,14 @@ use crate::bounds::Bounds;
 use crate::bounds::Bounds1;
 use crate::dnn::DNN;
 use crate::graph::Graph;
+use crate::graph::Operation;
 use crate::graph::OperationId;
 use crate::graph::RepresentationId;
 use crate::star::Star;
 use ndarray::Dimension;
 use ndarray::Ix2;
 use serde::{Deserialize, Serialize};
+use std::cell::Ref;
 
 pub type StarId = usize;
 pub type StarRelationshipId = usize;
@@ -32,18 +34,20 @@ pub trait StarSet<D: 'static + Dimension> {
     /// Get the DNN/Graph `RepresentationId` that a star corresponds to
     fn get_star_representation_id(&self, star_id: StarId) -> RepresentationId;
     /// Get a reference to a star
-    fn get_star(&self, star_id: StarId) -> &Star<D>;
+    fn get_star(&self, star_id: StarId) -> Ref<Star<D>>;
     /// Gets a relationship
-    fn get_relationship(&self, relationship_id: StarRelationshipId) -> &StarRelationship;
+    fn get_relationship(&self, relationship_id: StarRelationshipId) -> Ref<StarRelationship>;
     /// Add a star
+    /// Requires interior mutability
     fn add_star(
-        &mut self,
+        &self,
         star: Star<D>,
         representation_id: RepresentationId,
         axis_aligned_input_bounds: Bounds<D>,
     ) -> StarId;
     /// Adds a relationship
-    fn add_relationship(&mut self, star_rel: StarRelationship) -> StarRelationshipId;
+    /// Requires interior mutability
+    fn add_relationship(&self, star_rel: StarRelationship) -> StarRelationshipId;
 }
 
 pub trait StarSet2: StarSet<Ix2> {
@@ -53,7 +57,7 @@ pub trait StarSet2: StarSet<Ix2> {
     /// Get the dimension of the DNN input
     fn get_input_dim(&self) -> usize;
     /// TODO: Implement with a cache because it is expensive
-    fn get_axis_aligned_input_bounds(&self, star_id: StarId) -> &Bounds1;
+    fn get_axis_aligned_input_bounds(&self, star_id: StarId) -> Ref<Bounds1>;
 
     /// Expand an operation from its inputs to produce the children and adds them to the `StarSet`.
     ///
@@ -68,11 +72,7 @@ pub trait StarSet2: StarSet<Ix2> {
     /// # Arguments
     /// * `operation_id` - The operation of the DNN on which to expand the star set.
     /// * `input_star_ids` - The ordered ids of the `star`s that are used as inputs to the operation.
-    fn expand(
-        &mut self,
-        operation_id: OperationId,
-        input_star_ids: Vec<StarId>,
-    ) -> StarRelationshipId {
+    fn expand(&self, operation_id: OperationId, input_star_ids: Vec<StarId>) -> StarRelationshipId {
         // Pre-condition asserts
         assert!(!input_star_ids.is_empty());
         let operation_node = self.get_graph().get_operation_node(&operation_id).unwrap();
@@ -193,27 +193,26 @@ mod tests {
         #[test]
         fn test_expand_whole_tree((dnn, input_star, input_bounds) in generic_test_inputs(2,2,2,2,4)) {
             let mut starset = GraphStarset::new(dnn, input_star, input_bounds);
-            let dnn = starset.get_dnn();
             let engine = Engine::new(starset.get_graph());
             // Expand all nodes in the starset tree
             // 1. Create a frontier
-            let frontier = vec![(starset.get_dnn().get_input_representation_ids()[0].clone(), starset.get_root_id())];
+            // let frontier = vec![(starset.get_dnn().get_input_representation_ids()[0].clone(), starset.get_root_id())];
+
 
             // 2. Visit each operation in order
             let inputs = vec![(starset.get_dnn().get_input_representation_ids()[0].clone(), vec![starset.get_root_id()])];
-            let res = engine.run(dnn.get_output_representation_ids().clone(), &inputs, |op, inputs, step| -> (Option<usize>, Vec<Vec<usize>>){
+            let res = engine.run_nodal(starset.get_dnn().get_output_representation_ids().clone(), &inputs, |op_id, op_node, inputs, step| -> (Option<usize>, Vec<Vec<usize>>) {
+                assert_eq!(1, inputs.len());
+                let output_id = op_node.get_output_ids().first().unwrap();
+                let input_stars = inputs[0];
+                let stars = input_stars.into_iter().map(|input_star_id| {
+                    let rel_id = starset.expand(op_id, vec![*input_star_id]);
+                    let rel = starset.get_relationship(rel_id);
+                    rel.output_star_ids.clone().into_iter()
+                }).flatten().collect();
 
-                todo!()
+                (None, vec![stars])
             });
-
-            // First operation is a dense
-            let rel_id = starset.expand(0, vec![starset.get_root_id()]);
-            let rel = starset.get_relationship(rel_id);
-            prop_assert_eq!(0, rel.operation_id);
-            prop_assert_eq!(None, rel.step);
-            prop_assert_eq!(rel.input_star_ids.len(), 1);
-            prop_assert_eq!(rel.output_star_ids.len(), 1);
-            prop_assert!(rel.output_star_ids[0] > rel.input_star_ids[0]);
         }
     }
 }

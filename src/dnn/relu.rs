@@ -12,6 +12,7 @@ use num::Float;
 use num::Zero;
 use serde::{Deserialize, Serialize};
 use std::fmt::{Display, Formatter, Result};
+use std::ops::Deref;
 use std::ops::Neg;
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
@@ -31,7 +32,6 @@ impl Display for ReLU {
     }
 }
 
-#[typetag::serde]
 impl Operation for ReLU {
     fn as_any(&self) -> &dyn std::any::Any {
         self
@@ -99,26 +99,26 @@ impl Operation for ReLU {
         Some(vec![state[0].mapv(|x| x >= 0.0)])
     }
 
-    fn forward_star(
+    fn forward_star<StarRef: Deref<Target = Star2>, Bounds1Ref: Deref<Target = Bounds1>>(
         &self,
-        stars: Vec<&Star2>,
+        stars: Vec<StarRef>,
         dim: Option<usize>,
-        parent_axis_aligned_input_bounds: Vec<&Bounds1>,
+        parent_axis_aligned_input_bounds: Vec<Bounds1Ref>,
     ) -> (Vec<Star2>, Vec<Bounds1>, bool) {
         assert_eq!(1, parent_axis_aligned_input_bounds.len());
-        let parent_aa_input_bounds = parent_axis_aligned_input_bounds[0];
+        let parent_aa_input_bounds: Bounds1 = parent_axis_aligned_input_bounds[0].clone();
         assert_eq!(1, stars.len());
-        let star = stars[0];
+        let star = stars.get(0).unwrap();
 
         let dim = dim.unwrap();
-        let child_stars = star.step_relu2(dim, Some(parent_aa_input_bounds));
+        let child_stars = star.step_relu2(dim, Some(&parent_aa_input_bounds));
         let mut same_output_bounds = false;
         let mut stars = vec![];
-        let mut star_input_bounds = vec![];
+        let mut star_input_bounds: Vec<Bounds1> = vec![];
         let is_single_child = child_stars.0.is_some() ^ child_stars.1.is_some();
 
         if let Some(mut lower_star) = child_stars.0 {
-            let mut bounds = parent_aa_input_bounds.clone();
+            let mut bounds: Bounds1 = parent_aa_input_bounds.clone();
             bounds.index_mut(dim)[0] = 0.;
             bounds.index_mut(dim)[1] = 0.;
             if is_single_child {
@@ -132,7 +132,7 @@ impl Operation for ReLU {
         }
 
         if let Some(mut upper_star) = child_stars.1 {
-            let mut bounds = parent_aa_input_bounds.clone();
+            let mut bounds: Bounds1 = parent_aa_input_bounds.clone();
             let mut lb = bounds.index_mut(dim);
             if lb[0].is_sign_negative() {
                 lb[0] = 0.;

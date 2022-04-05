@@ -8,6 +8,7 @@ use ndarray::Array1;
 use ndarray::Array2;
 use serde::{Deserialize, Serialize};
 use std::fmt;
+use std::ops::Deref;
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
 pub struct Dense {
@@ -26,7 +27,6 @@ impl Dense {
     }
 }
 
-#[typetag::serde]
 impl Operation for Dense {
     fn as_any(&self) -> &dyn std::any::Any {
         self
@@ -60,11 +60,11 @@ impl Operation for Dense {
         vec![(self.aff.signed_apply(&bounds[0]), new_lower, new_upper)]
     }
 
-    fn forward_star(
+    fn forward_star<StarRef: Deref<Target = Star2>, Bounds1Ref: Deref<Target = Bounds1>>(
         &self,
-        stars: Vec<&Star2>,
+        stars: Vec<StarRef>,
         _activation_idx: Option<usize>,
-        parent_axis_aligned_input_bounds: Vec<&Bounds1>,
+        parent_axis_aligned_input_bounds: Vec<Bounds1Ref>,
     ) -> (Vec<Star2>, Vec<Bounds1>, bool) {
         assert_eq!(stars.len(), 1);
         assert_eq!(parent_axis_aligned_input_bounds.len(), 1);

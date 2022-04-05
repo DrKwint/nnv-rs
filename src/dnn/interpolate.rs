@@ -19,6 +19,7 @@ use serde::{Deserialize, Serialize};
 use std::any::Any;
 use std::fmt;
 use std::fmt::Debug;
+use std::ops::Deref;
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub enum InterpolateMethod {
@@ -150,7 +151,6 @@ impl Interpolate {
     }
 }
 
-#[typetag::serde]
 impl Operation for Interpolate {
     fn as_any(&self) -> &dyn Any {
         self
@@ -194,11 +194,11 @@ impl Operation for Interpolate {
         vec![(self.get_affine().signed_apply(bounds), new_lower, new_upper)]
     }
 
-    fn forward_star(
+    fn forward_star<StarRef: Deref<Target = Star2>, Bounds1Ref: Deref<Target = Bounds1>>(
         &self,
-        stars: Vec<&Star2>,
+        stars: Vec<StarRef>,
         _activation_idx: Option<usize>,
-        parent_axis_aligned_input_bounds: Vec<&Bounds1>,
+        parent_axis_aligned_input_bounds: Vec<Bounds1Ref>,
     ) -> (Vec<Star2>, Vec<Bounds1>, bool) {
         assert_eq!(1, stars.len());
         assert_eq!(parent_axis_aligned_input_bounds.len(), 1);

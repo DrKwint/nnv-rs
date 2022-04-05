@@ -1,5 +1,5 @@
 use crate::graph::{
-    Engine, ExecuteError, Graph, GraphError, Operation, OperationId, RepresentationId,
+    Engine, ExecuteError, Graph, GraphError, Operation, OperationId, PhysicalOp, RepresentationId,
 };
 use crate::tensorshape::TensorShape;
 use crate::NNVFloat;
@@ -8,7 +8,7 @@ use ndarray::{Array1, Axis};
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
-#[derive(Clone, Default, Debug, Serialize, Deserialize)]
+#[derive(Clone, Default, Debug)]
 pub struct DNN {
     graph: Graph,
     input_representation_ids: Vec<RepresentationId>,
@@ -44,7 +44,7 @@ impl DNN {
 
     /// # Panics
     /// TODO
-    pub fn from_sequential(layers: &[Box<dyn Operation>]) -> Self {
+    pub fn from_sequential(layers: &[PhysicalOp]) -> Self {
         let mut graph = Graph::default();
         for (i, layer) in layers.iter().enumerate() {
             graph
@@ -67,14 +67,14 @@ impl DNN {
     /// # Errors
     pub fn add_operation(
         &mut self,
-        op: Box<dyn Operation>,
+        op: PhysicalOp,
         inputs: Vec<RepresentationId>,
         outputs: Vec<RepresentationId>,
     ) -> Result<OperationId, GraphError> {
         self.graph.add_operation(op, inputs, outputs)
     }
 
-    pub fn get_operation(&self, id: OperationId) -> Option<&dyn Operation> {
+    pub fn get_operation(&self, id: OperationId) -> Option<&PhysicalOp> {
         self.graph
             .get_operation_node(&id)
             .map(crate::graph::OperationNode::get_operation)
@@ -155,7 +155,7 @@ impl DNN {
         let res = engine.run(
             self.get_output_representation_ids().clone(),
             &inputs,
-            |op: &dyn Operation, inputs, _| -> (Option<usize>, Vec<Array1<NNVFloat>>) {
+            |op: &PhysicalOp, inputs, _| -> (Option<usize>, Vec<Array1<NNVFloat>>) {
                 (None, op.forward1(inputs))
             },
         );
@@ -172,7 +172,7 @@ impl DNN {
         let res = engine.run(
             self.get_output_representation_ids().clone(),
             &inputs,
-            |op: &dyn Operation, inputs, _| -> (Option<usize>, Vec<Array1<NNVFloat>>) {
+            |op: &PhysicalOp, inputs, _| -> (Option<usize>, Vec<Array1<NNVFloat>>) {
                 (None, op.forward1(inputs))
             },
         );

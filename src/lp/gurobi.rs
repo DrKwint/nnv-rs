@@ -11,6 +11,7 @@ use grb::prelude::{add_var, attr, param, ConstrSense, Model, Status};
 use grb::Env;
 use grb::VarType::Continuous;
 use ndarray::{Array1, ArrayView1};
+use std::ops::Deref;
 
 #[allow(dead_code)]
 pub fn qsolve<'a, I, J>(
@@ -28,11 +29,11 @@ where
 }
 
 /// # Panics
-pub fn solve<'a, I, J>(
+pub fn solve<'a, I, J, Bounds1Ref: Deref<Target = Bounds1>>(
     A: I,
     b: J,
     var_coeffs: ArrayView1<NNVFloat>,
-    var_bounds_opt: Option<&Bounds1>,
+    var_bounds_opt: Option<Bounds1Ref>,
 ) -> LinearSolution
 where
     I: IntoIterator<Item = ArrayView1<'a, NNVFloat>>,

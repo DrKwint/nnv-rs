@@ -7,5 +7,7 @@ mod graph;
 mod operation;
 
 pub use execute_engine::{Engine, ExecuteError};
-pub use graph::{Graph, GraphError, GraphState, OperationId, OperationNode, RepresentationId};
+pub use graph::{
+    Graph, GraphError, GraphState, OperationId, OperationNode, PhysicalOp, RepresentationId,
+};
 pub(crate) use operation::Operation;

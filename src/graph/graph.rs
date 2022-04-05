@@ -1,8 +1,17 @@
-use super::operation::Operation;
+use crate::dnn::conv::Conv;
+use crate::dnn::dense::Dense;
+use crate::dnn::interpolate::Interpolate;
+use crate::dnn::relu::ReLU;
+use enum_dispatch::enum_dispatch;
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::fmt::{self, Debug};
+
+#[cfg(test)]
+use crate::test_graphs::DummyOperation;
+#[cfg(test)]
+use crate::test_graphs::{SimpleAdd, SimpleMultiply, SimpleSquare};
 
 /// Unique key for an operation scoped to a Graph.
 pub type OperationId = usize;
@@ -74,7 +83,7 @@ impl<T: Debug + Clone> GraphState<T> {
 }
 
 /// A topo-sorted list of operations that transforms representations into representations.
-#[derive(Default, Clone, Serialize, Deserialize)]
+#[derive(Default, Clone)]
 pub struct Graph {
     representation_ops: HashMap<RepresentationId, OperationId>, // OperationId is the one that produces the RepresentationId
     operation_nodes: Vec<OperationNode>,                        // topo sorted list of operations
@@ -128,7 +137,7 @@ impl Graph {
     /// TODO
     pub fn add_operation(
         &mut self,
-        op: Box<dyn Operation>,
+        op: PhysicalOp,
         inputs: Vec<RepresentationId>,
         outputs: Vec<RepresentationId>,
     ) -> Result<OperationId, GraphError> {
@@ -348,17 +357,72 @@ pub enum GraphError {
     AnotherOpProducesOutput { op_id: OperationId },
 }
 
+#[enum_dispatch(Operation)]
+pub enum PhysicalOp {
+    Dense,
+    Conv,
+    ReLU,
+    Interpolate,
+
+    #[cfg(test)]
+    DummyOperation,
+    #[cfg(test)]
+    SimpleAdd,
+    #[cfg(test)]
+    SimpleMultiply,
+    #[cfg(test)]
+    SimpleSquare,
+}
+
+impl Debug for PhysicalOp {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Dense(x) => write!(f, "{:?}", x),
+            Self::Conv(x) => write!(f, "{:?}", x),
+            Self::ReLU(x) => write!(f, "{:?}", x),
+            Self::Interpolate(x) => write!(f, "{:?}", x),
+            #[cfg(test)]
+            Self::DummyOperation(x) => write!(f, "{:?}", x),
+            #[cfg(test)]
+            Self::SimpleAdd(x) => write!(f, "{:?}", x),
+            #[cfg(test)]
+            Self::SimpleMultiply(x) => write!(f, "{:?}", x),
+            #[cfg(test)]
+            Self::SimpleSquare(x) => write!(f, "{:?}", x),
+        }
+    }
+}
+
+impl Clone for PhysicalOp {
+    fn clone(&self) -> Self {
+        match self {
+            Self::Dense(x) => Self::Dense(x.clone()),
+            Self::Conv(x) => Self::Conv(x.clone()),
+            Self::ReLU(x) => Self::ReLU(x.clone()),
+            Self::Interpolate(x) => Self::Interpolate(x.clone()),
+            #[cfg(test)]
+            Self::DummyOperation(x) => Self::DummyOperation(x.clone()),
+            #[cfg(test)]
+            Self::SimpleAdd(x) => Self::SimpleAdd(x.clone()),
+            #[cfg(test)]
+            Self::SimpleMultiply(x) => Self::SimpleMultiply(x.clone()),
+            #[cfg(test)]
+            Self::SimpleSquare(x) => Self::SimpleSquare(x.clone()),
+        }
+    }
+}
+
 /// Each `RepresentationId` is created uniquely by a single `OperationNode`
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 pub struct OperationNode {
-    operation: Box<dyn Operation>,
+    operation: PhysicalOp,
     inputs: Vec<RepresentationId>,
     outputs: Vec<RepresentationId>,
 }
 
 impl OperationNode {
     pub fn new(
-        operation: Box<dyn Operation>,
+        operation: PhysicalOp,
         inputs: Vec<RepresentationId>,
         outputs: Vec<RepresentationId>,
     ) -> Self {
@@ -369,8 +433,8 @@ impl OperationNode {
         }
     }
 
-    pub fn get_operation(&self) -> &dyn Operation {
-        self.operation.as_ref()
+    pub fn get_operation(&self) -> &PhysicalOp {
+        &self.operation
     }
 
     pub const fn get_input_ids(&self) -> &Vec<RepresentationId> {

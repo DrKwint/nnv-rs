@@ -6,9 +6,9 @@
 //! Calling `run` requires a closure or an `OperationVisitor` trait object. This visitor will use
 //! the operation data and input representation data to calculate output representations. It's
 //! setup like this to facilitate the use of new representations.
-use super::graph::{Graph, GraphState, OperationId, RepresentationId};
+use super::graph::{Graph, GraphState, OperationId, OperationNode, RepresentationId};
 use super::operation::Operation;
-use super::GraphError;
+use super::{GraphError, PhysicalOp};
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::fmt::Debug;
@@ -58,24 +58,29 @@ impl<'a> Engine<'a> {
         &self,
         output_ids: Vec<RepresentationId>,
         inputs: &[(RepresentationId, T)],
-        mut visit: impl FnMut(&dyn Operation, &Vec<&T>, Option<usize>) -> (Option<usize>, Vec<T>),
+        mut visit: impl FnMut(&PhysicalOp, &Vec<&T>, Option<usize>) -> (Option<usize>, Vec<T>),
+    ) -> Result<Vec<(RepresentationId, T)>, ExecuteError> {
+        self.run_nodal(
+            output_ids,
+            inputs,
+            |_, op_node, inputs, step| -> (Option<usize>, Vec<T>) {
+                visit(op_node.get_operation(), inputs, step)
+            },
+        )
+    }
+
+    pub fn run_nodal<T: Clone + Debug>(
+        &self,
+        output_ids: Vec<RepresentationId>,
+        inputs: &[(RepresentationId, T)],
+        mut visit: impl FnMut(
+            OperationId,
+            &OperationNode,
+            &Vec<&T>,
+            Option<usize>,
+        ) -> (Option<usize>, Vec<T>),
     ) -> Result<Vec<(RepresentationId, T)>, ExecuteError> {
         let mut state = ExecutionState::<T>::default();
-
-        // Make sure that if visit_steps is false, then stepped inputs/outputs are not provided/asked for.
-        // if !visit_steps {
-        //     let stepped_inputs = inputs
-        //         .iter()
-        //         .filter(|(rep_id, _)| rep_id.operation_step.is_some())
-        //         .collect::<Vec<_>>();
-        //     let stepped_output_ids = output_ids
-        //         .iter()
-        //         .filter(|rep_id| rep_id.operation_step.is_some())
-        //         .collect::<Vec<_>>();
-        //     if !stepped_inputs.is_empty() || !stepped_output_ids.is_empty() {
-        //         return Err(ExecuteError::VisitStepsTrueForSteppedInputsOrOutputs);
-        //     }
-        // }
 
         // Calculate subgraph and path of operations to perform
         // 1. Walk back through operations BFS
@@ -125,7 +130,7 @@ impl<'a> Engine<'a> {
                         .ok_or(ExecuteError::OneOfRepresentationsNotExist {
                             repr_ids: op_node.get_input_ids().clone(),
                         })?;
-                    visit(op_node.get_operation(), &reprs, step)
+                    visit(op_id, op_node, &reprs, step)
                 };
 
                 if outputs.len() != op_node.get_output_ids().len() {
@@ -296,7 +301,7 @@ pub trait OperationVisitor<T: Clone> {
     ///
     /// * `operation` - The operation being visited
     /// * `inputs` - Inputs to the operation
-    fn visit(&mut self, operation: &dyn Operation, inputs: Vec<&T>) -> Vec<T>;
+    fn visit(&mut self, operation: &PhysicalOp, inputs: Vec<&T>) -> Vec<T>;
 }
 
 pub struct ExecutionState<T: Clone> {

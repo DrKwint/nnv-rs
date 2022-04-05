@@ -19,6 +19,7 @@ use num::Zero;
 use serde::{Deserialize, Serialize};
 use std::convert::TryFrom;
 use std::iter;
+use std::ops::Deref;
 use std::ops::Mul;
 use std::ops::MulAssign;
 use truncnorm::distributions::MultivariateTruncatedNormal;
@@ -323,7 +324,10 @@ impl Polytope {
     /// both lower and upper.
     ///
     /// # Panics
-    pub fn is_empty(&self, bounds_opt: Option<&Bounds1>) -> bool {
+    pub fn is_empty<Bounds1Ref: Deref<Target = Bounds1>>(
+        &self,
+        bounds_opt: Option<Bounds1Ref>,
+    ) -> bool {
         let c = Array1::ones(self.num_dims());
 
         let solved = solve(self.coeffs().rows(), self.rhs(), c.view(), bounds_opt);

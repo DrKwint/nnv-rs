@@ -5,13 +5,12 @@ use crate::graph::Operation;
 use crate::NNVFloat;
 use crate::{affine::Affine2, star::Star2};
 use ndarray::{Array, Array1, Array2};
-use serde::{Deserialize, Serialize};
+use std::ops::Deref;
 use std::{any::Any, fmt};
 
-#[derive(Default, Clone, Debug, Serialize, Deserialize)]
+#[derive(Default, Clone, Debug)]
 pub struct SimpleAdd {}
 
-#[typetag::serde]
 impl Operation for SimpleAdd {
     fn as_any(&self) -> &dyn Any {
         self
@@ -36,11 +35,11 @@ impl Operation for SimpleAdd {
         todo!()
     }
 
-    fn forward_star(
+    fn forward_star<StarRef: Deref<Target = Star2>, Bounds1Ref: Deref<Target = Bounds1>>(
         &self,
-        _stars: Vec<&Star2>,
-        _activation_idx: Option<usize>,
-        _parent_axis_aligned_input_bounds: Vec<&Bounds1>,
+        parent_stars: Vec<StarRef>,
+        step_id: Option<usize>,
+        parent_axis_aligned_input_bounds: Vec<Bounds1Ref>,
     ) -> (Vec<Star2>, Vec<Bounds1>, bool) {
         todo!()
     }
@@ -52,10 +51,9 @@ impl fmt::Display for SimpleAdd {
     }
 }
 
-#[derive(Default, Clone, Debug, Serialize, Deserialize)]
+#[derive(Default, Clone, Debug)]
 pub struct SimpleMultiply {}
 
-#[typetag::serde]
 impl Operation for SimpleMultiply {
     fn as_any(&self) -> &dyn Any {
         self
@@ -80,11 +78,11 @@ impl Operation for SimpleMultiply {
         todo!()
     }
 
-    fn forward_star(
+    fn forward_star<StarRef: Deref<Target = Star2>, Bounds1Ref: Deref<Target = Bounds1>>(
         &self,
-        _stars: Vec<&Star2>,
-        _activation_idx: Option<usize>,
-        _parent_bounds: Vec<&Bounds1>,
+        parent_stars: Vec<StarRef>,
+        step_id: Option<usize>,
+        parent_axis_aligned_input_bounds: Vec<Bounds1Ref>,
     ) -> (Vec<Star2>, Vec<Bounds1>, bool) {
         todo!()
     }
@@ -96,10 +94,9 @@ impl fmt::Display for SimpleMultiply {
     }
 }
 
-#[derive(Default, Clone, Debug, Serialize, Deserialize)]
+#[derive(Default, Clone, Debug)]
 pub struct SimpleSquare {}
 
-#[typetag::serde]
 impl Operation for SimpleSquare {
     fn as_any(&self) -> &dyn Any {
         self
@@ -122,11 +119,11 @@ impl Operation for SimpleSquare {
         todo!()
     }
 
-    fn forward_star(
+    fn forward_star<StarRef: Deref<Target = Star2>, Bounds1Ref: Deref<Target = Bounds1>>(
         &self,
-        _stars: Vec<&Star2>,
-        _activation_idx: Option<usize>,
-        _parent_bounds: Vec<&Bounds1>,
+        parent_stars: Vec<StarRef>,
+        step_id: Option<usize>,
+        parent_axis_aligned_input_bounds: Vec<Bounds1Ref>,
     ) -> (Vec<Star2>, Vec<Bounds1>, bool) {
         todo!()
     }
