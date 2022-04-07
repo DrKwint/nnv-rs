@@ -198,7 +198,7 @@ impl Operation for Interpolate {
         &self,
         stars: Vec<StarRef>,
         _activation_idx: Option<usize>,
-        input_bounds: &Bounds1,
+        _input_bounds: &Bounds1,
         parent_local_output_bounds_opt: Option<Vec<Bounds1Ref>>,
     ) -> Vec<(Vec<Star2>, Vec<Option<Bounds1>>)> {
         assert_eq!(1, stars.len());

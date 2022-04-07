@@ -47,10 +47,10 @@ impl Operation for DummyOperation {
 
     fn forward_star<StarRef: Deref<Target = Star2>, Bounds1Ref: Deref<Target = Bounds1>>(
         &self,
-        parent_stars: Vec<StarRef>,
-        step_id: Option<usize>,
-        input_bounds: &Bounds1,
-        parent_local_output_bounds_opt: Option<Vec<Bounds1Ref>>,
+        _parent_stars: Vec<StarRef>,
+        _step_id: Option<usize>,
+        _input_bounds: &Bounds1,
+        _parent_local_output_bounds_opt: Option<Vec<Bounds1Ref>>,
     ) -> Vec<(Vec<Star2>, Vec<Option<Bounds1>>)> {
         todo!()
     }

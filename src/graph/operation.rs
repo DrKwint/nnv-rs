@@ -38,12 +38,37 @@ pub trait Operation: Clone + Debug + Send + Sync {
 
     fn forward1(&self, input: &[&Array1<NNVFloat>]) -> Vec<Array1<NNVFloat>>;
     fn forward2(&self, input: &[&Array2<NNVFloat>]) -> Vec<Array2<NNVFloat>>;
+
+    /// Propogates the bounds and transforms the lower and upper constraints according to the operation
+    ///
+    /// # Description
+    ///
+    /// DeepPoly approximates output bounds of a network with respect to some input bounds by propagating
+    /// constraints through the network. These constraints are represented in the lower and upper affines,
+    /// i.e. lower and upper bounding linear equations. Each operation transforms these constraints in some
+    /// way and returns the new constraints along with concrete local output bounds.
+    ///
+    /// # Inputs
+    ///
+    /// * `bounds` - The local output bounds of each input to the operation
+    /// * `lower_aff` - The linear constraints the bound the input set from below.
+    /// * `upper_aff` - The linear constraints the bound the input set from above.
+    ///
+    /// # Returns
+    ///
+    /// For each output of the operation, returns the tuple:
+    /// * `bounds` - The new local output bounds of each input to the operation
+    /// * `lower_aff` - The new linear constraints the bound the input set from below.
+    /// * `upper_aff` - The new linear constraints the bound the input set from above.
     fn apply_bounds(
         &self,
         bounds: &[&Bounds1],
         lower_aff: &[&Affine2],
         upper_aff: &[&Affine2],
     ) -> Vec<(Bounds1, Affine2, Affine2)>;
+
+    /// Propogates the bounds and transforms the constraints just as in `apply_bounds`, except on a single
+    /// step of the operation.
     fn apply_bounds_step(
         &self,
         _dim: usize,
@@ -54,6 +79,10 @@ pub trait Operation: Clone + Debug + Send + Sync {
         panic!();
     }
 
+    /// Calculates output stars from an operation along with the necessary input stars.
+    ///
+    /// # Description
+    ///
     /// Returns the set of children stars with their input_bounds, one tuple for each output of the operation.
     /// In the case that there is one, sets the bool to whether the output bounds can be copied.
     ///
@@ -63,14 +92,14 @@ pub trait Operation: Clone + Debug + Send + Sync {
     ///
     /// * `parent_stars` - The stars used as input to the operation.
     /// * `step_id` - The (optional) step of the operation.
-    /// * `parent_input_bounds` - Optional outer bounds on the entire DNN's input set, must be passed if it's defined on the StarSet
-    /// * `parent_local_output_bounds_opt` -
+    /// * `input_bounds` - The input bounds to the starset.
+    /// * `parent_local_output_bounds_opt` - The local output bounds of the parent nodes.
     ///
     /// # Returns
     ///
-    /// * `child_stars` -
-    /// * `children_input_bounds` -
-    /// * `same_output_bounds` - Whether the children have the same output bounds as the parents. See assumptions above.
+    /// For each `output_representation_id`, a tuple is returned of:
+    /// * `child_stars` - The stars for the `output_representation_id`
+    /// * `child_local_output_bounds` - The local output bounds of the child
     fn forward_star<StarRef: Deref<Target = Star2>, Bounds1Ref: Deref<Target = Bounds1>>(
         &self,
         parent_stars: Vec<StarRef>,

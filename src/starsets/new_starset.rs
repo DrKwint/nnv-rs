@@ -70,7 +70,8 @@ pub trait StarSet2: StarSet<Ix2> {
     ///
     /// # Invariants
     ///
-    /// The stars pointed to by `input_stars_ids` must be those that correspond to the `RepresentationId`s of the inputs to the operation and they must be in the same order.
+    /// The stars pointed to by `input_stars_ids` must be those that correspond to the `RepresentationId`s
+    /// of the inputs to the operation and they must be in the same order.
     ///
     /// # Arguments
     /// * `operation_id` - The operation of the DNN on which to expand the star set.
@@ -140,14 +141,6 @@ pub trait StarSet2: StarSet<Ix2> {
             )
             .collect();
 
-        // let child_star_ids = child_stars
-        //     .into_iter()
-        //     .zip(operation_node.get_output_ids().clone().into_iter())
-        //     .zip(child_input_bounds.into_iter())
-        //     .map(|((star, repr_id), child_input_bounds)| {
-        //         self.add_star(star, repr_id, child_input_bounds)
-        //     })
-        //     .collect();
         let star_rel = StarRelationship {
             operation_id,
             step: repr_step,
@@ -162,10 +155,13 @@ pub trait StarSet2: StarSet<Ix2> {
 mod tests {
     use super::super::new_graph_starset::GraphStarset;
     use super::*;
-    use crate::dnn::DNN;
-    use crate::graph::Engine;
+    use crate::affine::Affine2;
+    use crate::dnn::{Dense, ReLU, DNN};
+    use crate::graph::{Engine, PhysicalOp};
     use crate::star::Star2;
+    use crate::tensorshape::TensorShape;
     use crate::test_util::*;
+    use ndarray::{Array, Array1};
     use proptest::prelude::*;
 
     #[must_use = "strategies do nothing unless used"]
@@ -218,12 +214,7 @@ mod tests {
                 x.get_operation().num_steps().unwrap_or(0)
             );
 
-            // Expand all nodes in the starset tree
-            // 1. Create a frontier
-            // let frontier = vec![(starset.get_dnn().get_input_representation_ids()[0].clone(), starset.get_root_id())];
-
-
-            // 2. Visit each operation in order
+            // Expand all nodes in the starset tree by visiting each operation in order and expanding all stars for the inputs to that operation
             let inputs = vec![(starset.get_dnn().get_input_representation_ids()[0].clone(), vec![starset.get_root_id()])];
             let res = engine.run_nodal(starset.get_dnn().get_output_representation_ids(), &inputs, |op_id, op_node, inputs, step| -> (Option<usize>, Vec<Vec<usize>>) {
                 assert_eq!(1, inputs.len());
@@ -245,5 +236,59 @@ mod tests {
             let (_repr_id, out_stars) = &res[0];
             prop_assert!(out_stars.len() <= usize::pow(2, num_steps as u32));
         }
+    }
+
+    #[test]
+    fn test_expand_specific_tree() {
+        let dnn = DNN::from_sequential(&vec![
+            PhysicalOp::from(Dense::new(Affine2::identity(2))),
+            PhysicalOp::from(ReLU::new(2)),
+        ]);
+        let input_bounds = Bounds1::new((Array::ones((2,)) * -1.).view(), Array::ones((2,)).view());
+        let input_star = Star2::default(&TensorShape::new(vec![Some(2)]));
+
+        let starset = GraphStarset::new(dnn, input_bounds, input_star);
+        let engine = Engine::new(starset.get_graph());
+
+        let num_steps = starset
+            .get_graph()
+            .get_operations()
+            .into_iter()
+            .fold(0, |acc, x| acc + x.get_operation().num_steps().unwrap_or(0));
+
+        // Expand all nodes in the starset tree by visiting each operation in
+        // order and expanding all stars for the inputs to that operation
+        let inputs = vec![(
+            starset.get_dnn().get_input_representation_ids()[0].clone(),
+            vec![starset.get_root_id()],
+        )];
+        let res = engine.run_nodal(
+            starset.get_dnn().get_output_representation_ids(),
+            &inputs,
+            |op_id, op_node, inputs, step| -> (Option<usize>, Vec<Vec<usize>>) {
+                assert_eq!(1, inputs.len());
+                let (repr_step, _next_step) =
+                    get_next_step(op_node.get_operation().num_steps(), step);
+                let input_stars = inputs[0];
+                let star_ids = input_stars
+                    .into_iter()
+                    .map(|input_star_id| {
+                        let rel_id = starset.expand(op_id, vec![*input_star_id]);
+                        let rel = starset.get_relationship(rel_id);
+                        assert_eq!(repr_step, rel.step);
+                        rel.output_star_ids.clone().into_iter().flatten()
+                    })
+                    .flatten()
+                    .collect();
+
+                (repr_step, vec![star_ids])
+            },
+        );
+
+        assert!(res.is_ok(), "{:?}", res);
+        let res = res.unwrap();
+        assert_eq!(res.len(), 1);
+        let (_repr_id, out_stars) = &res[0];
+        assert!(out_stars.len() == usize::pow(2, num_steps as u32));
     }
 }

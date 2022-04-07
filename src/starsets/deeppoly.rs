@@ -29,13 +29,6 @@ pub fn deep_poly(
     assert!(!input_nodes.is_empty());
     let input_representations: Vec<(RepresentationId, (Bounds1, Affine2, Affine2))> = {
         // Calculate total input size
-        let cum_size: Vec<usize> = input_nodes
-            .iter()
-            .scan(0, |state, (_, bounds)| {
-                *state += bounds.ndim();
-                Some(*state)
-            })
-            .collect();
         let input_size: usize = input_nodes.iter().map(|(_, bounds)| bounds.ndim()).sum();
 
         let all_lower_matrix = Array2::eye(input_size); // input_size x input_size

@@ -293,17 +293,16 @@ mod test {
             // let input_star = Star2::new(star_basis, star_center).with_constraints(constraints);
             let bounds = bounds1_set(1, 30.);
             let relu = ReLU::new(1);
-            let new_stars = relu.forward_star(vec![&input_star], Some(0), &bounds, Some(vec![&bounds]));
+            relu.forward_star(vec![&input_star], Some(0), &bounds, Some(vec![&bounds]));
         }
     }
 
-    /*
     #[test]
     fn test_deeppoly_relu_gt_correctness() {
         let bounds: Bounds1 = Bounds1::new(Array1::zeros(4).view(), Array1::ones(4).view());
         let lower_aff = Affine2::identity(4);
         let upper_aff = Affine2::identity(4);
-        let (new_b, (new_l, new_u)) = deep_poly_relu(&bounds, &lower_aff, &upper_aff);
+        let (new_b, new_l, new_u) = deep_poly_relu(&bounds, &lower_aff, &upper_aff);
         assert_eq!(new_b, bounds);
         assert_eq!(new_l, lower_aff);
         assert_eq!(new_u, upper_aff);
@@ -314,7 +313,7 @@ mod test {
         let bounds: Bounds1 = Bounds1::new((Array1::ones(4) * -1.).view(), Array1::zeros(4).view());
         let lower_aff = Affine2::identity(4) + (-4.);
         let upper_aff = Affine2::identity(4);
-        let (new_b, (new_l, new_u)) = deep_poly_relu(&bounds, &lower_aff, &upper_aff);
+        let (new_b, new_l, new_u) = deep_poly_relu(&bounds, &lower_aff, &upper_aff);
         assert_eq!(
             new_b,
             Bounds1::new(Array1::zeros(4).view(), Array1::zeros(4).view())
@@ -332,7 +331,7 @@ mod test {
             Array2::from_diag(&(&bounds.upper() / (&bounds.upper() - &bounds.lower()))),
             &bounds.upper() * &bounds.lower() / (&bounds.upper() - &bounds.lower()) * -1.,
         );
-        let (new_b, (new_l, new_u)) = deep_poly_relu(&bounds, &lower_aff, &upper_aff);
+        let (new_b, new_l, new_u) = deep_poly_relu(&bounds, &lower_aff, &upper_aff);
         assert_eq!(
             new_b,
             Bounds1::new(Array1::zeros(4).view(), Array1::ones(4).view())
@@ -350,10 +349,9 @@ mod test {
             Array2::from_diag(&(&bounds.upper() / (&bounds.upper() - &bounds.lower()))),
             &bounds.upper() * &bounds.lower() / (&bounds.upper() - &bounds.lower()) * -1.,
         );
-        let (new_b, (new_l, new_u)) = deep_poly_relu(&bounds, &lower_aff, &upper_aff);
+        let (new_b, new_l, new_u) = deep_poly_relu(&bounds, &lower_aff, &upper_aff);
         assert_eq!(new_b, bounds);
         assert_eq!(new_l, lower_aff);
         assert_eq!(new_u, upper_aff * &upper_aff_update);
     }
-    */
 }
