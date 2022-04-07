@@ -1,5 +1,3 @@
-use std::cell::{Ref, RefCell};
-
 use super::new_starset::{StarId, StarRelationship, StarRelationshipId, StarSet, StarSet2};
 use crate::bounds::{Bounds, Bounds1};
 use crate::dnn::DNN;
@@ -7,29 +5,40 @@ use crate::graph::{Graph, RepresentationId};
 use crate::star::Star;
 use ndarray::Dimension;
 use ndarray::Ix2;
+use std::cell::{Ref, RefCell};
 
 pub struct GraphStarset<D: 'static + Dimension> {
     /// The network for which the starset is generated
     dnn: DNN,
+    /// The input bounds of the star set
+    input_bounds: Bounds<D>,
+
     // Parallel arrays
     /// Storage structure for stars
     arena: RefCell<Vec<Star<D>>>,
     /// The RepresentationId that each star represents
     representations: RefCell<Vec<RepresentationId>>,
-    /// Axis aligned input bounds for each star
-    input_bounds: RefCell<Vec<Bounds<D>>>,
+    /// Output bounds of a prefix network up to and including the operation the produces the star
+    local_output_bounds: RefCell<Vec<Option<Bounds<D>>>>,
 
     /// The relationships between stars, includes the associated graph operation
     relationships: RefCell<Vec<StarRelationship>>,
 }
 
 impl<D: Dimension> GraphStarset<D> {
-    pub fn new(dnn: DNN, input_star: Star<D>, input_bounds: Bounds<D>) -> Self {
+    pub fn new(dnn: DNN, input_bounds: Bounds<D>, input_star: Star<D>) -> Self {
+        let local_output_bounds = if input_star.num_constraints() == 0 {
+            input_bounds.clone()
+        } else {
+            todo!();
+        };
+
         Self {
             dnn,
+            input_bounds,
             arena: RefCell::new(vec![input_star]),
             representations: RefCell::new(vec![RepresentationId::new(0, None)]),
-            input_bounds: RefCell::new(vec![input_bounds]),
+            local_output_bounds: RefCell::new(vec![Some(local_output_bounds)]),
             relationships: RefCell::new(vec![]),
         }
     }
@@ -42,6 +51,10 @@ impl<D: 'static + Dimension> StarSet<D> for GraphStarset<D> {
 
     fn get_dnn(&self) -> &DNN {
         &self.dnn
+    }
+
+    fn get_input_bounds(&self) -> &Bounds<D> {
+        &self.input_bounds
     }
 
     fn get_root_id(&self) -> StarId {
@@ -66,17 +79,21 @@ impl<D: 'static + Dimension> StarSet<D> for GraphStarset<D> {
         &self,
         star: Star<D>,
         representation_id: RepresentationId,
-        axis_aligned_input_bounds: Bounds<D>,
+        local_output_bounds: Option<Bounds<D>>,
     ) -> StarId {
         let star_id = self.arena.borrow().len();
         self.arena.borrow_mut().push(star);
         self.representations.borrow_mut().push(representation_id);
-        self.input_bounds
+        self.local_output_bounds
             .borrow_mut()
-            .push(axis_aligned_input_bounds);
+            .push(local_output_bounds);
         assert_eq!(
             self.arena.borrow().len(),
             self.representations.borrow().len()
+        );
+        assert_eq!(
+            self.arena.borrow().len(),
+            self.local_output_bounds.borrow().len()
         );
         star_id
     }
@@ -98,8 +115,8 @@ impl StarSet2 for GraphStarset<Ix2> {
     }
 
     /// TODO: Implement with a cache because it is expensive
-    fn get_axis_aligned_input_bounds(&self, star_id: StarId) -> Ref<Bounds1> {
-        assert!(star_id < self.input_bounds.borrow().len());
-        Ref::map(self.input_bounds.borrow(), |vec| &vec[star_id])
+    fn get_local_output_bounds(&self, star_id: StarId) -> Ref<Option<Bounds1>> {
+        assert!(star_id < self.local_output_bounds.borrow().len());
+        Ref::map(self.local_output_bounds.borrow(), |vec| &vec[star_id])
     }
 }

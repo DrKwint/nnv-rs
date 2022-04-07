@@ -48,7 +48,7 @@ fn test_diamond_structure_whole_graph() {
     let engine = Engine::new(&graph);
     let mut order = vec![];
     let run_res = engine.run(
-        vec![repr_ids[3]],
+        &vec![repr_ids[3]],
         &vec![(repr_ids[0], 0 as usize)],
         |operation: &PhysicalOp, _, _| -> (Option<usize>, Vec<usize>) {
             let op = operation.as_any().downcast_ref::<DummyOperation>().unwrap();
@@ -66,7 +66,7 @@ fn test_diamond_structure_subgraph_output() {
     let engine = Engine::new(&graph);
     let mut order = vec![];
     let run_res = engine.run(
-        vec![repr_ids[2]],
+        &vec![repr_ids[2]],
         &vec![(repr_ids[0], 0 as usize)],
         |operation: &PhysicalOp, _, _| -> (Option<usize>, Vec<usize>) {
             let op = operation.as_any().downcast_ref::<DummyOperation>().unwrap();

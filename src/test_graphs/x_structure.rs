@@ -48,7 +48,7 @@ fn test_x_structure_whole_graph() {
     let engine = Engine::new(&graph);
     let mut order = vec![];
     let run_res = engine.run(
-        vec![repr_ids[3], repr_ids[4]],
+        &vec![repr_ids[3], repr_ids[4]],
         &vec![(repr_ids[0], 0 as usize), (repr_ids[1], 0 as usize)],
         |operation: &PhysicalOp, _, _| -> (Option<usize>, Vec<usize>) {
             let op = operation.as_any().downcast_ref::<DummyOperation>().unwrap();
@@ -66,7 +66,7 @@ fn test_x_structure_single_output() {
     let engine = Engine::new(&graph);
     let mut order = vec![];
     let run_res = engine.run(
-        vec![repr_ids[4]],
+        &vec![repr_ids[4]],
         &vec![(repr_ids[0], 0 as usize), (repr_ids[1], 0 as usize)],
         |operation: &PhysicalOp, _, _| -> (Option<usize>, Vec<usize>) {
             let op = operation.as_any().downcast_ref::<DummyOperation>().unwrap();
@@ -85,7 +85,7 @@ fn test_x_structure_invalid_subgraph() {
     // Test 3: Tests the subgraph (B -> C, C -> D)
     let mut order = vec![];
     let res = engine.run(
-        vec![repr_ids[3]],
+        &vec![repr_ids[3]],
         &vec![(repr_ids[0], 0 as usize)],
         |operation: &PhysicalOp, _, _| -> (Option<usize>, Vec<usize>) {
             let op = operation.as_any().downcast_ref::<DummyOperation>().unwrap();

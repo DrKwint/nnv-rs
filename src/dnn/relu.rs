@@ -59,32 +59,32 @@ impl Operation for ReLU {
 
     fn apply_bounds(
         &self,
-        bounds: &[Bounds1],
-        lower_aff: &[Affine2],
-        upper_aff: &[Affine2],
+        bounds: &[&Bounds1],
+        lower_aff: &[&Affine2],
+        upper_aff: &[&Affine2],
     ) -> Vec<(Bounds1, Affine2, Affine2)> {
-        if (self.ndims + 1) == bounds[0].ndim() {
-            vec![deep_poly_relu(&bounds[0], &lower_aff[0], &upper_aff[0])]
-        } else {
-            let (bounds_head, bounds_tail) = bounds[0].split_at(self.ndims);
-            let (lower_aff_head, lower_aff_tail) = lower_aff[0].split_at(self.ndims);
-            let (upper_aff_head, upper_aff_tail) = lower_aff[0].split_at(self.ndims);
-            let (bounds_part, lower_part, upper_part) =
-                deep_poly_relu(&bounds_head, &lower_aff_head, &upper_aff_head);
-            vec![(
-                bounds_part.append(&bounds_tail),
-                lower_part.append(&lower_aff_tail),
-                upper_part.append(&upper_aff_tail),
-            )]
-        }
+        // if (self.ndims + 1) == bounds[0].ndim() {
+        vec![deep_poly_relu(&bounds[0], &lower_aff[0], &upper_aff[0])]
+        // } else {
+        //     let (bounds_head, bounds_tail) = bounds[0].split_at(self.ndims);
+        //     let (lower_aff_head, lower_aff_tail) = lower_aff[0].split_at(self.ndims);
+        //     let (upper_aff_head, upper_aff_tail) = lower_aff[0].split_at(self.ndims);
+        //     let (bounds_part, lower_part, upper_part) =
+        //         deep_poly_relu(&bounds_head, &lower_aff_head, &upper_aff_head);
+        //     vec![(
+        //         bounds_part.append(&bounds_tail),
+        //         lower_part.append(&lower_aff_tail),
+        //         upper_part.append(&upper_aff_tail),
+        //     )]
+        // }
     }
 
     fn apply_bounds_step(
         &self,
         dim: usize,
-        bounds: &[Bounds1],
-        lower_aff: &[Affine2],
-        upper_aff: &[Affine2],
+        bounds: &[&Bounds1],
+        lower_aff: &[&Affine2],
+        upper_aff: &[&Affine2],
     ) -> Vec<(Bounds1, Affine2, Affine2)> {
         vec![deep_poly_steprelu(
             dim,
@@ -103,50 +103,67 @@ impl Operation for ReLU {
         &self,
         stars: Vec<StarRef>,
         dim: Option<usize>,
-        parent_axis_aligned_input_bounds: Vec<Bounds1Ref>,
-    ) -> (Vec<Star2>, Vec<Bounds1>, bool) {
-        assert_eq!(1, parent_axis_aligned_input_bounds.len());
-        let parent_aa_input_bounds: Bounds1 = parent_axis_aligned_input_bounds[0].clone();
+        input_bounds: &Bounds1,
+        parent_local_output_bounds_opt: Option<Vec<Bounds1Ref>>,
+    ) -> Vec<(Vec<Star2>, Vec<Option<Bounds1>>)> {
+        assert!(parent_local_output_bounds_opt
+            .as_ref()
+            .map_or(true, |b| b.len() == 1));
+        let parent_local_output_bounds_opt = parent_local_output_bounds_opt.map(|x| x[0].clone());
         assert_eq!(1, stars.len());
         let star = stars.get(0).unwrap();
 
         let dim = dim.unwrap();
-        let child_stars = star.step_relu2(dim, Some(&parent_aa_input_bounds));
-        let mut same_output_bounds = false;
-        let mut stars = vec![];
-        let mut star_input_bounds: Vec<Bounds1> = vec![];
+        let child_stars = star.step_relu2(dim, Some(input_bounds));
         let is_single_child = child_stars.0.is_some() ^ child_stars.1.is_some();
 
+        let mut stars = vec![];
+        let mut star_local_output_bounds = Vec::new();
         if let Some(mut lower_star) = child_stars.0 {
-            let mut bounds: Bounds1 = parent_aa_input_bounds.clone();
-            bounds.index_mut(dim)[0] = 0.;
-            bounds.index_mut(dim)[1] = 0.;
+            // local_output_bounds output
+            star_local_output_bounds.push(parent_local_output_bounds_opt.as_ref().map(
+                |parent_local_output_bounds| {
+                    let mut local_output_bounds: Bounds1 =
+                        Bounds1::clone(&parent_local_output_bounds);
+                    local_output_bounds.index_mut(dim)[0] = 0.;
+                    local_output_bounds.index_mut(dim)[1] = 0.;
+                    local_output_bounds
+                },
+            ));
+
+            // star output
             if is_single_child {
                 // Remove redundant constraint added by step_relu2 above
                 let num_constraints = lower_star.num_constraints();
                 lower_star = lower_star.remove_constraint(num_constraints - 1);
             }
-
             stars.push(lower_star);
-            star_input_bounds.push(bounds);
         }
 
         if let Some(mut upper_star) = child_stars.1 {
-            let mut bounds: Bounds1 = parent_aa_input_bounds.clone();
-            let mut lb = bounds.index_mut(dim);
-            if lb[0].is_sign_negative() {
-                lb[0] = 0.;
-            }
+            // local_output_bounds output
+            star_local_output_bounds.push(parent_local_output_bounds_opt.map(
+                |parent_local_output_bounds| {
+                    let mut local_output_bounds: Bounds1 =
+                        Bounds1::clone(&parent_local_output_bounds);
+                    let mut lb = local_output_bounds.index_mut(dim);
+                    if lb[0].is_sign_negative() {
+                        lb[0] = 0.;
+                    }
+                    local_output_bounds
+                },
+            ));
+
+            // star output
             if is_single_child {
                 // Remove redundant constraint added by step_relu2 above
                 let num_constraints = upper_star.num_constraints();
                 upper_star = upper_star.remove_constraint(num_constraints - 1);
-                same_output_bounds = true;
             }
             stars.push(upper_star);
-            star_input_bounds.push(bounds);
         }
-        (stars, star_input_bounds, same_output_bounds)
+
+        vec![(stars, star_local_output_bounds)]
     }
 }
 
@@ -261,4 +278,82 @@ pub fn deep_poly_relu(
     upper_aff.scale_eqns(u_mul.view());
     upper_aff = upper_aff + u_shift;
     (out, lower_aff, upper_aff)
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use crate::test_util::*;
+    use proptest::prelude::*;
+
+    proptest! {
+        #[test]
+        // fn test_single_dim_relu(star_basis in array2(1, 1), star_center in array1(1), constraints in polytope_including_zero(1, 10)) {
+        fn test_single_dim_relu(input_star in non_empty_star(1, 4)) {
+            // let input_star = Star2::new(star_basis, star_center).with_constraints(constraints);
+            let bounds = bounds1_set(1, 30.);
+            let relu = ReLU::new(1);
+            let new_stars = relu.forward_star(vec![&input_star], Some(0), &bounds, Some(vec![&bounds]));
+        }
+    }
+
+    /*
+    #[test]
+    fn test_deeppoly_relu_gt_correctness() {
+        let bounds: Bounds1 = Bounds1::new(Array1::zeros(4).view(), Array1::ones(4).view());
+        let lower_aff = Affine2::identity(4);
+        let upper_aff = Affine2::identity(4);
+        let (new_b, (new_l, new_u)) = deep_poly_relu(&bounds, &lower_aff, &upper_aff);
+        assert_eq!(new_b, bounds);
+        assert_eq!(new_l, lower_aff);
+        assert_eq!(new_u, upper_aff);
+    }
+
+    #[test]
+    fn test_deeppoly_relu_lt_correctness() {
+        let bounds: Bounds1 = Bounds1::new((Array1::ones(4) * -1.).view(), Array1::zeros(4).view());
+        let lower_aff = Affine2::identity(4) + (-4.);
+        let upper_aff = Affine2::identity(4);
+        let (new_b, (new_l, new_u)) = deep_poly_relu(&bounds, &lower_aff, &upper_aff);
+        assert_eq!(
+            new_b,
+            Bounds1::new(Array1::zeros(4).view(), Array1::zeros(4).view())
+        );
+        assert_eq!(new_l, Affine2::identity(4) * 0.);
+        assert_eq!(new_u, Affine2::identity(4) * 0.);
+    }
+
+    #[test]
+    fn test_deeppoly_relu_spanning_firstbranch_correctness() {
+        let bounds: Bounds1 = Bounds1::new((Array1::ones(4) * -2.).view(), Array1::ones(4).view());
+        let lower_aff = Affine2::identity(4);
+        let upper_aff = Affine2::identity(4);
+        let upper_aff_update = Affine2::new(
+            Array2::from_diag(&(&bounds.upper() / (&bounds.upper() - &bounds.lower()))),
+            &bounds.upper() * &bounds.lower() / (&bounds.upper() - &bounds.lower()) * -1.,
+        );
+        let (new_b, (new_l, new_u)) = deep_poly_relu(&bounds, &lower_aff, &upper_aff);
+        assert_eq!(
+            new_b,
+            Bounds1::new(Array1::zeros(4).view(), Array1::ones(4).view())
+        );
+        assert_eq!(new_l, lower_aff * 0.);
+        assert_eq!(new_u, upper_aff * &upper_aff_update);
+    }
+
+    #[test]
+    fn test_deeppoly_relu_spanning_secondbranch_correctness() {
+        let bounds: Bounds1 = Bounds1::new((Array1::ones(4) * -1.).view(), Array1::ones(4).view());
+        let lower_aff = Affine2::identity(4);
+        let upper_aff = Affine2::identity(4);
+        let upper_aff_update = Affine2::new(
+            Array2::from_diag(&(&bounds.upper() / (&bounds.upper() - &bounds.lower()))),
+            &bounds.upper() * &bounds.lower() / (&bounds.upper() - &bounds.lower()) * -1.,
+        );
+        let (new_b, (new_l, new_u)) = deep_poly_relu(&bounds, &lower_aff, &upper_aff);
+        assert_eq!(new_b, bounds);
+        assert_eq!(new_l, lower_aff);
+        assert_eq!(new_u, upper_aff * &upper_aff_update);
+    }
+    */
 }

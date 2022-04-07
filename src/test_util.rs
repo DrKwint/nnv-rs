@@ -10,7 +10,6 @@ use crate::polytope::Polytope;
 use crate::star::Star2;
 // use crate::starsets::Asterism;
 // use crate::starsets::Constellation;
-use ndarray::Array1;
 use ndarray::Array2;
 use ndarray::Array3;
 use ndarray::Array4;
@@ -18,6 +17,7 @@ use ndarray::ArrayView1;
 use ndarray::Axis;
 use ndarray::Ix2;
 use ndarray::Zip;
+use ndarray::{Array, Array1};
 use proptest::arbitrary::functor::ArbitraryF1;
 use proptest::prelude::any;
 use proptest::prelude::*;
@@ -40,9 +40,8 @@ prop_compose! {
 
 prop_compose! {
     pub fn array2(rows: usize, cols: usize)
-        (v in Vec::lift1_with(array1(cols), SizeRange::new(rows..=rows))) -> Array2<f64> {
-            assert!(rows > 0);
-            ndarray::stack(Axis(0), &v.iter().map(ndarray::ArrayBase::view).collect::<Vec<ArrayView1<f64>>>()).unwrap()
+        (v in array1(rows * cols))-> Array2<f64> {
+            v.into_shape((rows, cols)).unwrap()
         }
 }
 
@@ -79,6 +78,13 @@ prop_compose! {
     pub fn bounds1_sample(bounds: Bounds1)(seed in any::<u64>()) -> Array1<f64> {
         bounds.sample_uniform(seed)
     }
+}
+
+pub fn bounds1_set(ndim: usize, half_box_width: f64) -> Bounds1 {
+    assert!(half_box_width >= 0.);
+    let upper_bounds = Array::ones((ndim,)) * half_box_width;
+    let lower_bounds = Array::ones((ndim,)) * half_box_width * -1.;
+    Bounds1::new(lower_bounds.view(), upper_bounds.view())
 }
 
 prop_compose! {
@@ -178,6 +184,7 @@ prop_compose! {
                         let new_rhs = -1. * eqn.rhs().to_owned();
                         polytope.add_eqn(new_coeffs.row(0), new_rhs[[0]]);
                     }
+                    assert!(polytope.is_member(&zero.view()));
                 });
             polytope
         }
@@ -348,26 +355,6 @@ prop_compose! {
 //             asterism
 //         }
 // }
-
-pub fn take_single_step(num_steps: Option<usize>, step: Option<usize>) -> Option<usize> {
-    if let Some(num_steps) = num_steps {
-        if let Some(step) = step {
-            if step + 2 == num_steps {
-                None
-            } else {
-                Some(step + 1)
-            }
-        } else {
-            if num_steps == 1 {
-                None
-            } else {
-                Some(0)
-            }
-        }
-    } else {
-        None
-    }
-}
 
 proptest! {
     #[test]

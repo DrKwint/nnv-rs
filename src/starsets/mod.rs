@@ -19,5 +19,6 @@
 // pub use prob_starset::{ProbStarSet, ProbStarSet2};
 // pub use starset::{StarSet, StarSet2};
 
+mod deeppoly;
 mod new_graph_starset;
 mod new_starset;

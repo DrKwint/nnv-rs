@@ -9,7 +9,7 @@ use crate::NNVFloat;
 use enum_dispatch::enum_dispatch;
 use ndarray::{Array1, Array2};
 use std::any::Any;
-use std::fmt::{Debug, Display};
+use std::fmt::Debug;
 use std::ops::Deref;
 
 #[cfg(test)]
@@ -40,21 +40,21 @@ pub trait Operation: Clone + Debug + Send + Sync {
     fn forward2(&self, input: &[&Array2<NNVFloat>]) -> Vec<Array2<NNVFloat>>;
     fn apply_bounds(
         &self,
-        bounds: &[Bounds1],
-        lower_aff: &[Affine2],
-        upper_aff: &[Affine2],
+        bounds: &[&Bounds1],
+        lower_aff: &[&Affine2],
+        upper_aff: &[&Affine2],
     ) -> Vec<(Bounds1, Affine2, Affine2)>;
     fn apply_bounds_step(
         &self,
         _dim: usize,
-        _bounds: &[Bounds1],
-        _lower_aff: &[Affine2],
-        _upper_aff: &[Affine2],
+        _bounds: &[&Bounds1],
+        _lower_aff: &[&Affine2],
+        _upper_aff: &[&Affine2],
     ) -> Vec<(Bounds1, Affine2, Affine2)> {
         panic!();
     }
 
-    /// Returns the set of children stars with their input_bounds.
+    /// Returns the set of children stars with their input_bounds, one tuple for each output of the operation.
     /// In the case that there is one, sets the bool to whether the output bounds can be copied.
     ///
     /// We pass axis_aligned_input_bounds through each operation because it's very cheap to update and expensive to calculate.
@@ -63,19 +63,21 @@ pub trait Operation: Clone + Debug + Send + Sync {
     ///
     /// * `parent_stars` - The stars used as input to the operation.
     /// * `step_id` - The (optional) step of the operation.
-    /// * `axis_aligned_input_bounds` - Optional outer bounds on the entire DNN's input set, must be passed if it's defined on the StarSet
+    /// * `parent_input_bounds` - Optional outer bounds on the entire DNN's input set, must be passed if it's defined on the StarSet
+    /// * `parent_local_output_bounds_opt` -
     ///
     /// # Returns
     ///
     /// * `child_stars` -
-    /// * `children_axis_aligned_input_bounds` -
+    /// * `children_input_bounds` -
     /// * `same_output_bounds` - Whether the children have the same output bounds as the parents. See assumptions above.
     fn forward_star<StarRef: Deref<Target = Star2>, Bounds1Ref: Deref<Target = Bounds1>>(
         &self,
         parent_stars: Vec<StarRef>,
         step_id: Option<usize>,
-        parent_axis_aligned_input_bounds: Vec<Bounds1Ref>,
-    ) -> (Vec<Star2>, Vec<Bounds1>, bool);
+        input_bounds: &Bounds1,
+        parent_local_output_bounds_opt: Option<Vec<Bounds1Ref>>,
+    ) -> Vec<(Vec<Star2>, Vec<Option<Bounds1>>)>;
 
     fn inputs_dims(&self) -> Vec<usize> {
         self.input_shapes()

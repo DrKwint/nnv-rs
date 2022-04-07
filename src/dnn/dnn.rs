@@ -5,7 +5,6 @@ use crate::tensorshape::TensorShape;
 use crate::NNVFloat;
 use ndarray::Array2;
 use ndarray::{Array1, Axis};
-use serde::{Deserialize, Serialize};
 use std::fmt;
 
 #[derive(Clone, Default, Debug)]
@@ -113,7 +112,7 @@ impl DNN {
             .map(|(&id, input)| (id, input.clone()))
             .collect::<Vec<_>>();
         Engine::new(&self.graph).run(
-            self.get_output_representation_ids().clone(),
+            self.get_output_representation_ids(),
             &inputs,
             |op, inputs, _| -> (Option<usize>, Vec<Array2<NNVFloat>>) {
                 if let Some(mut pattern) = op.get_activation_pattern(inputs) {
@@ -153,7 +152,7 @@ impl DNN {
             .map(|(&id, input)| (id, input.clone()))
             .collect::<Vec<_>>();
         let res = engine.run(
-            self.get_output_representation_ids().clone(),
+            self.get_output_representation_ids(),
             &inputs,
             |op: &PhysicalOp, inputs, _| -> (Option<usize>, Vec<Array1<NNVFloat>>) {
                 (None, op.forward1(inputs))
@@ -170,7 +169,7 @@ impl DNN {
     ) -> Vec<Array1<NNVFloat>> {
         let engine = Engine::new(&self.graph);
         let res = engine.run(
-            self.get_output_representation_ids().clone(),
+            self.get_output_representation_ids(),
             &inputs,
             |op: &PhysicalOp, inputs, _| -> (Option<usize>, Vec<Array1<NNVFloat>>) {
                 (None, op.forward1(inputs))

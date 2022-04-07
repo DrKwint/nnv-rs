@@ -26,7 +26,6 @@ extern crate truncnorm;
 
 pub mod affine;
 pub mod bounds;
-// pub mod deeppoly;
 pub mod dnn;
 pub mod gaussian;
 pub mod graph;

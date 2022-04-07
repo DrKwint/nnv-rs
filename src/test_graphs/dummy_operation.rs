@@ -38,19 +38,20 @@ impl Operation for DummyOperation {
 
     fn apply_bounds(
         &self,
-        _bounds: &[Bounds1],
-        _lower_aff: &[Affine2],
-        _upper_aff: &[Affine2],
+        _bounds: &[&Bounds1],
+        _lower_aff: &[&Affine2],
+        _upper_aff: &[&Affine2],
     ) -> Vec<(Bounds1, Affine2, Affine2)> {
         todo!()
     }
 
     fn forward_star<StarRef: Deref<Target = Star2>, Bounds1Ref: Deref<Target = Bounds1>>(
         &self,
-        _parent_stars: Vec<StarRef>,
-        _step_id: Option<usize>,
-        _parent_axis_aligned_input_bounds: Vec<Bounds1Ref>,
-    ) -> (Vec<Star2>, Vec<Bounds1>, bool) {
+        parent_stars: Vec<StarRef>,
+        step_id: Option<usize>,
+        input_bounds: &Bounds1,
+        parent_local_output_bounds_opt: Option<Vec<Bounds1Ref>>,
+    ) -> Vec<(Vec<Star2>, Vec<Option<Bounds1>>)> {
         todo!()
     }
 }

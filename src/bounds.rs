@@ -251,12 +251,22 @@ impl<D: Dimension + RemoveAxis> Display for Bounds<D> {
 #[cfg(test)]
 mod test {
     use crate::test_util::*;
-    use proptest::proptest;
+    use proptest::prelude::*;
 
     proptest! {
         #[test]
         fn test_bounds_sample_uniform(bounds in generic_bounds1(32)) {
             bounds.sample_uniform(0_u64);
+        }
+    }
+
+    proptest! {
+        #[test]
+        fn test_bounds_append_shape(b_1 in generic_bounds1(32), b_2 in generic_bounds1(32)) {
+            let len_b_1 = b_1.ndim();
+            let len_b_2 = b_2.ndim();
+            let b_3 = b_1.append(&b_2);
+            prop_assert_eq!(b_3.ndim(), len_b_1 + len_b_2);
         }
     }
 }

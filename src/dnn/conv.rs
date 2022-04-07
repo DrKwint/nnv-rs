@@ -207,9 +207,9 @@ impl Operation for Conv {
 
     fn apply_bounds(
         &self,
-        bounds: &[Bounds1],
-        lower_aff: &[Affine2],
-        upper_aff: &[Affine2],
+        bounds: &[&Bounds1],
+        lower_aff: &[&Affine2],
+        upper_aff: &[&Affine2],
     ) -> Vec<(Bounds1, Affine2, Affine2)> {
         assert_eq!(bounds.len(), 1);
         assert_eq!(lower_aff.len(), 1);
@@ -230,15 +230,12 @@ impl Operation for Conv {
         &self,
         stars: Vec<StarRef>,
         _activation_idx: Option<usize>,
-        parent_axis_aligned_input_bounds: Vec<Bounds1Ref>,
-    ) -> (Vec<Star2>, Vec<Bounds1>, bool) {
+        input_bounds: &Bounds1,
+        parent_local_output_bounds_opt: Option<Vec<Bounds1Ref>>,
+    ) -> Vec<(Vec<Star2>, Vec<Option<Bounds1>>)> {
         assert_eq!(1, stars.len());
-        assert_eq!(1, parent_axis_aligned_input_bounds.len());
-        (
-            vec![stars[0].affine_map2(self.get_affine())],
-            vec![parent_axis_aligned_input_bounds[0].clone()],
-            false,
-        )
+        assert!(parent_local_output_bounds_opt.map_or(true, |b| b.len() == 1));
+        vec![(vec![stars[0].affine_map2(self.get_affine())], vec![None])]
     }
 }
 

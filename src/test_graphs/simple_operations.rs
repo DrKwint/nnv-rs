@@ -28,19 +28,20 @@ impl Operation for SimpleAdd {
 
     fn apply_bounds(
         &self,
-        _bounds: &[Bounds1],
-        _lower_aff: &[Affine2],
-        _upper_aff: &[Affine2],
+        _bounds: &[&Bounds1],
+        _lower_aff: &[&Affine2],
+        _upper_aff: &[&Affine2],
     ) -> Vec<(Bounds1, Affine2, Affine2)> {
         todo!()
     }
 
     fn forward_star<StarRef: Deref<Target = Star2>, Bounds1Ref: Deref<Target = Bounds1>>(
         &self,
-        parent_stars: Vec<StarRef>,
-        step_id: Option<usize>,
-        parent_axis_aligned_input_bounds: Vec<Bounds1Ref>,
-    ) -> (Vec<Star2>, Vec<Bounds1>, bool) {
+        _parent_stars: Vec<StarRef>,
+        _step_id: Option<usize>,
+        _input_bounds: &Bounds1,
+        _parent_local_output_bounds_opt: Option<Vec<Bounds1Ref>>,
+    ) -> Vec<(Vec<Star2>, Vec<Option<Bounds1>>)> {
         todo!()
     }
 }
@@ -71,19 +72,20 @@ impl Operation for SimpleMultiply {
 
     fn apply_bounds(
         &self,
-        _bounds: &[Bounds1],
-        _lower_aff: &[Affine2],
-        _upper_aff: &[Affine2],
+        _bounds: &[&Bounds1],
+        _lower_aff: &[&Affine2],
+        _upper_aff: &[&Affine2],
     ) -> Vec<(Bounds1, Affine2, Affine2)> {
         todo!()
     }
 
     fn forward_star<StarRef: Deref<Target = Star2>, Bounds1Ref: Deref<Target = Bounds1>>(
         &self,
-        parent_stars: Vec<StarRef>,
-        step_id: Option<usize>,
-        parent_axis_aligned_input_bounds: Vec<Bounds1Ref>,
-    ) -> (Vec<Star2>, Vec<Bounds1>, bool) {
+        _parent_stars: Vec<StarRef>,
+        _step_id: Option<usize>,
+        _input_bounds: &Bounds1,
+        _parent_local_output_bounds_opt: Option<Vec<Bounds1Ref>>,
+    ) -> Vec<(Vec<Star2>, Vec<Option<Bounds1>>)> {
         todo!()
     }
 }
@@ -112,19 +114,20 @@ impl Operation for SimpleSquare {
 
     fn apply_bounds(
         &self,
-        _bounds: &[Bounds1],
-        _lower_aff: &[Affine2],
-        _upper_aff: &[Affine2],
+        _bounds: &[&Bounds1],
+        _lower_aff: &[&Affine2],
+        _upper_aff: &[&Affine2],
     ) -> Vec<(Bounds1, Affine2, Affine2)> {
         todo!()
     }
 
     fn forward_star<StarRef: Deref<Target = Star2>, Bounds1Ref: Deref<Target = Bounds1>>(
         &self,
-        parent_stars: Vec<StarRef>,
-        step_id: Option<usize>,
-        parent_axis_aligned_input_bounds: Vec<Bounds1Ref>,
-    ) -> (Vec<Star2>, Vec<Bounds1>, bool) {
+        _parent_stars: Vec<StarRef>,
+        _step_id: Option<usize>,
+        _input_bounds: &Bounds1,
+        _parent_local_output_bounds_opt: Option<Vec<Bounds1Ref>>,
+    ) -> Vec<(Vec<Star2>, Vec<Option<Bounds1>>)> {
         todo!()
     }
 }

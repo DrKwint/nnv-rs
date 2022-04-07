@@ -19,13 +19,25 @@ let res = engine.run(output_ids, inputs, |op, inputs, _| -> (Option<usize>, Vec<
 };
 ```
 
+## Assumptions to sort:
+
+Parent star not empty. Empty stars are not added to a starset.
+
 ## Major definitions and abstractions
+
+### DeepPoly
 
 ### Computation Graph
 
 #### Representations
 
 #### Operations
+
+#### Bounds
+
+Input Bounds
+Output Bounds
+Local Output Bounds
 
 ### Star
 

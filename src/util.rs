@@ -164,6 +164,31 @@ impl<A: Ord, B: Eq> Ord for FstOrdTuple<A, B> {
     }
 }
 
+/// Calculates the representation step and the actual step that should be taken
+///
+/// Returns:
+///
+/// * `representation_step`: The step for the `representation_id`.
+/// * `actual_step`: The step used to calculate bounds, stars, etc.
+pub fn get_next_step(
+    num_steps: Option<usize>,
+    step: Option<usize>,
+) -> (Option<usize>, Option<usize>) {
+    match (num_steps, step) {
+        // Steps are not used in the operation
+        (None, None) => (None, None),
+        // The operation contains only a single step
+        (Some(1), None) => (None, Some(0)),
+        // If the next step is the last step (step + 1 == num_steps - 1), then we are done with the operation
+        (Some(num_steps), Some(step)) if step + 2 == num_steps => (None, Some(step + 1)),
+        // If the next step is not the last step, increment
+        (Some(num_steps), Some(step)) if step + 2 < num_steps => (Some(step + 1), Some(step + 1)),
+        // If we have not yet stepped, step from None to Some
+        (Some(_), None) => (Some(0), Some(0)),
+        _ => panic!(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -6,6 +6,7 @@ use crate::graph::Operation;
 use crate::graph::OperationId;
 use crate::graph::RepresentationId;
 use crate::star::Star;
+use crate::util::get_next_step;
 use ndarray::Dimension;
 use ndarray::Ix2;
 use serde::{Deserialize, Serialize};
@@ -19,7 +20,7 @@ pub struct StarRelationship {
     pub operation_id: OperationId,
     pub step: Option<usize>,
     pub input_star_ids: Vec<usize>,
-    pub output_star_ids: Vec<usize>,
+    pub output_star_ids: Vec<Vec<usize>>,
 }
 
 /// We assume there's a root star that is the ordered concatenation of the DNN's input variables.
@@ -29,6 +30,8 @@ pub trait StarSet<D: 'static + Dimension> {
     fn get_graph(&self) -> &Graph;
     /// Get DNN
     fn get_dnn(&self) -> &DNN;
+    /// Get the input bounds of the star set
+    fn get_input_bounds(&self) -> &Bounds<D>;
     /// Get the id of the root star in the starset.
     fn get_root_id(&self) -> StarId;
     /// Get the DNN/Graph `RepresentationId` that a star corresponds to
@@ -43,7 +46,7 @@ pub trait StarSet<D: 'static + Dimension> {
         &self,
         star: Star<D>,
         representation_id: RepresentationId,
-        axis_aligned_input_bounds: Bounds<D>,
+        local_output_bounds: Option<Bounds<D>>,
     ) -> StarId;
     /// Adds a relationship
     /// Requires interior mutability
@@ -57,7 +60,7 @@ pub trait StarSet2: StarSet<Ix2> {
     /// Get the dimension of the DNN input
     fn get_input_dim(&self) -> usize;
     /// TODO: Implement with a cache because it is expensive
-    fn get_axis_aligned_input_bounds(&self, star_id: StarId) -> Ref<Bounds1>;
+    fn get_local_output_bounds(&self, star_id: StarId) -> Ref<Option<Bounds1>>;
 
     /// Expand an operation from its inputs to produce the children and adds them to the `StarSet`.
     ///
@@ -88,50 +91,66 @@ pub trait StarSet2: StarSet<Ix2> {
 
         // Make sure the step of each input star's `RepresentationId` is the same.
         // Non-empty assert makes the unwrap safe.
-        let step_opt = repr_ids.first().unwrap().operation_step;
+        let prev_step = repr_ids.first().unwrap().operation_step;
         assert!(!repr_ids
             .into_iter()
-            .any(|repr_id| repr_id.operation_step != step_opt));
+            .any(|repr_id| repr_id.operation_step != prev_step));
 
         // Calculate next step
-        let next_step_opt = match (operation_node.get_operation().num_steps(), step_opt) {
-            // Steps are not used in the operation
-            (None | Some(1), None) => None,
-            // If the next step is the last step (step + 1 == num_steps - 1), then we are done with the operation
-            (Some(num_steps), Some(step)) if step + 2 == num_steps => None,
-            // If the next step is not the last step, increment
-            (Some(num_steps), Some(step)) if step + 2 < num_steps => Some(step + 1),
-            // If we have not yet stepped, step from None to Some
-            (Some(_), None) => Some(0),
-            _ => panic!(),
-        };
+        let (repr_step, step) =
+            get_next_step(operation_node.get_operation().num_steps(), prev_step);
 
         // 1. Calculate output stars
-        let parent_bounds = input_star_ids
-            .iter()
-            .map(|&star_id| self.get_axis_aligned_input_bounds(star_id))
-            .collect::<Vec<_>>();
-        let stars = input_star_ids
-            .iter()
-            .map(|&node_id| self.get_star(node_id))
-            .collect::<Vec<_>>();
+        let outputs = {
+            let stars: Vec<_> = input_star_ids
+                .iter()
+                .map(|&node_id| self.get_star(node_id))
+                .collect();
 
-        let (child_stars, child_input_bounds, _same_output_bounds) = operation_node
-            .get_operation()
-            .forward_star(stars, next_step_opt, parent_bounds);
+            let local_storage: Vec<_> = input_star_ids
+                .iter()
+                .map(|&star_id| Ref::map(self.get_local_output_bounds(star_id), |x| x))
+                .collect();
+            let parent_local_output_bounds: Option<Vec<_>> =
+                local_storage.iter().map(|x| x.as_ref()).collect();
+
+            operation_node.get_operation().forward_star(
+                stars,
+                step,
+                self.get_input_bounds(),
+                parent_local_output_bounds,
+            )
+        };
 
         // 2. Add child stars and StarRelationship
-        let child_star_ids = child_stars
+        let child_star_ids: Vec<Vec<usize>> = outputs
             .into_iter()
-            .zip(operation_node.get_output_ids().clone().into_iter())
-            .zip(child_input_bounds.into_iter())
-            .map(|((star, repr_id), child_input_bounds)| {
-                self.add_star(star, repr_id, child_input_bounds)
-            })
+            .zip(operation_node.get_output_ids().iter())
+            .map(
+                |((child_stars, child_input_bounds), &output_repr_id)| -> Vec<usize> {
+                    child_stars
+                        .into_iter()
+                        .zip(child_input_bounds.into_iter())
+                        .map(|(star, child_input_bounds)| {
+                            let out_repr_id = output_repr_id.clone().with_step(repr_step);
+                            self.add_star(star, out_repr_id, child_input_bounds)
+                        })
+                        .collect()
+                },
+            )
             .collect();
+
+        // let child_star_ids = child_stars
+        //     .into_iter()
+        //     .zip(operation_node.get_output_ids().clone().into_iter())
+        //     .zip(child_input_bounds.into_iter())
+        //     .map(|((star, repr_id), child_input_bounds)| {
+        //         self.add_star(star, repr_id, child_input_bounds)
+        //     })
+        //     .collect();
         let star_rel = StarRelationship {
             operation_id,
-            step: next_step_opt,
+            step: repr_step,
             input_star_ids,
             output_star_ids: child_star_ids,
         };
@@ -161,7 +180,7 @@ mod tests {
             1..(max_input_dim + 1),
             1..(max_output_dim + 1),
             1..(max_n_hidden_layers + 1),
-            1..(max_num_constraints + 1),
+            0..(max_num_constraints + 1),
         );
         Strategy::prop_flat_map(
             strat,
@@ -177,8 +196,8 @@ mod tests {
 
     proptest! {
         #[test]
-        fn test_expand((dnn, input_star, input_bounds) in generic_test_inputs(2,2,2,2,4)) {
-            let mut starset = GraphStarset::new(dnn, input_star, input_bounds);
+        fn test_expand((dnn, input_star, input_bounds) in generic_test_inputs(2,2,2,2,0)) {
+            let starset = GraphStarset::new(dnn, input_bounds, input_star);
 
             // First operation is a dense
             let rel_id = starset.expand(0, vec![starset.get_root_id()]);
@@ -187,13 +206,18 @@ mod tests {
             prop_assert_eq!(None, rel.step);
             prop_assert_eq!(rel.input_star_ids.len(), 1);
             prop_assert_eq!(rel.output_star_ids.len(), 1);
-            prop_assert!(rel.output_star_ids[0] > rel.input_star_ids[0]);
+            prop_assert!(rel.output_star_ids[0][0] > rel.input_star_ids[0]);
         }
 
         #[test]
-        fn test_expand_whole_tree((dnn, input_star, input_bounds) in generic_test_inputs(2,2,2,2,4)) {
-            let mut starset = GraphStarset::new(dnn, input_star, input_bounds);
+        fn test_expand_whole_tree((dnn, input_star, input_bounds) in generic_test_inputs(2,2,2,2,0)) {
+            let starset = GraphStarset::new(dnn, input_bounds, input_star);
             let engine = Engine::new(starset.get_graph());
+
+            let num_steps = starset.get_graph().get_operations().into_iter().fold(0, |acc, x| acc +
+                x.get_operation().num_steps().unwrap_or(0)
+            );
+
             // Expand all nodes in the starset tree
             // 1. Create a frontier
             // let frontier = vec![(starset.get_dnn().get_input_representation_ids()[0].clone(), starset.get_root_id())];
@@ -201,18 +225,25 @@ mod tests {
 
             // 2. Visit each operation in order
             let inputs = vec![(starset.get_dnn().get_input_representation_ids()[0].clone(), vec![starset.get_root_id()])];
-            let res = engine.run_nodal(starset.get_dnn().get_output_representation_ids().clone(), &inputs, |op_id, op_node, inputs, step| -> (Option<usize>, Vec<Vec<usize>>) {
+            let res = engine.run_nodal(starset.get_dnn().get_output_representation_ids(), &inputs, |op_id, op_node, inputs, step| -> (Option<usize>, Vec<Vec<usize>>) {
                 assert_eq!(1, inputs.len());
-                let output_id = op_node.get_output_ids().first().unwrap();
+                let (repr_step, _next_step) = get_next_step(op_node.get_operation().num_steps(), step);
                 let input_stars = inputs[0];
-                let stars = input_stars.into_iter().map(|input_star_id| {
+                let star_ids = input_stars.into_iter().map(|input_star_id| {
                     let rel_id = starset.expand(op_id, vec![*input_star_id]);
                     let rel = starset.get_relationship(rel_id);
-                    rel.output_star_ids.clone().into_iter()
+                    assert_eq!(repr_step, rel.step);
+                    rel.output_star_ids.clone().into_iter().flatten()
                 }).flatten().collect();
 
-                (None, vec![stars])
+                (repr_step, vec![star_ids])
             });
+
+            prop_assert!(res.is_ok(), "{:?}", res);
+            let res = res.unwrap();
+            prop_assert_eq!(res.len(), 1);
+            let (_repr_id, out_stars) = &res[0];
+            prop_assert!(out_stars.len() <= usize::pow(2, num_steps as u32));
         }
     }
 }

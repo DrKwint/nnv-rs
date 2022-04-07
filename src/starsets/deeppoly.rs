@@ -1,7 +1,7 @@
 use crate::affine::Affine2;
 use crate::bounds::Bounds1;
 use crate::dnn::DNN;
-use crate::graph::{Engine, Operation, RepresentationId};
+use crate::graph::{Engine, Operation, PhysicalOp, RepresentationId};
 use itertools::Itertools;
 use ndarray::{Array1, Array2, Axis, Slice};
 
@@ -21,7 +21,11 @@ use ndarray::{Array1, Array2, Axis, Slice};
 /// * `dnn` - A network to operate on
 /// * `input_nodes` - Input node representations along with bounds for each input node.
 ///
-pub fn deep_poly(dnn: &DNN, input_nodes: Vec<(RepresentationId, Bounds1)>) -> Vec<Bounds1> {
+pub fn deep_poly(
+    dnn: &DNN,
+    input_nodes: &Vec<(RepresentationId, &Bounds1)>,
+    output_ids: &Vec<RepresentationId>,
+) -> Vec<Bounds1> {
     assert!(!input_nodes.is_empty());
     let input_representations: Vec<(RepresentationId, (Bounds1, Affine2, Affine2))> = {
         // Calculate total input size
@@ -39,13 +43,13 @@ pub fn deep_poly(dnn: &DNN, input_nodes: Vec<(RepresentationId, Bounds1)>) -> Ve
 
         input_nodes
             .into_iter()
-            .scan(0, |start_idx, (id, bounds)| {
+            .scan(0, |start_idx, &(id, bounds)| {
                 let dim = bounds.ndim();
                 let end_idx: usize = *start_idx + dim;
                 let output = (
                     id,
                     (
-                        bounds,
+                        bounds.clone(),
                         Affine2::new(
                             all_lower_matrix
                                 .slice_axis(Axis(1), Slice::from(*start_idx..end_idx))
@@ -66,38 +70,35 @@ pub fn deep_poly(dnn: &DNN, input_nodes: Vec<(RepresentationId, Bounds1)>) -> Ve
             .collect()
     };
 
-    // op_step is None if nothing has run yet, output None as the step when the entire Op is done
-    // This visitor, if a step is taken from None, should increment None -> 0 and then op.num_steps -> None
-    let visitor = |op: &dyn Operation,
-                   inputs: &Vec<&(Bounds1, Affine2, Affine2)>,
-                   op_step: Option<usize>|
-     -> (Option<usize>, Vec<(Bounds1, Affine2, Affine2)>) {
-        let (bounds_concrete, laff, uaff): (Vec<_>, Vec<_>, Vec<_>) = inputs
-            .into_iter()
-            .map(|&tup| (&tup.0, &tup.1, &tup.2))
-            .multiunzip();
-        if let Some(step) = op_step {
-            let new_step = if (step + 1) == (op.num_steps().unwrap() - 1) {
-                None
-            } else {
-                Some(step + 1)
-            };
-            (
-                new_step,
-                op.apply_bounds_step(step, &bounds_concrete, &laff, &uaff),
-            )
-        } else {
-            (None, op.apply_bounds(&bounds_concrete, &laff, &uaff))
-        }
-    };
-
     let engine = Engine::new(dnn.get_graph());
-
     let outputs = engine
         .run(
-            dnn.get_output_representation_ids().clone(),
-            input_representations,
-            visitor,
+            output_ids,
+            &input_representations,
+            |op: &PhysicalOp,
+             inputs: &Vec<&(Bounds1, Affine2, Affine2)>,
+             op_step: Option<usize>|
+             -> (Option<usize>, Vec<(Bounds1, Affine2, Affine2)>) {
+                // op_step is None if nothing has run yet, output None as the step when the entire Op is done
+                // This visitor, if a step is taken from None, should increment None -> 0 and then op.num_steps -> None
+                let (bounds_concrete, laff, uaff): (Vec<_>, Vec<_>, Vec<_>) = inputs
+                    .into_iter()
+                    .map(|&tup| (&tup.0, &tup.1, &tup.2))
+                    .multiunzip();
+                if let Some(step) = op_step {
+                    let new_step = if (step + 1) == (op.num_steps().unwrap() - 1) {
+                        None
+                    } else {
+                        Some(step + 1)
+                    };
+                    (
+                        new_step,
+                        op.apply_bounds_step(step, &bounds_concrete, &laff, &uaff),
+                    )
+                } else {
+                    (None, op.apply_bounds(&bounds_concrete, &laff, &uaff))
+                }
+            },
         )
         .unwrap();
 
@@ -117,4 +118,50 @@ pub fn deep_poly(dnn: &DNN, input_nodes: Vec<(RepresentationId, Bounds1)>) -> Ve
             bounds
         })
         .collect::<Vec<_>>()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::dnn::dense::Dense;
+    use crate::dnn::dnn::DNN;
+    use crate::dnn::relu::ReLU;
+    use crate::graph::PhysicalOp;
+    use crate::test_util::*;
+    use proptest::proptest;
+
+    #[test]
+    fn test_deeppoly_concrete() {
+        let aff1: Affine2 = Affine2::new(
+            Array1::from_vec(vec![0.0, 0.0, 0.0]).insert_axis(Axis(0)),
+            Array1::from_vec(vec![7.85]),
+        );
+        let dense1 = Dense::new(aff1);
+        let relu1 = ReLU::new(1);
+        let aff2 = Affine2::new(
+            Array1::from_vec(vec![9.49, 0.0]).insert_axis(Axis(1)),
+            Array1::from_vec(vec![0., 0.]),
+        );
+        let dense2 = Dense::new(aff2);
+        let relu2 = ReLU::new(2);
+        let _dnn = DNN::from_sequential(&vec![
+            PhysicalOp::from(dense1),
+            PhysicalOp::from(relu1),
+            PhysicalOp::from(dense2),
+            PhysicalOp::from(relu2),
+        ]);
+        let _bounds: Bounds1 = Bounds1::new(
+            Array1::from_vec(vec![0.0, 0.0, 0.]).view(),
+            Array1::zeros(3).view(),
+        );
+    }
+
+    proptest! {
+        #[test]
+        fn test_deeppoly_with_dnn(dnn in fc_dnn(2, 2, 3, 2), local_output_bounds in bounds1(2)) {
+            let input_representations = vec![(dnn.get_input_representation_ids()[0], &local_output_bounds)];
+            let output_ids = dnn.get_output_representation_ids();
+            deep_poly(&dnn, &input_representations, output_ids);
+        }
+    }
 }

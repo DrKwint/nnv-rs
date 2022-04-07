@@ -56,7 +56,7 @@ impl<'a> Engine<'a> {
     /// TODO
     pub fn run<T: Clone + Debug>(
         &self,
-        output_ids: Vec<RepresentationId>,
+        output_ids: &Vec<RepresentationId>,
         inputs: &[(RepresentationId, T)],
         mut visit: impl FnMut(&PhysicalOp, &Vec<&T>, Option<usize>) -> (Option<usize>, Vec<T>),
     ) -> Result<Vec<(RepresentationId, T)>, ExecuteError> {
@@ -71,7 +71,7 @@ impl<'a> Engine<'a> {
 
     pub fn run_nodal<T: Clone + Debug>(
         &self,
-        output_ids: Vec<RepresentationId>,
+        output_ids: &Vec<RepresentationId>,
         inputs: &[(RepresentationId, T)],
         mut visit: impl FnMut(
             OperationId,
@@ -85,7 +85,7 @@ impl<'a> Engine<'a> {
         // Calculate subgraph and path of operations to perform
         // 1. Walk back through operations BFS
         let input_ids = inputs.iter().map(|&(id, _)| id).collect::<Vec<_>>();
-        let operation_set = self.graph.get_operation_set(&output_ids, &input_ids)?;
+        let operation_set = self.graph.get_operation_set(output_ids, &input_ids)?;
 
         // 2. Order set via the graph's topological ordering.
         let mut op_node_vec: Vec<OperationId> = operation_set.into_iter().collect();
@@ -193,7 +193,7 @@ impl<'a> Engine<'a> {
             .map(|&id| state.get_representation(id).cloned().map(|r| (id, r)))
             .collect::<Option<Vec<(RepresentationId, T)>>>()
             .ok_or(ExecuteError::OneOfRepresentationsNotExist {
-                repr_ids: output_ids,
+                repr_ids: output_ids.clone(),
             })?;
 
         Ok(outputs)
@@ -407,7 +407,7 @@ mod tests {
             );
 
             let inputs = dnn.get_input_representation_ids().into_iter().map(|&id| (id, 0 as usize)).collect::<Vec<_>>();
-            let res = engine.run(dnn.get_output_representation_ids().clone(), &inputs, |op, inputs, step| -> (Option<usize>, Vec<usize>) {
+            let res = engine.run(dnn.get_output_representation_ids(), &inputs, |op, inputs, step| -> (Option<usize>, Vec<usize>) {
                 if let Some(num_steps) = op.num_steps() {
                     let steps = inputs.into_iter().map(|&&x| x + 1).collect();
                     if let Some(step) = step {
