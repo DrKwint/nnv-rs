@@ -97,16 +97,16 @@ pub trait Operation: Clone + Debug + Send + Sync {
     ///
     /// # Returns
     ///
-    /// For each `output_representation_id`, a tuple is returned of:
+    /// For each `output_representation_id`, a vector of tuples is returned of:
     /// * `child_stars` - The stars for the `output_representation_id`
-    /// * `child_local_output_bounds` - The local output bounds of the child
+    /// * `child_local_output_bounds` - The local output bounds of the child if they are simple to calculate
     fn forward_star<StarRef: Deref<Target = Star2>, Bounds1Ref: Deref<Target = Bounds1>>(
         &self,
         parent_stars: Vec<StarRef>,
         step_id: Option<usize>,
         input_bounds: &Bounds1,
         parent_local_output_bounds_opt: Option<Vec<Bounds1Ref>>,
-    ) -> Vec<(Vec<Star2>, Vec<Option<Bounds1>>)>;
+    ) -> Vec<Vec<(Star2, Option<Bounds1>)>>;
 
     fn inputs_dims(&self) -> Vec<usize> {
         self.input_shapes()

@@ -105,7 +105,7 @@ impl Operation for ReLU {
         dim: Option<usize>,
         input_bounds: &Bounds1,
         parent_local_output_bounds_opt: Option<Vec<Bounds1Ref>>,
-    ) -> Vec<(Vec<Star2>, Vec<Option<Bounds1>>)> {
+    ) -> Vec<Vec<(Star2, Option<Bounds1>)>> {
         assert!(parent_local_output_bounds_opt
             .as_ref()
             .map_or(true, |b| b.len() == 1));
@@ -163,7 +163,10 @@ impl Operation for ReLU {
             stars.push(upper_star);
         }
 
-        vec![(stars, star_local_output_bounds)]
+        vec![stars
+            .into_iter()
+            .zip(star_local_output_bounds.into_iter())
+            .collect()]
     }
 }
 

@@ -55,6 +55,7 @@ impl Operation for Dense {
         lower_aff: &[&Affine2],
         upper_aff: &[&Affine2],
     ) -> Vec<(Bounds1, Affine2, Affine2)> {
+        assert_eq!(1, bounds.len());
         let new_lower = self.aff.signed_compose(&lower_aff[0], &upper_aff[0]);
         let new_upper = self.aff.signed_compose(&upper_aff[0], &lower_aff[0]);
         vec![(self.aff.signed_apply(&bounds[0]), new_lower, new_upper)]
@@ -66,10 +67,10 @@ impl Operation for Dense {
         _activation_idx: Option<usize>,
         _input_bounds: &Bounds1,
         parent_local_output_bounds_opt: Option<Vec<Bounds1Ref>>,
-    ) -> Vec<(Vec<Star2>, Vec<Option<Bounds1>>)> {
+    ) -> Vec<Vec<(Star2, Option<Bounds1>)>> {
         assert_eq!(stars.len(), 1);
         assert!(parent_local_output_bounds_opt.map_or(true, |b| b.len() == 1));
-        vec![(vec![stars[0].affine_map2(&self.aff)], vec![None])]
+        vec![vec![(stars[0].affine_map2(&self.aff), None)]]
     }
 }
 

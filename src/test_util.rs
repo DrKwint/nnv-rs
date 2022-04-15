@@ -330,12 +330,35 @@ prop_compose! {
 }
 
 prop_compose! {
+    pub fn generic_non_empty_star_set_dim(dim: usize, max_constraints: usize)
+        (dim in Just(dim), constraints in 0..max_constraints+1)
+        (star in non_empty_star(dim, constraints)) -> Star2 {
+            star
+        }
+}
+
+prop_compose! {
     pub fn generic_fc_dnn(max_input_size: usize, max_output_size: usize, max_nlayers: usize, max_layer_width: usize)
         (input_size in 1..max_input_size, output_size in 1..max_output_size, nlayers in 1..max_nlayers)
         (dnn in fc_dnn(input_size, output_size, nlayers, max_layer_width)) -> DNN
     {
         dnn
     }
+}
+
+pub fn generic_non_empty_star_with_bounds(
+    ndim: usize,
+    max_constraints: usize,
+) -> impl Strategy<Value = (Star2, Bounds1)> {
+    let strat = (Just(ndim), 0..max_constraints + 1);
+    let strat = Strategy::prop_flat_map(strat, move |(ndim, num_constraints)| {
+        (non_empty_star(ndim, num_constraints), bounds1(ndim))
+    });
+    Strategy::prop_filter(
+        strat,
+        "Constraints intersect with bounds must be non-empty",
+        |(star, bounds)| star.is_empty(Some(bounds)),
+    )
 }
 
 // prop_compose! {

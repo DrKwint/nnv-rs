@@ -317,7 +317,7 @@ pub struct ExecutionState<T: Clone> {
 }
 
 impl<T: Clone> ExecutionState<T> {
-    pub fn new(
+    pub fn _new(
         representations: HashMap<RepresentationId, T>,
         step_starts: &[RepresentationId],
         step_ends: &[RepresentationId],

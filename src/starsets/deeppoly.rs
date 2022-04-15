@@ -1,7 +1,8 @@
 use crate::affine::Affine2;
 use crate::bounds::Bounds1;
 use crate::dnn::DNN;
-use crate::graph::{Engine, Operation, PhysicalOp, RepresentationId};
+use crate::graph::{Engine, Operation, OperationId, OperationNode, PhysicalOp, RepresentationId};
+use crate::util::get_next_step;
 use itertools::Itertools;
 use ndarray::{Array1, Array2, Axis, Slice};
 
@@ -26,6 +27,18 @@ pub fn deep_poly(
     input_nodes: &Vec<(RepresentationId, &Bounds1)>,
     output_ids: &Vec<RepresentationId>,
 ) -> Vec<Bounds1> {
+    _deep_poly(dnn, input_nodes, output_ids).0
+}
+
+/// This function is used for testing deep_poly and should not be used in the public API.
+/// In addition to the tighter bounds calculated by concretizing the abstract bounds with
+/// the input bounds, this function also returns the concrete bounds, which is used to
+/// ensure that the concrete bounds are in fact looser.
+pub fn _deep_poly(
+    dnn: &DNN,
+    input_nodes: &Vec<(RepresentationId, &Bounds1)>,
+    output_ids: &Vec<RepresentationId>,
+) -> (Vec<Bounds1>, Vec<Bounds1>) {
     assert!(!input_nodes.is_empty());
     let input_representations: Vec<(RepresentationId, (Bounds1, Affine2, Affine2))> = {
         // Calculate total input size
@@ -65,10 +78,11 @@ pub fn deep_poly(
 
     let engine = Engine::new(dnn.get_graph());
     let outputs = engine
-        .run(
+        .run_nodal(
             output_ids,
             &input_representations,
-            |op: &PhysicalOp,
+            |op_id: OperationId,
+             op_node: &OperationNode,
              inputs: &Vec<&(Bounds1, Affine2, Affine2)>,
              op_step: Option<usize>|
              -> (Option<usize>, Vec<(Bounds1, Affine2, Affine2)>) {
@@ -78,18 +92,38 @@ pub fn deep_poly(
                     .into_iter()
                     .map(|&tup| (&tup.0, &tup.1, &tup.2))
                     .multiunzip();
-                if let Some(step) = op_step {
-                    let new_step = if (step + 1) == (op.num_steps().unwrap() - 1) {
-                        None
-                    } else {
-                        Some(step + 1)
-                    };
+                let output_id = output_ids
+                    .iter()
+                    .filter(|&out_id| out_id.operation_step.is_some())
+                    .find_or_first(|&repr_id| {
+                        op_node
+                            .get_output_ids()
+                            .iter()
+                            .find_or_first(|op_repr_id| {
+                                op_repr_id.representation_node_id == repr_id.representation_node_id
+                            })
+                            .is_some()
+                    });
+                if op_step.is_some() || output_id.is_some() {
+                    let (repr_step, next_step) =
+                        get_next_step(op_step, op_node.get_operation().num_steps());
+                    let next_step = next_step.unwrap();
                     (
-                        new_step,
-                        op.apply_bounds_step(step, &bounds_concrete, &laff, &uaff),
+                        repr_step,
+                        op_node.get_operation().apply_bounds_step(
+                            next_step,
+                            &bounds_concrete,
+                            &laff,
+                            &uaff,
+                        ),
                     )
                 } else {
-                    (None, op.apply_bounds(&bounds_concrete, &laff, &uaff))
+                    (
+                        None,
+                        op_node
+                            .get_operation()
+                            .apply_bounds(&bounds_concrete, &laff, &uaff),
+                    )
                 }
             },
         )
@@ -103,25 +137,28 @@ pub fn deep_poly(
     // Concretize the bounds in terms of the input bounds
     outputs
         .into_iter()
-        .map(|(_, (_, lower_aff, upper_aff))| {
+        .map(|(_, (conc_bounds, lower_aff, upper_aff))| {
             let lower_bounds = lower_aff.signed_apply(&input_bounds);
             let upper_bounds = upper_aff.signed_apply(&input_bounds);
             let bounds = Bounds1::new(lower_bounds.lower(), upper_bounds.upper());
             debug_assert!(bounds.bounds_iter().into_iter().all(|x| x[[0]] <= x[[1]]));
-            bounds
+            (bounds, conc_bounds)
         })
-        .collect::<Vec<_>>()
+        .unzip()
 }
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashMap;
+
     use super::*;
     use crate::dnn::dense::Dense;
     use crate::dnn::dnn::DNN;
     use crate::dnn::relu::ReLU;
     use crate::graph::PhysicalOp;
+    use crate::star::Star2;
     use crate::test_util::*;
-    use proptest::proptest;
+    use proptest::prelude::*;
 
     #[test]
     fn test_deeppoly_concrete() {
@@ -150,11 +187,78 @@ mod tests {
     }
 
     proptest! {
+        /// Tests whether deep poly runs without failure
         #[test]
         fn test_deeppoly_with_dnn(dnn in fc_dnn(2, 2, 3, 2), local_output_bounds in bounds1(2)) {
             let input_representations = vec![(dnn.get_input_representation_ids()[0], &local_output_bounds)];
             let output_ids = dnn.get_output_representation_ids();
             deep_poly(&dnn, &input_representations, output_ids);
+        }
+
+        /// Tests whether the abstract bounds are tigheter than the concrete bounds. This is tested by checking
+        /// if the abstract bounds concretized with the input bounds are contained by the concrete bounds.
+        #[test]
+        fn test_abstract_bounds_tighter_than_concrete(dnn in fc_dnn(2,2,3,2), (input_star, input_bounds) in generic_non_empty_star_with_bounds(2, 0)) {
+            let engine = Engine::new(dnn.get_graph());
+            let star_input_bounds = input_star.calculate_output_axis_aligned_bounding_box(&input_bounds);
+
+            let local_output_bounds: HashMap<RepresentationId, Option<Bounds1>> = HashMap::new();
+            local_output_bounds.insert(dnn.get_input_representation_ids()[0].clone(), Some(input_bounds.clone()));
+
+            let inputs: Vec<(RepresentationId, ())> = vec![(dnn.get_input_representation_ids()[0], ())];
+            let _outputs = engine.run_nodal(dnn.get_output_representation_ids(), &inputs, |_, op_node: &OperationNode, inputs: &Vec<&()>, step| -> (Option<usize>, Vec<()>) {
+                assert_eq!(1, inputs.len());
+                let (repr_step, next_step) = get_next_step(op_node.get_operation().num_steps(), step);
+                let out_repr_id = op_node.get_output_ids()[0].clone().with_step(repr_step);
+
+                let parent_local_output_bounds = (if let Some(step) = next_step {
+                    local_output_bounds.get(&out_repr_id).unwrap().as_ref()
+                } else {
+                    local_output_bounds.get(&op_node.get_input_ids()[0]).unwrap().as_ref()
+                }).map(|bounds| vec![bounds]);
+
+                let output_stars_bounds_opts = op_node.get_operation().forward_star(vec![&input_star], next_step, &star_input_bounds, parent_local_output_bounds);
+                assert_eq!(1, output_stars_bounds_opts.len());
+                output_stars_bounds_opts[0].into_iter()
+                    .map(|(star, local_output_bounds_opt)| {
+                        if let Some(local_output_bounds) = local_output_bounds_opt {
+                            (star, local_output_bounds)
+                        } else {
+                            (star, op_node.get_operation())
+                        }
+                    }).for_each(|(_, local_output_bounds)| {
+                        let deep_poly_inputs = vec![(out_repr_id, local_output_bounds)];
+                        let (concretized_bounds, concrete_bounds) = _deep_poly(&dnn, &deep_poly_inputs, dnn.get_output_representation_ids());
+                        assert!(concretized_bounds[0].is_subset_of(&concrete_bounds[0]), "Concrete bounds {:?} does not contain concretized bounds: {:?}", concrete_bounds, concretized_bounds);
+                    });
+
+                (repr_step, vec![()])
+
+
+
+
+                // let deep_poly_inputs = vec![(op_node.get_input_ids()[0].clone(), &inputs[0].1)];
+                // let parent_star = vec![&inputs[0].0];
+                // let star_outputs = op_node.get_operation().forward_star(parent_star, next_step, &input_bounds, Some(vec![&inputs[0].1]));
+
+                // star_outputs.iter().map(|)
+                // let local_output_bounds = star_outputs.1[0].unwrap();
+
+                // let (concretized_bounds, concrete_bounds) = _deep_poly(
+                //     &dnn,
+                //     &deep_poly_inputs,
+                //     dnn.get_output_representation_ids()
+                // );
+                // assert!(concretized_bounds[0].is_subset_of(&concrete_bounds[0]), "Concrete bounds {:?} does not contain concretized bounds: {:?}", concrete_bounds, concretized_bounds);
+                // (repr_step, (local_output_bounds))
+            });
+        }
+
+        /// Tests whether the concrete output bounds of deep poly over-approximate, i.e. given any input in
+        /// the input bounds you cannot reach a value outside of the concrete bounds.
+        #[test]
+        fn test_bounds_over_approximate(dnn in fc_dnn(2,2,3,2), input_bounds in bounds1(2)) {
+
         }
     }
 }

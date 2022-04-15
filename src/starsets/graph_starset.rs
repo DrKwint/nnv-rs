@@ -1,4 +1,4 @@
-use super::new_starset::{StarId, StarRelationship, StarRelationshipId, StarSet, StarSet2};
+use super::starset::{StarId, StarRelationship, StarRelationshipId, StarSet, StarSet2};
 use crate::bounds::{Bounds, Bounds1};
 use crate::dnn::DNN;
 use crate::graph::{Graph, RepresentationId};
@@ -98,10 +98,7 @@ impl<D: 'static + Dimension> StarSet<D> for GraphStarset<D> {
         star_id
     }
 
-    fn add_relationship(
-        &self,
-        star_rel: super::new_starset::StarRelationship,
-    ) -> StarRelationshipId {
+    fn add_relationship(&self, star_rel: super::starset::StarRelationship) -> StarRelationshipId {
         // TODO: Do checks about relationship to cache properties
         let rel_id = self.relationships.borrow().len();
         self.relationships.borrow_mut().push(star_rel);

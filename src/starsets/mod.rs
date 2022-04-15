@@ -20,5 +20,5 @@
 // pub use starset::{StarSet, StarSet2};
 
 mod deeppoly;
-mod new_graph_starset;
-mod new_starset;
+mod graph_starset;
+mod starset;

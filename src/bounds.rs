@@ -126,7 +126,7 @@ impl<D: Dimension + ndarray::RemoveAxis> Bounds<D> {
 
 impl<D: Dimension + ndarray::RemoveAxis> Bounds<D> {
     /// # Panics
-    pub fn subset(&self, rhs: &Self) -> bool {
+    pub fn is_subset_of(&self, rhs: &Self) -> bool {
         Zip::from(self.bounds_iter())
             .and(rhs.bounds_iter())
             .all(|me, rhs| {

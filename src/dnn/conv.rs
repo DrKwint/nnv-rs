@@ -232,10 +232,10 @@ impl Operation for Conv {
         _activation_idx: Option<usize>,
         _input_bounds: &Bounds1,
         parent_local_output_bounds_opt: Option<Vec<Bounds1Ref>>,
-    ) -> Vec<(Vec<Star2>, Vec<Option<Bounds1>>)> {
+    ) -> Vec<Vec<(Star2, Option<Bounds1>)>> {
         assert_eq!(1, stars.len());
         assert!(parent_local_output_bounds_opt.map_or(true, |b| b.len() == 1));
-        vec![(vec![stars[0].affine_map2(self.get_affine())], vec![None])]
+        vec![vec![(stars[0].affine_map2(self.get_affine()), None)]]
     }
 }
 
