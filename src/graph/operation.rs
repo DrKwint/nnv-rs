@@ -116,7 +116,7 @@ pub trait Operation: Clone + Debug + Send + Sync {
     }
 
     fn outputs_dims(&self) -> Vec<usize> {
-        self.input_shapes()
+        self.output_shapes()
             .into_iter()
             .map(|output| output.dims())
             .collect()
