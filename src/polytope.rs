@@ -108,10 +108,15 @@ impl Polytope {
         val > rhs
     }
 
+    /// # Assumptions
+    ///
+    /// * It is *NOT* an assumption that `add_eqn` monotonically increases the number of constratins
+    ///   as a constraint may be trivial or in the future may be tested for redundancy.
+    ///
     /// `check_redundant` is currently disabled
     /// # Panics
     pub fn add_eqn(&mut self, coeffs: ArrayView1<NNVFloat>, rhs: NNVFloat) {
-        if coeffs.iter().all(|x| x.abs() < 1e-15) {
+        if coeffs.iter().all(|x| x.abs() < 1e-15) && rhs >= -1e-15 {
             return;
         }
         self.coeffs

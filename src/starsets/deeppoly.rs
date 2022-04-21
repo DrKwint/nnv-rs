@@ -380,6 +380,7 @@ mod tests {
                     let deep_poly_inputs = vec![(start_repr, &parent_local_output_bounds)];
                     let concretized_bounds = deep_poly(&starset.get_dnn(), &deep_poly_inputs, &vec![end_repr]);
                     prop_assert_eq!(concretized_bounds.len(), 1);
+                    prop_assert_eq!(concretized_bounds[0].ndim(), out_dims);
 
                     // Check that the output bounds of each leaf star is contained by the concretized deep poly bounds.
                     let test_bounds = {

@@ -77,14 +77,18 @@ impl<D: Dimension> Star<D> {
 
 impl<D: Dimension> Star<D> {
     pub fn num_constraints(&self) -> usize {
-        match &self.constraints {
-            Some(polytope) => polytope.num_constraints(),
-            None => 0,
-        }
+        self.constraints
+            .as_ref()
+            .map_or(0, |polytope| polytope.num_constraints())
     }
 
     /// Add constraints to restrict the input set. Each row represents a
     /// constraint and the last column represents the upper bounds.
+    ///
+    /// # Assumptions
+    ///
+    /// * It is `not` assumed that the number of constraints monotonically
+    ///   increases, as optimizations are done under the hood.
     #[must_use]
     pub fn add_constraint(mut self, coeffs: ArrayView1<NNVFloat>, rhs: NNVFloat) -> Self {
         if let Some(ref mut constrs) = self.constraints {
@@ -394,18 +398,6 @@ mod test {
     use ndarray::s;
     use proptest::prelude::*;
 
-    proptest! {
-        #[test]
-        fn test_add_constraint(star in generic_non_empty_star(4, 4), arr in array1(4)) {
-            let ndim = star.input_dim();
-            let coeffs = arr.slice(s![0..ndim]);
-            let rhs = arr[[0]];
-            let num_input_constraints = star.input_space_polytope().map_or(0, |p| p.num_dims());
-            let new_star = star.clone().add_constraint(coeffs, rhs);
-            let num_output_constraints = new_star.input_space_polytope().map_or(0, |p| p.num_dims());
-            prop_assert_eq!(num_input_constraints + 1, num_output_constraints, "Input star: {:?}, Star with constraint: {:?}", star, new_star);
-        }
-    }
     /*
         #[test]
         fn test_gaussian_sample_manual() {

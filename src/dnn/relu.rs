@@ -132,7 +132,7 @@ impl Operation for ReLU {
             ));
 
             // star output
-            if is_single_child {
+            if is_single_child && lower_star.num_constraints() > star.num_constraints() {
                 // Remove redundant constraint added by step_relu2 above
                 let num_constraints = lower_star.num_constraints();
                 lower_star = lower_star.remove_constraint(num_constraints - 1);
@@ -155,7 +155,7 @@ impl Operation for ReLU {
             ));
 
             // star output
-            if is_single_child {
+            if is_single_child && upper_star.num_constraints() > star.num_constraints() {
                 // Remove redundant constraint added by step_relu2 above
                 let num_constraints = upper_star.num_constraints();
                 if num_constraints == 0 {
@@ -375,13 +375,6 @@ mod test {
             let relu = ReLU::new(input_bounds.ndim());
 
             for dim in 0..input_bounds.ndim() {
-                let (lower_star_opt, upper_star_opt) = step_relu2(&input_star, dim, Some(&input_bounds));
-                prop_assert!(lower_star_opt.is_some() ^ upper_star_opt.is_some());
-                let n_input_constraints = input_star.input_space_polytope().map_or(0, |p| p.num_dims());
-                let child_star = lower_star_opt.map_or_else(|| upper_star_opt.unwrap(), |lower_star| lower_star);
-                let n_output_constraints = child_star.input_space_polytope().map_or(0, |p| p.num_dims());
-                prop_assert_eq!(n_input_constraints + 1, n_output_constraints);
-
                 let child_stars = relu.forward_star::<&Star2,&Bounds1>(vec![&input_star], Some(dim), &input_bounds, None);
                 prop_assert_eq!(child_stars.len(), 1);
                 prop_assert_eq!(child_stars[0].len(), 1);
