@@ -291,7 +291,7 @@ prop_compose! {
 
 prop_compose! {
     pub fn generic_polytope_including_zero(max_dims: usize, max_constraints: usize)
-        (dim in 1..max_dims, constraints in 1..max_constraints)
+        (dim in 1..max_dims, constraints in 0..max_constraints+1)
         (ineq in polytope_including_zero(dim, constraints)) -> Polytope {
             ineq
         }
@@ -299,7 +299,7 @@ prop_compose! {
 
 prop_compose! {
     pub fn generic_empty_polytope(max_dims: usize, max_constraints: usize)
-        (dim in 1..max_dims, constraints in 1..max_constraints)
+        (dim in 1..max_dims, constraints in 0..max_constraints+1)
         (poly in empty_polytope(dim, constraints)) -> Polytope {
             poly
         }
@@ -307,7 +307,7 @@ prop_compose! {
 
 prop_compose! {
     pub fn generic_non_empty_polytope(max_dims: usize, max_constraints: usize)
-        (dim in 1..max_dims, constraints in 1..max_constraints)
+        (dim in 1..max_dims, constraints in 0..max_constraints+1)
         (poly in non_empty_polytope(dim, constraints)) -> Polytope {
             poly
         }
@@ -315,7 +315,7 @@ prop_compose! {
 
 prop_compose! {
     pub fn generic_empty_star(max_dims: usize, max_constraints: usize)
-        (dim in 1..max_dims, constraints in 1..max_constraints)
+        (dim in 1..max_dims, constraints in 0..max_constraints)
         (star in empty_star(dim, constraints)) -> Star2 {
             star
         }
@@ -323,7 +323,7 @@ prop_compose! {
 
 prop_compose! {
     pub fn generic_non_empty_star(max_dims: usize, max_constraints: usize)
-        (dim in 1..max_dims, constraints in 1..max_constraints)
+        (dim in 1..max_dims, constraints in 0..max_constraints+1)
         (star in non_empty_star(dim, constraints)) -> Star2 {
             star
         }
@@ -357,7 +357,7 @@ pub fn generic_non_empty_star_with_bounds(
     Strategy::prop_filter(
         strat,
         "Constraints intersect with bounds must be non-empty",
-        |(star, bounds)| star.is_empty(Some(bounds)),
+        |(star, bounds)| !star.is_empty(Some(bounds)),
     )
 }
 
@@ -405,5 +405,10 @@ proptest! {
     fn test_generic_fc_dnn(_dnn in generic_fc_dnn(5, 5, 5, 5)) {
         // Yes, this is the full test. The test is that we can
         // construct varying sizes of dnns.
+    }
+
+    #[test]
+    fn test_generic_non_empty_star_with_bounds((star, bounds) in generic_non_empty_star_with_bounds(2, 4)) {
+        prop_assert!(!star.is_empty(Some(&bounds)));
     }
 }

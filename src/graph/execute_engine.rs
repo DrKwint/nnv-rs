@@ -71,7 +71,7 @@ impl<'a> Engine<'a> {
 
     pub fn run_nodal<T: Clone + Debug>(
         &self,
-        output_ids: &Vec<RepresentationId>,
+        output_ids: &[RepresentationId],
         inputs: &[(RepresentationId, T)],
         mut visit: impl FnMut(
             OperationId,
@@ -80,7 +80,7 @@ impl<'a> Engine<'a> {
             Option<usize>,
         ) -> (Option<usize>, Vec<T>),
     ) -> Result<Vec<(RepresentationId, T)>, ExecuteError> {
-        let mut state = ExecutionState::<T>::default();
+        let mut state = ExecutionState::new(inputs, &output_ids)?;
 
         // Calculate subgraph and path of operations to perform
         // 1. Walk back through operations BFS
@@ -93,13 +93,13 @@ impl<'a> Engine<'a> {
         // This ordering is actually just the ascending ordering of OperationIds
         op_node_vec.sort_unstable();
 
-        if inputs
-            .iter()
-            .map(|(id, v)| state.set_representation(*id, v.clone()))
-            .any(|x| x.is_err())
-        {
-            return Err(ExecuteError::GenericError);
-        }
+        // if inputs
+        //     .iter()
+        //     .map(|(id, v)| state.set_representation(*id, v.clone()))
+        //     .any(|x| x.is_err())
+        // {
+        //     return Err(ExecuteError::GenericError);
+        // }
 
         // 3. Apply the visitor to every operation and step in order
         for op_id in op_node_vec {
@@ -129,7 +129,11 @@ impl<'a> Engine<'a> {
                         .collect::<Option<Vec<&T>>>()
                         .ok_or(ExecuteError::OneOfRepresentationsNotExist {
                             repr_ids: op_node.get_input_ids().clone(),
-                        })?;
+                        });
+                    if reprs.is_err() {
+                        println!("Here");
+                    }
+                    let reprs = reprs?;
                     visit(op_id, op_node, &reprs, step)
                 };
 
@@ -150,12 +154,12 @@ impl<'a> Engine<'a> {
                 for &repr_id in op_node.get_output_ids() {
                     if let Some(&done_step) = state.get_step_end(repr_id) {
                         // Check if we just skipped a end step in the operation
-                        if new_step.map_or(true, |s| s > done_step) {
-                            return Err(ExecuteError::SkippedEndStepOfOperation {
-                                repr_id,
-                                done_step,
-                            });
-                        }
+                        // if new_step.map_or(true, |s| s > done_step) {
+                        //     return Err(ExecuteError::SkippedEndStepOfOperation {
+                        //         repr_id,
+                        //         done_step,
+                        //     });
+                        // }
 
                         // Check if we went past the number of steps in the operation
                         if let Some(new_s) = new_step && new_s >= op.num_steps().unwrap() - 1 {
@@ -193,7 +197,7 @@ impl<'a> Engine<'a> {
             .map(|&id| state.get_representation(id).cloned().map(|r| (id, r)))
             .collect::<Option<Vec<(RepresentationId, T)>>>()
             .ok_or(ExecuteError::OneOfRepresentationsNotExist {
-                repr_ids: output_ids.clone(),
+                repr_ids: output_ids.iter().map(|&x| x).collect(),
             })?;
 
         Ok(outputs)
@@ -317,19 +321,30 @@ pub struct ExecutionState<T: Clone> {
 }
 
 impl<T: Clone> ExecutionState<T> {
-    pub fn _new(
-        representations: HashMap<RepresentationId, T>,
-        step_starts: &[RepresentationId],
-        step_ends: &[RepresentationId],
-    ) -> Self {
-        Self {
+    pub fn new(
+        inputs: &[(RepresentationId, T)],
+        output_ids: &[RepresentationId],
+    ) -> Result<Self, ExecuteError> {
+        let mut representations = HashMap::new();
+        for (repr_id, val) in inputs.into_iter() {
+            let already_added = representations.insert(*repr_id, val.clone());
+            if already_added.is_some() {
+                return Err(ExecuteError::StateAlreadyHasRepresentation { rep_id: *repr_id });
+            }
+        }
+
+        let step_starts = representations
+            .iter()
+            .map(|(repr_id, _)| repr_id)
+            .filter(|id| id.operation_step.is_some())
+            .map(|&repr_id| (repr_id.representation_node_id, repr_id))
+            .collect();
+        Ok(Self {
             representations,
-            step_starts: step_starts
+            step_starts: step_starts,
+            step_ends: output_ids
                 .iter()
-                .map(|&repr_id| (repr_id.representation_node_id, repr_id))
-                .collect(),
-            step_ends: step_ends
-                .iter()
+                .filter(|id| id.operation_step.is_some())
                 .map(|repr_id| {
                     (
                         repr_id.representation_node_id,
@@ -337,7 +352,7 @@ impl<T: Clone> ExecutionState<T> {
                     )
                 })
                 .collect(),
-        }
+        })
     }
 
     pub fn get_step_start(&self, repr_id: RepresentationId) -> Option<&RepresentationId> {

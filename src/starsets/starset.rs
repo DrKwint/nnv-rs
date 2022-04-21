@@ -38,6 +38,8 @@ pub trait StarSet<D: 'static + Dimension> {
     fn get_star_representation_id(&self, star_id: StarId) -> RepresentationId;
     /// Get a reference to a star
     fn get_star(&self, star_id: StarId) -> Ref<Star<D>>;
+    /// Gets the relationship that produces a star
+    fn get_producing_relationship(&self, star_id: &StarId) -> Option<StarRelationship>;
     /// Gets a relationship
     fn get_relationship(&self, relationship_id: StarRelationshipId) -> Ref<StarRelationship>;
     /// Add a star
@@ -51,6 +53,8 @@ pub trait StarSet<D: 'static + Dimension> {
     /// Adds a relationship
     /// Requires interior mutability
     fn add_relationship(&self, star_rel: StarRelationship) -> StarRelationshipId;
+    /// Get all stars that represent the transformation to reach a specific representation
+    fn get_stars_for_representation(&self, repr_id: &RepresentationId) -> Vec<StarId>;
 }
 
 pub trait StarSet2: StarSet<Ix2> {

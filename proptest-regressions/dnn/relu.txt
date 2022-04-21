@@ -1,0 +1,7 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc c3b6b46625477c0a2ed468a01e6e3c117a7ca22d6de68c9bb2ebc927f58396ac # shrinks to (input_star, input_bounds) = (Star { representation: Affine { basis: [[-4.277068501493471]], shape=[1, 1], strides=[1, 1], layout=CFcf (0xf), const ndim=2, shift: [0.0], shape=[1], strides=[1], layout=CFcf (0xf), const ndim=1 }, constraints: Some(Polytope { coeffs: [[]], shape=[0, 1], strides=[0, 0], layout=CFcf (0xf), const ndim=2, rhs: [], shape=[0], strides=[0], layout=CFcf (0xf), const ndim=1 }) }, Bounds { data: [[0.47045078716516997],  [7.393014586801684]], shape=[2, 1], strides=[1, 1], layout=CFcf (0xf), const ndim=2 })

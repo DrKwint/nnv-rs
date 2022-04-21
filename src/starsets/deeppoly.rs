@@ -40,6 +40,7 @@ pub fn _deep_poly(
     output_ids: &Vec<RepresentationId>,
 ) -> (Vec<Bounds1>, Vec<Bounds1>) {
     assert!(!input_nodes.is_empty());
+
     let input_representations: Vec<(RepresentationId, (Bounds1, Affine2, Affine2))> = {
         // Calculate total input size
         let input_size: usize = input_nodes.iter().map(|(_, bounds)| bounds.ndim()).sum();
@@ -77,57 +78,57 @@ pub fn _deep_poly(
     };
 
     let engine = Engine::new(dnn.get_graph());
-    let outputs = engine
-        .run_nodal(
-            output_ids,
-            &input_representations,
-            |op_id: OperationId,
-             op_node: &OperationNode,
-             inputs: &Vec<&(Bounds1, Affine2, Affine2)>,
-             op_step: Option<usize>|
-             -> (Option<usize>, Vec<(Bounds1, Affine2, Affine2)>) {
-                // op_step is None if nothing has run yet, output None as the step when the entire Op is done
-                // This visitor, if a step is taken from None, should increment None -> 0 and then op.num_steps -> None
-                let (bounds_concrete, laff, uaff): (Vec<_>, Vec<_>, Vec<_>) = inputs
-                    .into_iter()
-                    .map(|&tup| (&tup.0, &tup.1, &tup.2))
-                    .multiunzip();
-                let output_id = output_ids
-                    .iter()
-                    .filter(|&out_id| out_id.operation_step.is_some())
-                    .find_or_first(|&repr_id| {
-                        op_node
-                            .get_output_ids()
-                            .iter()
-                            .find_or_first(|op_repr_id| {
-                                op_repr_id.representation_node_id == repr_id.representation_node_id
-                            })
-                            .is_some()
-                    });
-                if op_step.is_some() || output_id.is_some() {
-                    let (repr_step, next_step) =
-                        get_next_step(op_step, op_node.get_operation().num_steps());
-                    let next_step = next_step.unwrap();
-                    (
-                        repr_step,
-                        op_node.get_operation().apply_bounds_step(
-                            next_step,
-                            &bounds_concrete,
-                            &laff,
-                            &uaff,
-                        ),
-                    )
-                } else {
-                    (
-                        None,
-                        op_node
-                            .get_operation()
-                            .apply_bounds(&bounds_concrete, &laff, &uaff),
-                    )
-                }
-            },
-        )
-        .unwrap();
+    let outputs = engine.run_nodal(
+        output_ids,
+        &input_representations,
+        |op_id: OperationId,
+         op_node: &OperationNode,
+         inputs: &Vec<&(Bounds1, Affine2, Affine2)>,
+         op_step: Option<usize>|
+         -> (Option<usize>, Vec<(Bounds1, Affine2, Affine2)>) {
+            let mut op_step = op_step.clone();
+            // op_step is None if nothing has run yet, output None as the step when the entire Op is done
+            // This visitor, if a step is taken from None, should increment None -> 0 and then op.num_steps -> None
+            let (bounds_concrete, laff, uaff): (Vec<_>, Vec<_>, Vec<_>) = inputs
+                .into_iter()
+                .map(|&tup| (&tup.0, &tup.1, &tup.2))
+                .multiunzip();
+            let output_id = output_ids
+                .iter()
+                .filter(|&out_id| out_id.operation_step.is_some())
+                .find(|&repr_id| {
+                    op_node
+                        .get_output_ids()
+                        .iter()
+                        .find(|&op_repr_id| {
+                            op_repr_id.representation_node_id == repr_id.representation_node_id
+                        })
+                        .is_some()
+                });
+            if op_step.is_some() || output_id.is_some() {
+                let (repr_step, next_step) =
+                    get_next_step(op_node.get_operation().num_steps(), op_step);
+                let next_step = next_step.unwrap();
+                (
+                    repr_step,
+                    op_node.get_operation().apply_bounds_step(
+                        next_step,
+                        &bounds_concrete,
+                        &laff,
+                        &uaff,
+                    ),
+                )
+            } else {
+                (
+                    None,
+                    op_node
+                        .get_operation()
+                        .apply_bounds(&bounds_concrete, &laff, &uaff),
+                )
+            }
+        },
+    );
+    let outputs = outputs.unwrap();
 
     // Collect all input bounds into one bound
     let input_bounds = input_nodes
@@ -149,16 +150,19 @@ pub fn _deep_poly(
 
 #[cfg(test)]
 mod tests {
-    use std::collections::HashMap;
-
     use super::*;
     use crate::dnn::dense::Dense;
     use crate::dnn::dnn::DNN;
     use crate::dnn::relu::ReLU;
     use crate::graph::PhysicalOp;
     use crate::star::Star2;
-    use crate::test_util::*;
+    use crate::starsets::graph_starset::GraphStarset;
+    use crate::starsets::starset::{StarSet, StarSet2};
+    use crate::tensorshape::TensorShape;
+    use crate::{test_util::*, NNVFloat};
     use proptest::prelude::*;
+    use proptest::sample::select;
+    use std::collections::HashMap;
 
     #[test]
     fn test_deeppoly_concrete() {
@@ -186,6 +190,104 @@ mod tests {
         );
     }
 
+    fn get_all_stepped_repr_ids(dnn: &DNN) -> Vec<RepresentationId> {
+        let non_inputs = dnn
+            .get_graph()
+            .get_operations()
+            .iter()
+            .map(|op_node| {
+                let mut stepped_reprs = vec![];
+                if let Some(num_steps) = op_node.get_operation().num_steps() {
+                    for step in 0..(num_steps - 1) {
+                        // Avoids underflow
+                        if step == num_steps - 1 {
+                            continue;
+                        }
+
+                        stepped_reprs
+                            .push(op_node.get_output_ids()[0].clone().with_step(Some(step)));
+                    }
+                }
+                stepped_reprs.push(op_node.get_output_ids()[0].clone());
+                stepped_reprs.into_iter()
+            })
+            .flatten();
+        dnn.get_input_representation_ids()
+            .clone()
+            .into_iter()
+            .chain(non_inputs)
+            .collect()
+    }
+
+    // Need to output a starting repr_id, ending repr_id with steps per repr_id
+    fn fcdnn_with_star_end_repr(
+        input_size: usize,
+        output_size: usize,
+        n_hidden_layers: usize,
+        max_layer_width: usize,
+    ) -> impl Strategy<Value = (DNN, Vec<RepresentationId>)> {
+        let strat = (fc_dnn(
+            input_size,
+            output_size,
+            n_hidden_layers,
+            max_layer_width,
+        ),);
+        Strategy::prop_flat_map(strat, move |(dnn,)| {
+            let operation_nodes = dnn.get_graph().get_operations();
+            let mut stepped_reprs: Vec<RepresentationId> =
+                dnn.get_input_representation_ids().clone();
+
+            for op_node in operation_nodes.iter() {
+                if let Some(num_steps) = op_node.get_operation().num_steps() {
+                    for step in 0..(num_steps - 1) {
+                        // Avoids underflow
+                        if step == num_steps - 1 {
+                            continue;
+                        }
+
+                        stepped_reprs
+                            .push(op_node.get_output_ids()[0].clone().with_step(Some(step)));
+                    }
+                }
+                stepped_reprs.push(op_node.get_output_ids()[0].clone());
+            }
+
+            // Iterate over all pairs of stepped_reprs
+            let stepped_pairs: Vec<_> = stepped_reprs.into_iter().combinations(2).collect();
+
+            (Just(dnn), select(stepped_pairs))
+        })
+    }
+
+    fn fcdnn_with_local_output_bounds(
+        input_size: usize,
+        output_size: usize,
+        n_hidden_layers: usize,
+        max_layer_width: usize,
+    ) -> impl Strategy<Value = (DNN, RepresentationId, RepresentationId, Bounds1)> {
+        let strat =
+            fcdnn_with_star_end_repr(input_size, output_size, n_hidden_layers, max_layer_width);
+        let strat = Strategy::prop_flat_map(strat, move |(dnn, repr_ids)| {
+            let start_id = repr_ids[0];
+            let end_id = repr_ids[1];
+
+            let bounds_dims = if dnn.get_input_representation_ids().contains(&start_id) {
+                let input_op_id = dnn.get_graph().get_representation_input_op_ids(&start_id)[0];
+                let op_node = dnn.get_graph().get_operation_node(&input_op_id).unwrap();
+                op_node.get_operation().inputs_dims()[0]
+            } else {
+                let op_id = dnn.get_graph().get_representation_op_id(&start_id).unwrap();
+                let op_node = dnn.get_graph().get_operation_node(&op_id).unwrap();
+                op_node.get_operation().outputs_dims()[0]
+            };
+
+            (Just(dnn), Just(start_id), Just(end_id), Just(bounds_dims))
+        });
+        Strategy::prop_flat_map(strat, move |(dnn, start_id, end_id, ndims)| {
+            (Just(dnn), Just(start_id), Just(end_id), bounds1(ndims))
+        })
+    }
+
     proptest! {
         /// Tests whether deep poly runs without failure
         #[test]
@@ -195,70 +297,107 @@ mod tests {
             deep_poly(&dnn, &input_representations, output_ids);
         }
 
+        #[test]
+        fn test_fcdnn_with_local_output_bounds((_, start_repr, end_repr, _) in fcdnn_with_local_output_bounds(2,2,3,2)) {
+            prop_assert!(start_repr != end_repr);
+            if start_repr.representation_node_id == end_repr.representation_node_id {
+                prop_assert!(end_repr.operation_step == None || end_repr.operation_step > start_repr.operation_step);
+            } else {
+                prop_assert!(end_repr.representation_node_id > start_repr.representation_node_id);
+            }
+        }
+
         /// Tests whether the abstract bounds are tigheter than the concrete bounds. This is tested by checking
         /// if the abstract bounds concretized with the input bounds are contained by the concrete bounds.
         #[test]
-        fn test_abstract_bounds_tighter_than_concrete(dnn in fc_dnn(2,2,3,2), (input_star, input_bounds) in generic_non_empty_star_with_bounds(2, 0)) {
-            let engine = Engine::new(dnn.get_graph());
-            let star_input_bounds = input_star.calculate_output_axis_aligned_bounding_box(&input_bounds);
-
-            let local_output_bounds: HashMap<RepresentationId, Option<Bounds1>> = HashMap::new();
-            local_output_bounds.insert(dnn.get_input_representation_ids()[0].clone(), Some(input_bounds.clone()));
-
-            let inputs: Vec<(RepresentationId, ())> = vec![(dnn.get_input_representation_ids()[0], ())];
-            let _outputs = engine.run_nodal(dnn.get_output_representation_ids(), &inputs, |_, op_node: &OperationNode, inputs: &Vec<&()>, step| -> (Option<usize>, Vec<()>) {
-                assert_eq!(1, inputs.len());
-                let (repr_step, next_step) = get_next_step(op_node.get_operation().num_steps(), step);
-                let out_repr_id = op_node.get_output_ids()[0].clone().with_step(repr_step);
-
-                let parent_local_output_bounds = (if let Some(step) = next_step {
-                    local_output_bounds.get(&out_repr_id).unwrap().as_ref()
-                } else {
-                    local_output_bounds.get(&op_node.get_input_ids()[0]).unwrap().as_ref()
-                }).map(|bounds| vec![bounds]);
-
-                let output_stars_bounds_opts = op_node.get_operation().forward_star(vec![&input_star], next_step, &star_input_bounds, parent_local_output_bounds);
-                assert_eq!(1, output_stars_bounds_opts.len());
-                output_stars_bounds_opts[0].into_iter()
-                    .map(|(star, local_output_bounds_opt)| {
-                        if let Some(local_output_bounds) = local_output_bounds_opt {
-                            (star, local_output_bounds)
-                        } else {
-                            (star, op_node.get_operation())
-                        }
-                    }).for_each(|(_, local_output_bounds)| {
-                        let deep_poly_inputs = vec![(out_repr_id, local_output_bounds)];
-                        let (concretized_bounds, concrete_bounds) = _deep_poly(&dnn, &deep_poly_inputs, dnn.get_output_representation_ids());
-                        assert!(concretized_bounds[0].is_subset_of(&concrete_bounds[0]), "Concrete bounds {:?} does not contain concretized bounds: {:?}", concrete_bounds, concretized_bounds);
-                    });
-
-                (repr_step, vec![()])
-
-
-
-
-                // let deep_poly_inputs = vec![(op_node.get_input_ids()[0].clone(), &inputs[0].1)];
-                // let parent_star = vec![&inputs[0].0];
-                // let star_outputs = op_node.get_operation().forward_star(parent_star, next_step, &input_bounds, Some(vec![&inputs[0].1]));
-
-                // star_outputs.iter().map(|)
-                // let local_output_bounds = star_outputs.1[0].unwrap();
-
-                // let (concretized_bounds, concrete_bounds) = _deep_poly(
-                //     &dnn,
-                //     &deep_poly_inputs,
-                //     dnn.get_output_representation_ids()
-                // );
-                // assert!(concretized_bounds[0].is_subset_of(&concrete_bounds[0]), "Concrete bounds {:?} does not contain concretized bounds: {:?}", concrete_bounds, concretized_bounds);
-                // (repr_step, (local_output_bounds))
-            });
+        fn test_abstract_bounds_tighter_than_concrete((dnn, start_repr, end_repr, input_bounds) in fcdnn_with_local_output_bounds(4,4,4,4)) {
+            let deep_poly_inputs = vec![(start_repr, &input_bounds)];
+            let (concretized_bounds, concrete_bounds) = _deep_poly(&dnn, &deep_poly_inputs, &vec![end_repr]);
+            prop_assert!(concretized_bounds[0].is_subset_of(&concrete_bounds[0]), "Concrete bounds {:?} does not contain concretized bounds: {:?}", concrete_bounds, concretized_bounds);
         }
 
         /// Tests whether the concrete output bounds of deep poly over-approximate, i.e. given any input in
         /// the input bounds you cannot reach a value outside of the concrete bounds.
         #[test]
-        fn test_bounds_over_approximate(dnn in fc_dnn(2,2,3,2), input_bounds in bounds1(2)) {
+        fn test_bounds_over_approximate(dnn in fc_dnn(2,2,2,2), input_bounds in bounds1(2)) {
+            // Create a starset
+            let input_star = Star2::default(&TensorShape::new(vec![Some(input_bounds.ndim())]));
+            let starset = GraphStarset::new(dnn, input_bounds.clone(), input_star);
 
+            // Run starsets forward
+            let engine = Engine::new(starset.get_graph());
+            let inputs = vec![(
+                starset.get_dnn().get_input_representation_ids()[0].clone(),
+                vec![starset.get_root_id()],
+            )];
+            let res = engine.run_nodal(starset.get_dnn().get_output_representation_ids(), &inputs, |op_id, op_node, inputs, step| -> (Option<usize>, Vec<Vec<usize>>) {
+                assert_eq!(1, inputs.len());
+                let (repr_step, _next_step) = get_next_step(op_node.get_operation().num_steps(), step);
+                let input_stars = inputs[0];
+                let star_ids = input_stars.into_iter().map(|input_star_id| {
+                    let rel_id = starset.expand(op_id, vec![*input_star_id]);
+                    let rel = starset.get_relationship(rel_id);
+                    assert_eq!(repr_step, rel.step);
+                    rel.output_star_ids.clone().into_iter().flatten()
+                }).flatten().collect();
+
+                (repr_step, vec![star_ids])
+            });
+            prop_assert!(res.is_ok());
+
+            let stepped_reprs = get_all_stepped_repr_ids(starset.get_dnn());
+            let stepped_pairs: Vec<_> = stepped_reprs.into_iter().combinations(2).collect();
+
+            for repr_pair in stepped_pairs.into_iter() {
+                let start_repr = repr_pair[0];
+                let end_repr = repr_pair[1];
+
+                let out_dims = {
+                    let out_op_id = starset.get_dnn().get_graph().get_representation_op_id(&end_repr).unwrap();
+                    starset.get_dnn().get_graph().get_operation_node(&out_op_id).unwrap().get_operation().outputs_dims()[0]
+                };
+
+                // Iterate over all corresponding stars
+                for star_id in starset.get_stars_for_representation(&start_repr).into_iter() {
+                    let star = starset.get_star(star_id);
+
+                    let parent_local_output_bounds = {
+                        if let Some(producing_rel) = starset.get_producing_relationship(&star_id) {
+                            prop_assert_eq!(producing_rel.input_star_ids.len(), 1);
+                            let parent_star_id = producing_rel.input_star_ids[0];
+                            let local_output_bounds_opt = starset.get_local_output_bounds(parent_star_id);
+                            if local_output_bounds_opt.is_some() {
+                                local_output_bounds_opt.as_ref().unwrap().clone()
+                            } else {
+                                star.calculate_output_axis_aligned_bounding_box(&input_bounds)
+                            }
+                        } else {
+                            star.calculate_output_axis_aligned_bounding_box(&input_bounds)
+                        }
+                    };
+
+                    // Run DeepPoly for the star until the end representation
+                    let deep_poly_inputs = vec![(start_repr, &parent_local_output_bounds)];
+                    let concretized_bounds = deep_poly(&starset.get_dnn(), &deep_poly_inputs, &vec![end_repr]);
+                    prop_assert_eq!(concretized_bounds.len(), 1);
+
+                    // Check that the output bounds of each leaf star is contained by the concretized deep poly bounds.
+                    let test_bounds = {
+                        let (bounds_lower, bounds_upper): (Vec<NNVFloat>, Vec<NNVFloat>) =
+                            (0..out_dims).map(|dim| {
+                                let output_min = star.get_output_min(dim, &input_bounds);
+                                let output_max = star.get_output_min(dim, &input_bounds);
+                                (output_min, output_max)
+                            }).unzip();
+                        let bounds_lower = Array1::from_vec(bounds_lower);
+                        let bounds_upper = Array1::from_vec(bounds_upper);
+                        Bounds1::new(bounds_lower.view(), bounds_upper.view())
+                    };
+
+                    prop_assert_eq!(concretized_bounds[0].ndim(), test_bounds.ndim());
+                    prop_assert!(test_bounds.is_subset_of(&concretized_bounds[0]), "Deep Poly Bounds: {:?} Test Bounds: {:?}", &concretized_bounds, &test_bounds);
+                }
+            }
         }
     }
 }

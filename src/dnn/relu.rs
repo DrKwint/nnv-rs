@@ -114,7 +114,7 @@ impl Operation for ReLU {
         let star = stars.get(0).unwrap();
 
         let dim = dim.unwrap();
-        let child_stars = star.step_relu2(dim, Some(input_bounds));
+        let child_stars = step_relu2(star, dim, Some(input_bounds));
         let is_single_child = child_stars.0.is_some() ^ child_stars.1.is_some();
 
         let mut stars = vec![];
@@ -158,6 +158,9 @@ impl Operation for ReLU {
             if is_single_child {
                 // Remove redundant constraint added by step_relu2 above
                 let num_constraints = upper_star.num_constraints();
+                if num_constraints == 0 {
+                    println!("HERE");
+                }
                 upper_star = upper_star.remove_constraint(num_constraints - 1);
             }
             stars.push(upper_star);
@@ -168,6 +171,52 @@ impl Operation for ReLU {
             .zip(star_local_output_bounds.into_iter())
             .collect()]
     }
+}
+
+fn step_relu2<Bounds1Ref: Deref<Target = Bounds1> + Copy>(
+    star: &Star2,
+    index: usize,
+    input_bounds_opt: Option<Bounds1Ref>,
+) -> (Option<Star2>, Option<Star2>) {
+    let (coeffs, shift) = {
+        let aff = star.get_representation().get_eqn(index);
+        let neg_basis_part: Array2<NNVFloat> = &aff.basis() * -1.;
+        let shift = aff.shift();
+        (neg_basis_part.row(0).to_owned(), shift[[0]])
+    };
+    let upper_star = star.clone().add_constraint(coeffs.view(), shift);
+
+    let mut lower_star = star.clone().add_constraint((&coeffs * -1.).view(), -shift);
+    lower_star.get_representation_mut().zero_eqn(index);
+
+    let lower_star_opt = if lower_star.is_empty(input_bounds_opt) {
+        None
+    } else {
+        Some(lower_star)
+    };
+    let upper_star_opt = if upper_star.is_empty(input_bounds_opt) {
+        None
+    } else {
+        Some(upper_star)
+    };
+    (lower_star_opt, upper_star_opt)
+}
+
+fn _step_relu2_dropout(
+    star: &Star2,
+    index: usize,
+    input_bounds_opt: Option<&Bounds1>,
+) -> (Option<Star2>, Option<Star2>, Option<Star2>) {
+    let mut dropout_star = star.clone();
+    dropout_star.get_representation_mut().zero_eqn(index);
+
+    let stars = step_relu2(star, index, input_bounds_opt);
+    let dropout_star_opt = if dropout_star.is_empty(input_bounds_opt) {
+        None
+    } else {
+        Some(dropout_star)
+    };
+    (dropout_star_opt, stars.0, stars.1)
 }
 
 /// # Panics
@@ -289,14 +338,54 @@ mod test {
     use crate::test_util::*;
     use proptest::prelude::*;
 
+    fn single_child(
+        max_dims: usize,
+        max_constraints: usize,
+    ) -> impl Strategy<Value = (Star2, Bounds1)> {
+        let strat = (1..max_dims + 1, 0..max_constraints + 1);
+        let strat = Strategy::prop_flat_map(strat, move |(ndims, constraints)| {
+            (non_empty_star(ndims, constraints), bounds1(ndims))
+        });
+        Strategy::prop_filter(
+            strat,
+            "Star needs to have one child with bounds under relu",
+            |(star, bounds)| {
+                for idx in 0..bounds.ndim() {
+                    let (upper_star_opt, lower_star_opt) = step_relu2(star, idx, Some(bounds));
+                    if !(upper_star_opt.is_some() ^ lower_star_opt.is_some()) {
+                        return false;
+                    }
+                }
+                true
+            },
+        )
+    }
+
     proptest! {
         #[test]
-        // fn test_single_dim_relu(star_basis in array2(1, 1), star_center in array1(1), constraints in polytope_including_zero(1, 10)) {
         fn test_single_dim_relu(input_star in non_empty_star(1, 4)) {
             // let input_star = Star2::new(star_basis, star_center).with_constraints(constraints);
             let bounds = bounds1_set(1, 30.);
             let relu = ReLU::new(1);
             relu.forward_star(vec![&input_star], Some(0), &bounds, Some(vec![&bounds]));
+        }
+
+        #[test]
+        fn test_forward_star_single_child((input_star, input_bounds) in single_child(4,4)) {
+            let relu = ReLU::new(input_bounds.ndim());
+
+            for dim in 0..input_bounds.ndim() {
+                let (lower_star_opt, upper_star_opt) = step_relu2(&input_star, dim, Some(&input_bounds));
+                prop_assert!(lower_star_opt.is_some() ^ upper_star_opt.is_some());
+                let n_input_constraints = input_star.input_space_polytope().map_or(0, |p| p.num_dims());
+                let child_star = lower_star_opt.map_or_else(|| upper_star_opt.unwrap(), |lower_star| lower_star);
+                let n_output_constraints = child_star.input_space_polytope().map_or(0, |p| p.num_dims());
+                prop_assert_eq!(n_input_constraints + 1, n_output_constraints);
+
+                let child_stars = relu.forward_star::<&Star2,&Bounds1>(vec![&input_star], Some(dim), &input_bounds, None);
+                prop_assert_eq!(child_stars.len(), 1);
+                prop_assert_eq!(child_stars[0].len(), 1);
+            }
         }
     }
 

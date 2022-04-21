@@ -69,6 +69,10 @@ impl<D: Dimension> Star<D> {
     pub fn get_representation(&self) -> &Affine<D> {
         &self.representation
     }
+
+    pub fn get_representation_mut(&mut self) -> &mut Affine<D> {
+        &mut self.representation
+    }
 }
 
 impl<D: Dimension> Star<D> {
@@ -199,52 +203,6 @@ impl Star2 {
             representation: affine * &self.representation,
             constraints: self.constraints.clone(),
         }
-    }
-
-    pub fn step_relu2<Bounds1Ref: Deref<Target = Bounds1> + Copy>(
-        &self,
-        index: usize,
-        input_bounds_opt: Option<Bounds1Ref>,
-    ) -> (Option<Self>, Option<Self>) {
-        let (coeffs, shift) = {
-            let aff = self.representation.get_eqn(index);
-            let neg_basis_part: Array2<NNVFloat> = &aff.basis() * -1.;
-            let shift = aff.shift();
-            (neg_basis_part.row(0).to_owned(), shift[[0]])
-        };
-        let upper_star = self.clone().add_constraint(coeffs.view(), shift);
-
-        let mut lower_star = self.clone().add_constraint((&coeffs * -1.).view(), -shift);
-        lower_star.representation.zero_eqn(index);
-
-        let lower_star_opt = if lower_star.is_empty(input_bounds_opt) {
-            None
-        } else {
-            Some(lower_star)
-        };
-        let upper_star_opt = if upper_star.is_empty(input_bounds_opt) {
-            None
-        } else {
-            Some(upper_star)
-        };
-        (lower_star_opt, upper_star_opt)
-    }
-
-    pub fn step_relu2_dropout(
-        &self,
-        index: usize,
-        input_bounds_opt: Option<&Bounds1>,
-    ) -> (Option<Self>, Option<Self>, Option<Self>) {
-        let mut dropout_star = self.clone();
-        dropout_star.representation.zero_eqn(index);
-
-        let stars = self.step_relu2(index, input_bounds_opt);
-        let dropout_star_opt = if dropout_star.is_empty(input_bounds_opt) {
-            None
-        } else {
-            Some(dropout_star)
-        };
-        (dropout_star_opt, stars.0, stars.1)
     }
 
     /// Calculates the minimum value of the equation at index `idx`
@@ -431,13 +389,23 @@ impl Star4 {
 
 #[cfg(test)]
 mod test {
-    // use super::*;
-    // use crate::test_util::{array2, empty_star, non_empty_star};
-    // use ndarray::arr1;
-    // use proptest::prelude::*;
-    // use proptest::proptest;
-    // use std::panic;
+    use super::*;
+    use crate::test_util::*;
+    use ndarray::s;
+    use proptest::prelude::*;
 
+    proptest! {
+        #[test]
+        fn test_add_constraint(star in generic_non_empty_star(4, 4), arr in array1(4)) {
+            let ndim = star.input_dim();
+            let coeffs = arr.slice(s![0..ndim]);
+            let rhs = arr[[0]];
+            let num_input_constraints = star.input_space_polytope().map_or(0, |p| p.num_dims());
+            let new_star = star.clone().add_constraint(coeffs, rhs);
+            let num_output_constraints = new_star.input_space_polytope().map_or(0, |p| p.num_dims());
+            prop_assert_eq!(num_input_constraints + 1, num_output_constraints, "Input star: {:?}, Star with constraint: {:?}", star, new_star);
+        }
+    }
     /*
         #[test]
         fn test_gaussian_sample_manual() {

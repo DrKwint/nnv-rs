@@ -96,7 +96,13 @@ impl Graph {
     ///
     /// * `id` - Representation whose producing operation we are trying to retrieve
     pub fn get_representation_op_id(&self, id: &RepresentationId) -> Option<OperationId> {
-        self.representation_ops.get(id).copied()
+        if id.operation_step.is_some() {
+            self.representation_ops
+                .get(&id.clone().with_step(None))
+                .copied()
+        } else {
+            self.representation_ops.get(id).copied()
+        }
     }
 
     /// Get the ids of the operations that `id` feeds into.
@@ -260,21 +266,80 @@ impl Graph {
 
     /// Calculates a subgraph of operations necessary to compute the outputs from the inputs
     ///
+    /// # Description
+    ///
+    /// Computes a subgraph of necessary operations to calculate output representations from
+    /// inputs ones. The most general case is that where steps of operations are not considered.
+    /// In this case, we compute via search the necessary operations to produce outputs.
+    ///
+    /// At each step, we:
+    /// 1. Get the next operation that needs to be computed by popping off the
+    ///    `active_representation_ids` set.
+    /// 2. Check to ensure the operation still needs to be computed by checking the
+    ///    `finished_representations` set. If not, we continue to the next representation
+    /// 3. Get the operation that produces the next representation in the stack.
+    /// 4. We check for inputs to the operation that have not yet been computed, i.e. are not in
+    ///    the `finished_representations` set. We add these representations to the stack, i.e.
+    ///    `active_representation_ids`.
+    /// 5. We add the outputs of the operation to the `finished_representations` set. Note that we
+    ///    may add multiple representations at this step at this is why step (2.) is required.
+    ///
+    /// At initialization, the `inputs_ids` are added to the `finished_representations` set and the
+    /// `output_ids` are added to the `active_representation_ids` set.
+    ///
+    /// ## Subgraph calculation with operation steps
+    ///
+    /// The more difficult case is when stepped representations are provied, i.e. when some calculation
+    /// has been done for an operation, but not yet all of it. To handle this we have 3 additional
+    /// cases to consider:
+    /// 1. An operation node has stepped inputs, but not stepped outputs.
+    /// 2. An operation node has stepped outputs, but not stepped inputs.
+    /// 3. An operation node has stepped inputs and stepped outputs.
+    ///
+    /// The first and second cases are simple to deal with, with a few assumptions. The first assumption
+    /// is that for a stepped operation with multiple outputs, all outputs are given for the same step
+    /// and further, only one step of the operation may be input (however multiple output steps may be
+    /// specified). Given this set of assumptions, for both cases, we simply run the producing operation
+    /// to the end. While this does incur some additional cost with unnecessary steps being calculated,
+    /// we believe this cost to be low, due to the decomposability and cheapness of stepped operations.
+    ///
+    /// Finally, for the third case we can test for this case explicitly. For such a case, we can add the
+    /// operation node as a required operation and then proceed to treat the output of the node as a whole
+    /// as an input to the rest of the algorithm, removing the output id from the calculation. Incidentally,
+    /// accounting for case 1 also accounts for the inputs of case 3, so we just need to make sure we don't
+    /// have double outputs when constructing `active_representation_ids`.
+    ///
     /// # Errors
     pub fn get_operation_set(
         &self,
         output_ids: &[RepresentationId],
         input_ids: &[RepresentationId],
     ) -> Result<HashSet<OperationId>, GraphError> {
-        // Set of representations that still need to be calculated
-        let mut active_representation_ids = output_ids.iter().collect::<Vec<_>>();
-
         // set of ops indices required to produce the outputs
         let mut op_node_set: HashSet<OperationId> = HashSet::new();
 
         // Set of representations that have already been calculated by some previous op
         let mut finished_representations: HashSet<RepresentationId> =
             input_ids.iter().copied().collect();
+
+        // Test for case 1: input ids are stepped
+        input_ids
+            .iter()
+            .filter(|input_id| input_id.operation_step.is_some())
+            .for_each(|input_id| {
+                let op_id = self.get_representation_op_id(input_id).unwrap();
+                op_node_set.insert(op_id);
+                let op_node = self.get_operation_node(&op_id).unwrap();
+                op_node.get_output_ids().iter().for_each(|id| {
+                    finished_representations.insert(*id);
+                });
+            });
+
+        // Set of representations that still need to be calculated, checking for case 3
+        let mut active_representation_ids: Vec<_> = output_ids
+            .iter()
+            .filter(|&out_id| !finished_representations.contains(&out_id.clone().with_step(None)))
+            .collect();
 
         while !active_representation_ids.is_empty() {
             // Get next representation we need
@@ -290,11 +355,17 @@ impl Graph {
 
             // If not, try to get it from an operation
             // `op_id` is the id of the operation that produces `active_repr_id`
-            let op_id = self.get_representation_op_id(active_repr_id).ok_or(
-                GraphError::NoOpCreatesRepresentation {
-                    repr_id: *active_repr_id,
-                },
-            )?;
+            let op_id = {
+                let op_id_check = self.get_representation_op_id(active_repr_id).ok_or(
+                    GraphError::NoOpCreatesRepresentation {
+                        repr_id: *active_repr_id,
+                    },
+                );
+                if op_id_check.is_err() {
+                    println!("Here");
+                }
+                op_id_check?
+            };
 
             let op_node = self
                 .get_operation_node(&op_id)
@@ -448,12 +519,34 @@ impl OperationNode {
 
 #[cfg(test)]
 mod test {
+    use crate::graph::operation::Operation;
     use crate::test_util::*;
     use proptest::*;
 
     proptest! {
         #[test]
-        fn test_from_sequential(_ in fc_dnn(4, 4, 4, 4)) {
+        fn test_step_set_operations(dnn in fc_dnn(4, 4, 4, 4)) {
+            let operation_nodes = dnn.get_graph().get_operations();
+            for (op_id, op_node) in operation_nodes.iter().enumerate() {
+                if let Some(num_steps) = op_node.get_operation().num_steps() {
+                    for start_step in 0..(num_steps - 1) {
+                        // Avoids underflow
+                        if start_step == num_steps - 1 {
+                            continue;
+                        }
+                        let end_iter = ((start_step+1)..(num_steps-1)).map(|step| Some(step)).chain(vec![None].into_iter());
+                        for end_step in end_iter {
+                            let input_id = op_node.get_output_ids()[0].clone().with_step(Some(start_step));
+                            let output_id = op_node.get_output_ids()[0].clone().with_step(end_step);
+                            let stepped_nodes = dnn.get_graph().get_operation_set(&vec![output_id], &vec![input_id]);
+                            prop_assert!(stepped_nodes.is_ok(), "input: {:?} output: {:?} err: {:?}", input_id, output_id, stepped_nodes);
+                            let stepped_nodes: Vec<_> = stepped_nodes.unwrap().into_iter().collect();
+                            prop_assert_eq!(stepped_nodes.len(), 1);
+                            prop_assert_eq!(stepped_nodes[0], op_id);
+                        }
+                    }
+                }
+            }
         }
     }
 }

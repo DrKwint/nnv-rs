@@ -3,6 +3,7 @@ use crate::bounds::{Bounds, Bounds1};
 use crate::dnn::DNN;
 use crate::graph::{Graph, RepresentationId};
 use crate::star::Star;
+use itertools::Itertools;
 use ndarray::Dimension;
 use ndarray::Ix2;
 use std::cell::{Ref, RefCell};
@@ -70,6 +71,14 @@ impl<D: 'static + Dimension> StarSet<D> for GraphStarset<D> {
         Ref::map(self.arena.borrow(), |vec| &vec[star_id])
     }
 
+    fn get_producing_relationship(&self, star_id: &StarId) -> Option<StarRelationship> {
+        self.relationships
+            .borrow()
+            .iter()
+            .find(|rel| rel.output_star_ids.iter().flatten().contains(star_id))
+            .map(|x| x.clone())
+    }
+
     fn get_relationship(&self, relationship_id: StarRelationshipId) -> Ref<StarRelationship> {
         assert!(relationship_id < self.relationships.borrow().len());
         Ref::map(self.relationships.borrow(), |vec| &vec[relationship_id])
@@ -103,6 +112,17 @@ impl<D: 'static + Dimension> StarSet<D> for GraphStarset<D> {
         let rel_id = self.relationships.borrow().len();
         self.relationships.borrow_mut().push(star_rel);
         rel_id
+    }
+
+    /// Get all stars that represent the transformation to reach a specific representation
+    fn get_stars_for_representation(&self, repr_id: &RepresentationId) -> Vec<StarId> {
+        self.representations
+            .borrow()
+            .iter()
+            .enumerate()
+            .filter(|(_, &star_repr_id)| star_repr_id == *repr_id)
+            .map(|(star_id, _)| star_id)
+            .collect()
     }
 }
 
