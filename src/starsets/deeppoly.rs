@@ -1,3 +1,5 @@
+use std::ops::Deref;
+
 use crate::affine::Affine2;
 use crate::bounds::Bounds1;
 use crate::dnn::DNN;
@@ -56,7 +58,7 @@ pub fn _deep_poly(
                 let output = (
                     id,
                     (
-                        bounds.clone(),
+                        Bounds1::clone(&bounds),
                         Affine2::new(
                             all_lower_matrix
                                 .slice_axis(Axis(1), Slice::from(*start_idx..end_idx))
@@ -358,45 +360,42 @@ mod tests {
                 };
 
                 // Iterate over all corresponding stars
-                for star_id in starset.get_stars_for_representation(&start_repr).into_iter() {
-                    let star = starset.get_star(star_id);
-
-                    let parent_local_output_bounds = {
-                        if let Some(producing_rel) = starset.get_producing_relationship(&star_id) {
-                            prop_assert_eq!(producing_rel.input_star_ids.len(), 1);
-                            let parent_star_id = producing_rel.input_star_ids[0];
-                            let local_output_bounds_opt = starset.get_local_output_bounds(parent_star_id);
-                            if local_output_bounds_opt.is_some() {
-                                local_output_bounds_opt.as_ref().unwrap().clone()
-                            } else {
-                                star.calculate_output_axis_aligned_bounding_box(&input_bounds)
-                            }
-                        } else {
-                            star.calculate_output_axis_aligned_bounding_box(&input_bounds)
-                        }
-                    };
+                for input_star_id in starset.get_stars_for_representation(&start_repr).into_iter() {
+                    let parent_local_output_bounds = starset.get_local_output_bounds(input_star_id, &input_bounds);
 
                     // Run DeepPoly for the star until the end representation
-                    let deep_poly_inputs = vec![(start_repr, &parent_local_output_bounds)];
+                    let deep_poly_inputs = vec![(start_repr, parent_local_output_bounds.deref())];
                     let concretized_bounds = deep_poly(&starset.get_dnn(), &deep_poly_inputs, &vec![end_repr]);
                     prop_assert_eq!(concretized_bounds.len(), 1);
                     prop_assert_eq!(concretized_bounds[0].ndim(), out_dims);
 
-                    // Check that the output bounds of each leaf star is contained by the concretized deep poly bounds.
-                    let test_bounds = {
-                        let (bounds_lower, bounds_upper): (Vec<NNVFloat>, Vec<NNVFloat>) =
-                            (0..out_dims).map(|dim| {
-                                let output_min = star.get_output_min(dim, &input_bounds);
-                                let output_max = star.get_output_min(dim, &input_bounds);
-                                (output_min, output_max)
-                            }).unzip();
-                        let bounds_lower = Array1::from_vec(bounds_lower);
-                        let bounds_upper = Array1::from_vec(bounds_upper);
-                        Bounds1::new(bounds_lower.view(), bounds_upper.view())
-                    };
 
-                    prop_assert_eq!(concretized_bounds[0].ndim(), test_bounds.ndim());
-                    prop_assert!(test_bounds.is_subset_of(&concretized_bounds[0]), "Deep Poly Bounds: {:?} Test Bounds: {:?}", &concretized_bounds, &test_bounds);
+                    let output_star_ids = starset.get_stars_for_representation(&end_repr).into_iter()
+                        .filter(|output_star_id| starset.get_ancestors(&output_star_id).contains(&input_star_id));
+
+                    for output_star_id in output_star_ids.into_iter() {
+                        let output_star = starset.get_star(output_star_id);
+                        if output_star.output_dim() != out_dims {
+                            println!("HERE");
+                        }
+                        prop_assert_eq!(output_star.output_dim(), out_dims);
+
+                        // Check that the output bounds of each leaf star is contained by the concretized deep poly bounds.
+                        let test_bounds = {
+                            let (bounds_lower, bounds_upper): (Vec<NNVFloat>, Vec<NNVFloat>) =
+                                (0..out_dims).map(|dim| {
+                                    let output_min = output_star.get_output_min(dim, &input_bounds);
+                                    let output_max = output_star.get_output_max(dim, &input_bounds);
+                                    (output_min, output_max)
+                                }).unzip();
+                            let bounds_lower = Array1::from_vec(bounds_lower);
+                            let bounds_upper = Array1::from_vec(bounds_upper);
+                            Bounds1::new(bounds_lower.view(), bounds_upper.view())
+                        };
+
+                        prop_assert_eq!(concretized_bounds[0].ndim(), test_bounds.ndim());
+                        prop_assert!(test_bounds.is_subset_of(&concretized_bounds[0]), "Deep Poly Bounds: {:?} Test Bounds: {:?}", &concretized_bounds, &test_bounds);
+                    }
                 }
             }
         }

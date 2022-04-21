@@ -54,10 +54,6 @@ pub struct Star<D: Dimension> {
 }
 
 impl<D: Dimension> Star<D> {
-    pub fn ndim(&self) -> usize {
-        self.representation.ndim()
-    }
-
     pub fn input_space_polytope(&self) -> Option<&Polytope> {
         self.constraints.as_ref()
     }
@@ -114,6 +110,10 @@ impl<D: Dimension> Star<D> {
 }
 
 impl Star2 {
+    pub fn output_dim(&self) -> usize {
+        self.representation.output_dim()
+    }
+
     pub fn get_constraint_coeffs(&self) -> Option<Array2<NNVFloat>> {
         self.constraints.as_ref().map(|x| x.coeffs().to_owned())
     }

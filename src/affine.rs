@@ -34,10 +34,6 @@ impl<D: Dimension> Display for Affine<D> {
 }
 
 impl<D: Dimension> Affine<D> {
-    pub fn ndim(&self) -> usize {
-        self.basis.ndim()
-    }
-
     pub fn shift(&self) -> ArrayView1<NNVFloat> {
         self.shift.view()
     }

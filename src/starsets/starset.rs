@@ -11,6 +11,7 @@ use ndarray::Dimension;
 use ndarray::Ix2;
 use serde::{Deserialize, Serialize};
 use std::cell::Ref;
+use std::collections::HashSet;
 
 pub type StarId = usize;
 pub type StarRelationshipId = usize;
@@ -55,6 +56,26 @@ pub trait StarSet<D: 'static + Dimension> {
     fn add_relationship(&self, star_rel: StarRelationship) -> StarRelationshipId;
     /// Get all stars that represent the transformation to reach a specific representation
     fn get_stars_for_representation(&self, repr_id: &RepresentationId) -> Vec<StarId>;
+
+    /// Returns a set of node ids that are all ancestors of `node_id`
+    /// # Panics
+    fn get_ancestors(&self, star_id: &StarId) -> HashSet<usize> {
+        let mut ancestors = HashSet::new();
+        let mut parent_stack = vec![*star_id];
+        while let Some(current_id) = parent_stack.pop() {
+            self.get_producing_relationship(&current_id)
+                .into_iter()
+                .for_each(|rel| {
+                    rel.input_star_ids.into_iter().for_each(|parent_id| {
+                        if !ancestors.contains(&parent_id) {
+                            parent_stack.push(parent_id);
+                            ancestors.insert(parent_id);
+                        }
+                    });
+                });
+        }
+        ancestors
+    }
 }
 
 pub trait StarSet2: StarSet<Ix2> {
@@ -63,8 +84,10 @@ pub trait StarSet2: StarSet<Ix2> {
 
     /// Get the dimension of the DNN input
     fn get_input_dim(&self) -> usize;
-    /// Implement with a cache because it is expensive
-    fn get_local_output_bounds(&self, star_id: StarId) -> Ref<Option<Bounds1>>;
+    /// Get the local output bounds, if they're cached
+    fn try_get_local_output_bounds(&self, star_id: StarId) -> Ref<Option<Bounds1>>;
+    /// Get the local output bounds, calcuting them if necessary
+    fn get_local_output_bounds(&self, star_id: StarId, input_bounds: &Bounds1) -> Ref<Bounds1>;
 
     /// Expand an operation from its inputs to produce the children and adds them to the `StarSet`.
     ///
@@ -114,7 +137,7 @@ pub trait StarSet2: StarSet<Ix2> {
 
             let local_storage: Vec<_> = input_star_ids
                 .iter()
-                .map(|&star_id| Ref::map(self.get_local_output_bounds(star_id), |x| x))
+                .map(|&star_id| Ref::map(self.try_get_local_output_bounds(star_id), |x| x))
                 .collect();
             let parent_local_output_bounds: Option<Vec<_>> =
                 local_storage.iter().map(|x| x.as_ref()).collect();
@@ -134,9 +157,9 @@ pub trait StarSet2: StarSet<Ix2> {
             .map(|(child_stars_bounds, &output_repr_id)| -> Vec<usize> {
                 child_stars_bounds
                     .into_iter()
-                    .map(|(star, child_input_bounds)| {
+                    .map(|(star, child_local_output_bounds)| {
                         let out_repr_id = output_repr_id.clone().with_step(repr_step);
-                        self.add_star(star, out_repr_id, child_input_bounds)
+                        self.add_star(star, out_repr_id, child_local_output_bounds)
                     })
                     .collect()
             })
