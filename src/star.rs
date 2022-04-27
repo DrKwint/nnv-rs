@@ -19,6 +19,7 @@ use ndarray::{Axis, Ix2};
 use num::Float;
 use serde::{Deserialize, Serialize};
 use std::fmt::Debug;
+use std::ops::Deref;
 
 pub type Star2 = Star<Ix2>;
 pub type Star4 = Star<Ix4>;
@@ -53,10 +54,6 @@ pub struct Star<D: Dimension> {
 }
 
 impl<D: Dimension> Star<D> {
-    pub fn ndim(&self) -> usize {
-        self.representation.ndim()
-    }
-
     pub fn input_space_polytope(&self) -> Option<&Polytope> {
         self.constraints.as_ref()
     }
@@ -68,18 +65,26 @@ impl<D: Dimension> Star<D> {
     pub fn get_representation(&self) -> &Affine<D> {
         &self.representation
     }
+
+    pub fn get_representation_mut(&mut self) -> &mut Affine<D> {
+        &mut self.representation
+    }
 }
 
 impl<D: Dimension> Star<D> {
     pub fn num_constraints(&self) -> usize {
-        match &self.constraints {
-            Some(polytope) => polytope.num_constraints(),
-            None => 0,
-        }
+        self.constraints
+            .as_ref()
+            .map_or(0, |polytope| polytope.num_constraints())
     }
 
     /// Add constraints to restrict the input set. Each row represents a
     /// constraint and the last column represents the upper bounds.
+    ///
+    /// # Assumptions
+    ///
+    /// * It is `not` assumed that the number of constraints monotonically
+    ///   increases, as optimizations are done under the hood.
     #[must_use]
     pub fn add_constraint(mut self, coeffs: ArrayView1<NNVFloat>, rhs: NNVFloat) -> Self {
         if let Some(ref mut constrs) = self.constraints {
@@ -94,16 +99,21 @@ impl<D: Dimension> Star<D> {
     #[must_use]
     /// # Panics
     pub fn remove_constraint(mut self, idx: usize) -> Self {
-        if let Some(ref mut constrs) = self.constraints {
-            constrs.remove_eqn(idx);
-        } else {
-            panic!();
-        }
+        self.constraints.as_mut().map_or_else(
+            || {
+                panic!();
+            },
+            |constrs| constrs.remove_eqn(idx),
+        );
         self
     }
 }
 
 impl Star2 {
+    pub fn output_dim(&self) -> usize {
+        self.representation.output_dim()
+    }
+
     pub fn get_constraint_coeffs(&self) -> Option<Array2<NNVFloat>> {
         self.constraints.as_ref().map(|x| x.coeffs().to_owned())
     }
@@ -126,6 +136,8 @@ impl Star2 {
             .map_or(Some(other.clone()), |x| Some(x.intersect(other)));
     }
 
+    /// # Panics
+    /// TODO
     pub fn get_input_trunc_gaussian(
         &self,
         mu: ArrayView1<NNVFloat>,
@@ -134,12 +146,13 @@ impl Star2 {
         stability_eps: NNVFloat,
         bounds_opt: &Option<Bounds1>,
     ) -> Option<GaussianDistribution> {
-        self.constraints
-            .as_ref()
-            .and_then(|x| x.reduce_fixed_inputs(bounds_opt))
-            .map(|poly| {
-                poly.get_truncnorm_distribution(mu, sigma, max_accept_reject_iters, stability_eps)
-            })
+        todo!();
+        // self.constraints
+        //     .as_ref()
+        //     .and_then(|x| x.reduce_fixed_inputs(bounds_opt))
+        //     .map(|poly| {
+        //         poly.get_truncnorm_distribution(mu, sigma, max_accept_reject_iters, stability_eps)
+        //     })
     }
 
     /// Create a new Star with given dimension.
@@ -176,7 +189,7 @@ impl Star2 {
     }
 
     /// Get the dimension of the input space
-    pub fn input_space_dim(&self) -> usize {
+    pub fn input_dim(&self) -> usize {
         self.representation.input_dim()
     }
 
@@ -194,52 +207,6 @@ impl Star2 {
             representation: affine * &self.representation,
             constraints: self.constraints.clone(),
         }
-    }
-
-    pub fn step_relu2(
-        &self,
-        index: usize,
-        input_bounds_opt: &Option<Bounds1>,
-    ) -> (Option<Self>, Option<Self>) {
-        let (coeffs, shift) = {
-            let aff = self.representation.get_eqn(index);
-            let neg_basis_part: Array2<NNVFloat> = &aff.basis() * -1.;
-            let shift = aff.shift();
-            (neg_basis_part.row(0).to_owned(), shift[[0]])
-        };
-        let upper_star = self.clone().add_constraint(coeffs.view(), shift);
-
-        let mut lower_star = self.clone().add_constraint((&coeffs * -1.).view(), -shift);
-        lower_star.representation.zero_eqn(index);
-
-        let lower_star_opt = if lower_star.is_empty(input_bounds_opt) {
-            None
-        } else {
-            Some(lower_star)
-        };
-        let upper_star_opt = if upper_star.is_empty(input_bounds_opt) {
-            None
-        } else {
-            Some(upper_star)
-        };
-        (lower_star_opt, upper_star_opt)
-    }
-
-    pub fn step_relu2_dropout(
-        &self,
-        index: usize,
-        input_bounds_opt: &Option<Bounds1>,
-    ) -> (Option<Self>, Option<Self>, Option<Self>) {
-        let mut dropout_star = self.clone();
-        dropout_star.representation.zero_eqn(index);
-
-        let stars = self.step_relu2(index, input_bounds_opt);
-        let dropout_star_opt = if dropout_star.is_empty(input_bounds_opt) {
-            None
-        } else {
-            Some(dropout_star)
-        };
-        (dropout_star_opt, stars.0, stars.1)
     }
 
     /// Calculates the minimum value of the equation at index `idx`
@@ -391,7 +358,10 @@ impl Star2 {
     }
 
     /// Check whether the Star set is empty.
-    pub fn is_empty(&self, input_bounds_opt: &Option<Bounds1>) -> bool {
+    pub fn is_empty<Bounds1Ref: Deref<Target = Bounds1>>(
+        &self,
+        input_bounds_opt: Option<Bounds1Ref>,
+    ) -> bool {
         self.constraints
             .as_ref()
             .map_or(false, |x| x.is_empty(input_bounds_opt))
@@ -423,12 +393,10 @@ impl Star4 {
 
 #[cfg(test)]
 mod test {
-    // use super::*;
-    // use crate::test_util::{array2, empty_star, non_empty_star};
-    // use ndarray::arr1;
-    // use proptest::prelude::*;
-    // use proptest::proptest;
-    // use std::panic;
+    use super::*;
+    use crate::test_util::*;
+    use ndarray::s;
+    use proptest::prelude::*;
 
     /*
         #[test]

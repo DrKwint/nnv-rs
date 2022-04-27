@@ -19,6 +19,7 @@ use num::Zero;
 use serde::{Deserialize, Serialize};
 use std::convert::TryFrom;
 use std::iter;
+use std::ops::Deref;
 use std::ops::Mul;
 use std::ops::MulAssign;
 use truncnorm::distributions::MultivariateTruncatedNormal;
@@ -107,10 +108,15 @@ impl Polytope {
         val > rhs
     }
 
+    /// # Assumptions
+    ///
+    /// * It is *NOT* an assumption that `add_eqn` monotonically increases the number of constratins
+    ///   as a constraint may be trivial or in the future may be tested for redundancy.
+    ///
     /// `check_redundant` is currently disabled
     /// # Panics
     pub fn add_eqn(&mut self, coeffs: ArrayView1<NNVFloat>, rhs: NNVFloat) {
-        if coeffs.iter().all(|x| x.abs() < 1e-15) {
+        if coeffs.iter().all(|x| x.abs() < 1e-15) && rhs >= -1e-15 {
             return;
         }
         self.coeffs
@@ -297,11 +303,15 @@ impl Polytope {
 
     /// # Panics
     /// Returns None if the reduced polytope is empty
-    pub fn reduce_fixed_inputs(&self, bounds_opt: &Option<Bounds1>) -> Option<Self> {
+    pub fn reduce_fixed_inputs(&self, bounds_opt: &Option<Vec<Bounds1>>) -> Option<Self> {
         if bounds_opt.is_none() {
             return Some(self.clone());
         }
-        let bounds = bounds_opt.as_ref().unwrap();
+        let bounds = bounds_opt
+            .as_ref()
+            .unwrap()
+            .iter()
+            .fold(Bounds1::default(0), Bounds1::append);
         let fixed_idxs = bounds.fixed_idxs();
         let fixed_vals = bounds.fixed_vals_or_zeros();
 
@@ -319,15 +329,13 @@ impl Polytope {
     /// both lower and upper.
     ///
     /// # Panics
-    pub fn is_empty(&self, bounds_opt: &Option<Bounds1>) -> bool {
+    pub fn is_empty<Bounds1Ref: Deref<Target = Bounds1>>(
+        &self,
+        bounds_opt: Option<Bounds1Ref>,
+    ) -> bool {
         let c = Array1::ones(self.num_dims());
 
-        let solved = solve(
-            self.coeffs().rows(),
-            self.rhs(),
-            c.view(),
-            bounds_opt.as_ref(),
-        );
+        let solved = solve(self.coeffs().rows(), self.rhs(), c.view(), bounds_opt);
 
         !matches!(
             solved,

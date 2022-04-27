@@ -1,17 +1,25 @@
-#![allow(non_snake_case, clippy::module_name_repetitions)]
+#![allow(
+    non_snake_case,
+    clippy::module_name_repetitions,
+    clippy::cast_precision_loss,
+    clippy::cast_sign_loss,
+    clippy::cast_possible_truncation
+)]
 //! Representation of affine transformations
-use super::layer::Layer;
 use crate::affine::Affine2;
 use crate::bounds::Bounds1;
+use crate::graph::Operation;
 use crate::star::Star2;
-use crate::star_node::StarNodeType;
+// use crate::star::Star2;
 use crate::tensorshape::TensorShape;
 use crate::NNVFloat;
 use itertools::Itertools;
 use ndarray::{Array1, Array2};
 use serde::{Deserialize, Serialize};
+use std::any::Any;
 use std::fmt;
 use std::fmt::Debug;
+use std::ops::Deref;
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub enum InterpolateMethod {
@@ -19,7 +27,7 @@ pub enum InterpolateMethod {
 }
 
 /// Assumes that data is always in a flattened state.
-/// Weights are of the shape: (kernel_w, kernel_h, channels_in, channels_out)
+/// Weights are of the shape: (`kernel_w`, `kernel_h`, `channels_in`, `channels_out`)
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct Interpolate {
     input_shape: TensorShape,
@@ -94,31 +102,28 @@ impl Interpolate {
 
             let output_idx = y_out * (w_out * c) + x_out * c + c_out;
 
+            let input_idx_11 = y_1 * (w_in * c) + x_1 * c + c_out;
             if x_1 == x_2 && y_1 == y_2 {
-                let input_idx = y_1 * (w_in * c) + x_1 * c + c_out;
-                weight[[output_idx, input_idx]] = 1.;
+                weight[[output_idx, input_idx_11]] = 1.;
             } else if x_1 == x_2 {
-                let input_idx_1 = y_1 * (w_in * c) + x_1 * c + c_out;
                 let input_idx_2 = y_2 * (w_in * c) + x_2 * c + c_out;
                 let prop_width = x_2 as f64 / w_out as f64 - x_1 as f64 / w_in as f64;
                 let weight_1 =
                     (x_out as f64 / w_out as f64 - x_1 as f64 / w_in as f64) / prop_width;
                 let weight_2 =
                     (x_2 as f64 / w_out as f64 - x_out as f64 / w_in as f64) / prop_width;
-                weight[[output_idx, input_idx_1]] = weight_1;
+                weight[[output_idx, input_idx_11]] = weight_1;
                 weight[[output_idx, input_idx_2]] = weight_2;
             } else if y_1 == y_2 {
-                let input_idx_1 = y_1 * (w_in * c) + x_1 * c + c_out;
                 let input_idx_2 = y_2 * (w_in * c) + x_2 * c + c_out;
                 let prop_height = y_2 as f64 / h_out as f64 - y_1 as f64 / h_in as f64;
                 let weight_1 =
                     (y_out as f64 / h_out as f64 - y_1 as f64 / h_in as f64) / prop_height;
                 let weight_2 =
                     (y_2 as f64 / h_out as f64 - y_out as f64 / h_in as f64) / prop_height;
-                weight[[output_idx, input_idx_1]] = weight_1;
+                weight[[output_idx, input_idx_11]] = weight_1;
                 weight[[output_idx, input_idx_2]] = weight_2;
             } else {
-                let input_idx_11 = y_1 * (w_in * c) + x_1 * c + c_out;
                 let input_idx_12 = y_1 * (w_in * c) + x_2 * c + c_out;
                 let input_idx_21 = y_2 * (w_in * c) + x_1 * c + c_out;
                 let input_idx_22 = y_2 * (w_in * c) + x_2 * c + c_out;
@@ -142,57 +147,63 @@ impl Interpolate {
             }
         }
         let bias = Array1::<NNVFloat>::zeros(h_out * w_out * c);
-        self.affine = Some(Affine2::new(weight, bias))
+        self.affine = Some(Affine2::new(weight, bias));
     }
 }
 
-#[typetag::serde]
-impl Layer for Interpolate {
-    fn input_shape(&self) -> TensorShape {
-        TensorShape::new(vec![Some(self.get_affine().input_dim())])
+impl Operation for Interpolate {
+    fn as_any(&self) -> &dyn Any {
+        self
     }
 
-    fn output_shape(&self) -> TensorShape {
-        TensorShape::new(vec![Some(self.get_affine().output_dim())])
+    fn input_shapes(&self) -> Vec<TensorShape> {
+        vec![TensorShape::new(vec![Some(self.get_affine().input_dim())])]
     }
-    fn forward1(&self, input: &Array1<NNVFloat>) -> Array1<NNVFloat> {
+
+    fn output_shapes(&self) -> Vec<TensorShape> {
+        vec![TensorShape::new(vec![Some(self.get_affine().output_dim())])]
+    }
+
+    fn forward1(&self, input: &[&Array1<NNVFloat>]) -> Vec<Array1<NNVFloat>> {
+        assert_eq!(input.len(), 1);
+        let input = input.first().unwrap();
         debug_assert_eq!(input.ndim(), 1);
-        self.get_affine().apply(&input.view())
+        vec![self.get_affine().apply(&input.view())]
     }
 
-    fn forward2(&self, input: &Array2<NNVFloat>) -> Array2<NNVFloat> {
-        self.get_affine().apply_matrix(&input.view())
+    fn forward2(&self, input: &[&Array2<NNVFloat>]) -> Vec<Array2<NNVFloat>> {
+        assert_eq!(input.len(), 1);
+        let input = input.first().unwrap();
+        vec![self.get_affine().apply_matrix(&input.view())]
     }
 
     fn apply_bounds(
         &self,
-        bounds: &Bounds1,
-        lower_aff: &Affine2,
-        upper_aff: &Affine2,
-    ) -> (Bounds1, (Affine2, Affine2)) {
+        bounds: &[&Bounds1],
+        lower_aff: &[&Affine2],
+        upper_aff: &[&Affine2],
+    ) -> Vec<(Bounds1, Affine2, Affine2)> {
+        assert_eq!(bounds.len(), 1);
+        assert_eq!(lower_aff.len(), 1);
+        assert_eq!(upper_aff.len(), 1);
+        let bounds = bounds.first().unwrap();
+        let lower_aff = lower_aff.first().unwrap();
+        let upper_aff = upper_aff.first().unwrap();
         let new_lower = self.get_affine().signed_compose(lower_aff, upper_aff);
         let new_upper = self.get_affine().signed_compose(upper_aff, lower_aff);
-        (
-            self.get_affine().signed_apply(bounds),
-            (new_lower, new_upper),
-        )
+        vec![(self.get_affine().signed_apply(bounds), new_lower, new_upper)]
     }
 
-    fn forward_star(
+    fn forward_star<StarRef: Deref<Target = Star2>, Bounds1Ref: Deref<Target = Bounds1>>(
         &self,
-        star: &Star2,
+        stars: Vec<StarRef>,
         _activation_idx: Option<usize>,
-        _input_bounds: Option<Bounds1>,
-        _parent_bounds: Option<Bounds1>,
-    ) -> (Vec<Star2>, Vec<Option<Bounds1>>, bool) {
-        (vec![star.affine_map2(self.get_affine())], vec![None], false)
-    }
-
-    fn construct_starnodetype(&self, child_ids: &[usize], _dim: Option<usize>) -> StarNodeType {
-        debug_assert_eq!(child_ids.len(), 1);
-        StarNodeType::Conv {
-            child_idx: child_ids[0],
-        }
+        _input_bounds: &Bounds1,
+        parent_local_output_bounds_opt: Option<Vec<Bounds1Ref>>,
+    ) -> Vec<Vec<(Star2, Option<Bounds1>)>> {
+        assert_eq!(1, stars.len());
+        assert!(parent_local_output_bounds_opt.map_or(true, |b| b.len() == 1));
+        vec![vec![(stars[0].affine_map2(&self.get_affine()), None)]]
     }
 }
 

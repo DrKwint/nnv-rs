@@ -49,6 +49,7 @@ pub trait CensoredProbStarSet2: CensoredProbStarSet<Ix2> + ProbStarSet2 {
         node_mut.get_output_bounds(dnn, &|x| (x.lower()[[0]], x.upper()[[0]]), &outer_bounds)
     }
 
+    /// Samples from the root node and runs each sample to a leaf or to a totally safe or unsafe node
     /// # Panics
     fn dfs_samples<R: Rng>(
         &mut self,
@@ -57,8 +58,7 @@ pub trait CensoredProbStarSet2: CensoredProbStarSet<Ix2> + ProbStarSet2 {
         time_limit_opt: Option<Duration>,
     ) -> NNVFloat {
         let start_time = Instant::now();
-        info!("dfs_samples START");
-        let samples = {
+        let samples: Vec<Array2<NNVFloat>> = {
             let without_fixed = self.sample_root_node(num_samples, rng);
             let almost_samples = if let Some(bounds) = self.get_input_bounds() {
                 let unfixed_dims = without_fixed.shape()[0]; // Assuming rank 2 here
@@ -82,7 +82,7 @@ pub trait CensoredProbStarSet2: CensoredProbStarSet<Ix2> + ProbStarSet2 {
             };
             almost_samples
         };
-        let activation_patterns = self.get_dnn().calculate_activation_pattern2(samples);
+        // let activation_patterns = self.get_dnn().calculate_activation_pattern2(samples);
         // currently, tilting is propagated, so we need to initialize it for the root node
         self.get_node_gaussian_distribution(self.get_root_id());
         let safe_value = self.get_safe_value();

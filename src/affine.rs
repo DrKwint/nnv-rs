@@ -16,7 +16,7 @@ pub type Affine2 = Affine<Ix2>;
 pub type Affine4 = Affine<Ix4>;
 
 /// Affine map data structure
-#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+#[derive(Clone, Default, Debug, PartialEq, Deserialize, Serialize)]
 pub struct Affine<D: Dimension> {
     basis: Array<NNVFloat, D>,
     shift: Array1<NNVFloat>,
@@ -34,10 +34,6 @@ impl<D: Dimension> Display for Affine<D> {
 }
 
 impl<D: Dimension> Affine<D> {
-    pub fn ndim(&self) -> usize {
-        self.basis.ndim()
-    }
-
     pub fn shift(&self) -> ArrayView1<NNVFloat> {
         self.shift.view()
     }

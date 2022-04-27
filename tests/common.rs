@@ -22,8 +22,8 @@ pub fn make_dnn(shape: &Vec<usize>, num_layers: &usize) -> DNN {
     let mut dnn = DNN::default();
 
     (0..*num_layers).into_iter().for_each(|_| {
-        dnn.add_layer(Box::new(Dense::new(affine2(&shape[0], &shape[1]))));
-        dnn.add_layer(Box::new(ReLU::new(shape[1])));
+        // dnn.add_layer(Box::new(Dense::new(affine2(&shape[0], &shape[1]))));
+        // dnn.add_layer(Box::new(ReLU::new(shape[1])));
     });
 
     dnn

@@ -25,7 +25,7 @@ use std::ops::{Mul, MulAssign};
 
 pub type Bounds1 = Bounds<Ix2>;
 
-#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+#[derive(Clone, Default, Debug, PartialEq, Deserialize, Serialize)]
 pub struct Bounds<D: Dimension> {
     data: Array<NNVFloat, D>,
 }
@@ -126,7 +126,7 @@ impl<D: Dimension + ndarray::RemoveAxis> Bounds<D> {
 
 impl<D: Dimension + ndarray::RemoveAxis> Bounds<D> {
     /// # Panics
-    pub fn subset(&self, rhs: &Self) -> bool {
+    pub fn is_subset_of(&self, rhs: &Self) -> bool {
         Zip::from(self.bounds_iter())
             .and(rhs.bounds_iter())
             .all(|me, rhs| {
@@ -251,12 +251,22 @@ impl<D: Dimension + RemoveAxis> Display for Bounds<D> {
 #[cfg(test)]
 mod test {
     use crate::test_util::*;
-    use proptest::proptest;
+    use proptest::prelude::*;
 
     proptest! {
         #[test]
         fn test_bounds_sample_uniform(bounds in generic_bounds1(32)) {
             bounds.sample_uniform(0_u64);
+        }
+    }
+
+    proptest! {
+        #[test]
+        fn test_bounds_append_shape(b_1 in generic_bounds1(32), b_2 in generic_bounds1(32)) {
+            let len_b_1 = b_1.ndim();
+            let len_b_2 = b_2.ndim();
+            let b_3 = b_1.append(&b_2);
+            prop_assert_eq!(b_3.ndim(), len_b_1 + len_b_2);
         }
     }
 }

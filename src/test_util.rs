@@ -4,11 +4,12 @@ use crate::bounds::{Bounds, Bounds1};
 use crate::dnn::dense::Dense;
 use crate::dnn::dnn::DNN;
 use crate::dnn::relu::ReLU;
+use crate::graph::{Graph, Operation};
+use crate::graph::{PhysicalOp, RepresentationId};
 use crate::polytope::Polytope;
 use crate::star::Star2;
-use crate::starsets::Asterism;
-use crate::starsets::Constellation;
-use ndarray::Array1;
+// use crate::starsets::Asterism;
+// use crate::starsets::Constellation;
 use ndarray::Array2;
 use ndarray::Array3;
 use ndarray::Array4;
@@ -16,6 +17,7 @@ use ndarray::ArrayView1;
 use ndarray::Axis;
 use ndarray::Ix2;
 use ndarray::Zip;
+use ndarray::{Array, Array1};
 use proptest::arbitrary::functor::ArbitraryF1;
 use proptest::prelude::any;
 use proptest::prelude::*;
@@ -38,9 +40,8 @@ prop_compose! {
 
 prop_compose! {
     pub fn array2(rows: usize, cols: usize)
-        (v in Vec::lift1_with(array1(cols), SizeRange::new(rows..=rows))) -> Array2<f64> {
-            assert!(rows > 0);
-            ndarray::stack(Axis(0), &v.iter().map(ndarray::ArrayBase::view).collect::<Vec<ArrayView1<f64>>>()).unwrap()
+        (v in array1(rows * cols))-> Array2<f64> {
+            v.into_shape((rows, cols)).unwrap()
         }
 }
 
@@ -79,10 +80,30 @@ prop_compose! {
     }
 }
 
+pub fn bounds1_set(ndim: usize, half_box_width: f64) -> Bounds1 {
+    assert!(half_box_width >= 0.);
+    let upper_bounds = Array::ones((ndim,)) * half_box_width;
+    let lower_bounds = Array::ones((ndim,)) * half_box_width * -1.;
+    Bounds1::new(lower_bounds.view(), upper_bounds.view())
+}
+
 prop_compose! {
-    pub fn fc_dnn(input_size: usize, output_size: usize, nlayers: usize, max_layer_width: usize)
-        (repr_sizes in Vec::lift1_with(1..max_layer_width,
-                                       SizeRange::new(nlayers..=nlayers))
+    /// Construct a sequential network
+    ///
+    /// # Description
+    ///
+    /// Constructs `n_hidden_layers` hidden layers each with between 1 and `max_layer_width` neurons.
+    ///
+    /// # Arguments
+    ///
+    /// * `input_size` - Input dimension
+    /// * `output_size` - Output dimension
+    /// * `nlayers` - Number of dense/relu layer pairs
+    /// * `max_layer_width` - Maximum number of dimensions in a hidden layer
+    pub fn fc_dnn(input_size: usize, output_size: usize, n_hidden_layers: usize, max_layer_width: usize)
+        // len(repr_sizes) == n_hidden_layers + 2
+        (repr_sizes in Vec::lift1_with(1..max_layer_width+1,
+                                       SizeRange::new(n_hidden_layers..=n_hidden_layers))
          .prop_map(move |mut x| {
              x.insert(0, input_size);
              x.push(output_size);
@@ -93,39 +114,39 @@ prop_compose! {
                 .zip(repr_sizes.iter().skip(1));
             pairs.map(|(&x, &y)| affine2(x,y)).collect::<Vec<_>>()}
         ) -> DNN {
-            let mut dnn = DNN::default();
+            let mut layers: Vec<PhysicalOp> = vec![];
             for aff in affines {
-                    let output_dim = aff.output_dim();
-                    dnn.add_layer(Box::new(Dense::new(aff)));
-                    dnn.add_layer(Box::new(ReLU::new(output_dim)));
-                }
-            dnn
+                let output_dim = aff.output_dim();
+                layers.push(PhysicalOp::from(Dense::new(aff.clone())));
+                layers.push(PhysicalOp::from(ReLU::new(output_dim)));
+            }
+            DNN::from_sequential(&layers)
         }
 }
 
-prop_compose! {
-    pub fn constellation(input_size: usize, output_size: usize, nlayers: usize, max_layer_width: usize)
-        (loc in array1(input_size), scale_diag in pos_def_array1(input_size), dnn in fc_dnn(input_size, output_size, nlayers, max_layer_width)) -> Constellation<Ix2>
-    {
-        let lbs = loc.clone() - 3.5 * scale_diag.clone();
-        let ubs = loc.clone() + 3.5 * scale_diag.clone();
-        let input_bounds = Bounds1::new(lbs.view(), ubs.view());
-        let star = Star2::new(Array2::eye(input_size), Array1::zeros(input_size));
-        Constellation::new(dnn, star, Some(input_bounds), loc, Array2::from_diag(&scale_diag).to_owned(), 4, 100, 1e-10)
-    }
-}
+// prop_compose! {
+//     pub fn constellation(input_size: usize, output_size: usize, nlayers: usize, max_layer_width: usize)
+//         (loc in array1(input_size), scale_diag in pos_def_array1(input_size), dnn in fc_dnn(input_size, output_size, nlayers, max_layer_width)) -> Constellation<Ix2>
+//     {
+//         let lbs = loc.clone() - 3.5 * scale_diag.clone();
+//         let ubs = loc.clone() + 3.5 * scale_diag.clone();
+//         let input_bounds = Bounds1::new(lbs.view(), ubs.view());
+//         let star = Star2::new(Array2::eye(input_size), Array1::zeros(input_size));
+//         Constellation::new(dnn, star, Some(input_bounds), loc, Array2::from_diag(&scale_diag).to_owned(), 4, 100, 1e-10)
+//     }
+// }
 
-prop_compose! {
-    pub fn asterism(input_size: usize, output_size: usize, nlayers: usize, max_layer_width: usize)
-        (loc in array1(input_size), scale_diag in pos_def_array1(input_size), dnn in fc_dnn(input_size, output_size, nlayers, max_layer_width)) -> Asterism<Ix2>
-    {
-        let lbs = loc.clone() - 3.5 * scale_diag.clone();
-        let ubs = loc.clone() + 3.5 * scale_diag.clone();
-        let input_bounds = Bounds1::new(lbs.view(), ubs.view());
-        let star = Star2::new(Array2::eye(input_size), Array1::zeros(input_size));
-        Asterism::new(dnn, star, loc, Array2::from_diag(&scale_diag).to_owned(), 1., Some(input_bounds), 4, 100, 1e-10)
-    }
-}
+// prop_compose! {
+//     pub fn asterism(input_size: usize, output_size: usize, nlayers: usize, max_layer_width: usize)
+//         (loc in array1(input_size), scale_diag in pos_def_array1(input_size), dnn in fc_dnn(input_size, output_size, nlayers, max_layer_width)) -> Asterism<Ix2>
+//     {
+//         let lbs = loc.clone() - 3.5 * scale_diag.clone();
+//         let ubs = loc.clone() + 3.5 * scale_diag.clone();
+//         let input_bounds = Bounds1::new(lbs.view(), ubs.view());
+//         let star = Star2::new(Array2::eye(input_size), Array1::zeros(input_size));
+//         Asterism::new(dnn, star, loc, Array2::from_diag(&scale_diag).to_owned(), 1., Some(input_bounds), 4, 100, 1e-10)
+//     }
+// }
 
 prop_compose! {
     pub fn polytope(num_dims: usize, num_constraints: usize)
@@ -163,6 +184,7 @@ prop_compose! {
                         let new_rhs = -1. * eqn.rhs().to_owned();
                         polytope.add_eqn(new_coeffs.row(0), new_rhs[[0]]);
                     }
+                    assert!(polytope.is_member(&zero.view()));
                 });
             polytope
         }
@@ -171,13 +193,15 @@ prop_compose! {
 prop_compose! {
     pub fn non_empty_polytope(num_dims: usize, num_constraints: usize)
         (
-            _poly in polytope_including_zero(num_dims, num_constraints)
+            poly in polytope_including_zero(num_dims, num_constraints)
                 .prop_filter("Non-zero intercepts",
                              |i| !i.rhs().iter().any(|x| *x == 0.0_f64))
         ) -> Polytope {
             // Make a box bigger than possible inner inequalities
             //let box_bounds: Bounds1 = Bounds1::new(Array1::from_elem(num_dims, -20.).view(), Array1::from_elem(num_dims, -20.).view());
-            Polytope::new(Array2::zeros([1, num_dims]), Array1::zeros(1))
+            // let polytope = Polytope::new(Array2::zeros([1, num_dims]), Array1::zeros(1));
+            // assert!(!poly.is_empty(None));
+            poly
         }
 }
 
@@ -235,7 +259,7 @@ prop_compose! {
             constraints in non_empty_polytope(num_dims, num_constraints)
         ) -> Star2 {
             let star = Star2::new(basis, center).with_constraints(constraints);
-            assert!(!star.is_empty(&None));
+            assert!(!star.is_empty::<&Bounds1>(None));
             star
         }
 }
@@ -267,7 +291,7 @@ prop_compose! {
 
 prop_compose! {
     pub fn generic_polytope_including_zero(max_dims: usize, max_constraints: usize)
-        (dim in 1..max_dims, constraints in 1..max_constraints)
+        (dim in 1..max_dims, constraints in 0..max_constraints+1)
         (ineq in polytope_including_zero(dim, constraints)) -> Polytope {
             ineq
         }
@@ -275,7 +299,7 @@ prop_compose! {
 
 prop_compose! {
     pub fn generic_empty_polytope(max_dims: usize, max_constraints: usize)
-        (dim in 1..max_dims, constraints in 1..max_constraints)
+        (dim in 1..max_dims, constraints in 0..max_constraints+1)
         (poly in empty_polytope(dim, constraints)) -> Polytope {
             poly
         }
@@ -283,7 +307,7 @@ prop_compose! {
 
 prop_compose! {
     pub fn generic_non_empty_polytope(max_dims: usize, max_constraints: usize)
-        (dim in 1..max_dims, constraints in 1..max_constraints)
+        (dim in 1..max_dims, constraints in 0..max_constraints+1)
         (poly in non_empty_polytope(dim, constraints)) -> Polytope {
             poly
         }
@@ -291,7 +315,7 @@ prop_compose! {
 
 prop_compose! {
     pub fn generic_empty_star(max_dims: usize, max_constraints: usize)
-        (dim in 1..max_dims, constraints in 1..max_constraints)
+        (dim in 1..max_dims, constraints in 0..max_constraints)
         (star in empty_star(dim, constraints)) -> Star2 {
             star
         }
@@ -299,7 +323,15 @@ prop_compose! {
 
 prop_compose! {
     pub fn generic_non_empty_star(max_dims: usize, max_constraints: usize)
-        (dim in 1..max_dims, constraints in 1..max_constraints)
+        (dim in 1..max_dims, constraints in 0..max_constraints+1)
+        (star in non_empty_star(dim, constraints)) -> Star2 {
+            star
+        }
+}
+
+prop_compose! {
+    pub fn generic_non_empty_star_set_dim(dim: usize, max_constraints: usize)
+        (dim in Just(dim), constraints in 0..max_constraints+1)
         (star in non_empty_star(dim, constraints)) -> Star2 {
             star
         }
@@ -314,23 +346,38 @@ prop_compose! {
     }
 }
 
-prop_compose! {
-    pub fn generic_constellation(max_input_size: usize, max_output_size: usize, max_nlayers: usize, max_layer_width: usize)
-        (input_size in 1..max_input_size, output_size in 1..max_output_size, nlayers in 1..max_nlayers)
-        (constellation in constellation(input_size, output_size, nlayers, max_layer_width)) -> Constellation<Ix2>
-        {
-            constellation
-        }
+pub fn generic_non_empty_star_with_bounds(
+    ndim: usize,
+    max_constraints: usize,
+) -> impl Strategy<Value = (Star2, Bounds1)> {
+    let strat = (Just(ndim), 0..max_constraints + 1);
+    let strat = Strategy::prop_flat_map(strat, move |(ndim, num_constraints)| {
+        (non_empty_star(ndim, num_constraints), bounds1(ndim))
+    });
+    Strategy::prop_filter(
+        strat,
+        "Constraints intersect with bounds must be non-empty",
+        |(star, bounds)| !star.is_empty(Some(bounds)),
+    )
 }
 
-prop_compose! {
-    pub fn generic_asterism(max_input_size: usize, max_output_size: usize, max_nlayers: usize, max_layer_width: usize)
-        (input_size in 1..max_input_size, output_size in 1..max_output_size, nlayers in 1..max_nlayers)
-        (asterism in asterism(input_size, output_size, nlayers, max_layer_width)) -> Asterism<Ix2>
-        {
-            asterism
-        }
-}
+// prop_compose! {
+//     pub fn generic_constellation(max_input_size: usize, max_output_size: usize, max_nlayers: usize, max_layer_width: usize)
+//         (input_size in 1..max_input_size, output_size in 1..max_output_size, nlayers in 1..max_nlayers)
+//         (constellation in constellation(input_size, output_size, nlayers, max_layer_width)) -> Constellation<Ix2>
+//         {
+//             constellation
+//         }
+// }
+
+// prop_compose! {
+//     pub fn generic_asterism(max_input_size: usize, max_output_size: usize, max_nlayers: usize, max_layer_width: usize)
+//         (input_size in 1..max_input_size, output_size in 1..max_output_size, nlayers in 1..max_nlayers)
+//         (asterism in asterism(input_size, output_size, nlayers, max_layer_width)) -> Asterism<Ix2>
+//         {
+//             asterism
+//         }
+// }
 
 proptest! {
     #[test]
@@ -341,22 +388,27 @@ proptest! {
 
     #[test]
     fn test_empty_polytope(poly in generic_empty_polytope(2, 4)) {
-        prop_assert!(poly.is_empty(&None));
+        prop_assert!(poly.is_empty::<&Bounds1>(None));
     }
 
     #[test]
     fn test_non_empty_polytope(poly in generic_non_empty_polytope(2, 4)) {
-        prop_assert!(!poly.is_empty(&None));
+        prop_assert!(!poly.is_empty::<&Bounds1>(None));
     }
 
     #[test]
     fn test_non_empty_star(star in generic_non_empty_star(2, 4)) {
-        prop_assert!(!star.is_empty(&None));
+        prop_assert!(!star.is_empty::<&Bounds1>(None));
     }
 
     #[test]
     fn test_generic_fc_dnn(_dnn in generic_fc_dnn(5, 5, 5, 5)) {
         // Yes, this is the full test. The test is that we can
         // construct varying sizes of dnns.
+    }
+
+    #[test]
+    fn test_generic_non_empty_star_with_bounds((star, bounds) in generic_non_empty_star_with_bounds(2, 4)) {
+        prop_assert!(!star.is_empty(Some(&bounds)));
     }
 }

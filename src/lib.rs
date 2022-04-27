@@ -1,15 +1,17 @@
 #![warn(clippy::all, clippy::pedantic, clippy::nursery, clippy::cargo)]
 #![allow(clippy::must_use_candidate)]
+#![allow(clippy::similar_names)]
+#![allow(clippy::too_many_arguments)]
 #![feature(binary_heap_into_iter_sorted)]
 #![feature(associated_type_bounds)]
 #![feature(generic_associated_types)]
 #![feature(box_syntax)]
+#![feature(let_chains)]
 
 extern crate approx;
 #[cfg(feature = "openblas-system")]
 extern crate blas_src;
 extern crate itertools;
-#[macro_use]
 extern crate more_asserts;
 extern crate ndarray;
 extern crate ndarray_linalg;
@@ -24,15 +26,16 @@ extern crate truncnorm;
 
 pub mod affine;
 pub mod bounds;
-pub mod deeppoly;
 pub mod dnn;
 pub mod gaussian;
+pub mod graph;
 pub mod lp;
 pub mod polytope;
 pub mod star;
 pub mod star_node;
 pub mod starsets;
 pub mod tensorshape;
+pub mod test_graphs;
 pub mod test_util;
 pub mod util;
 
