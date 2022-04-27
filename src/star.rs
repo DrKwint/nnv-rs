@@ -246,7 +246,7 @@ impl Star2 {
                 } else if let LinearSolution::Unbounded(_) = solved {
                     NNVFloat::neg_infinity()
                 } else {
-                    panic!("Solution: {:?}", solved)
+                    panic!("Solution: {:?} on star {:?}", solved, self)
                 }
             },
         )

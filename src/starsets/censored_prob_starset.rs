@@ -91,6 +91,7 @@ pub trait CensoredProbStarSet2: CensoredProbStarSet<Ix2> + ProbStarSet2 {
         for i in 0..num_samples {
             if let Some(time_limit) = time_limit_opt {
                 if start_time.elapsed() >= time_limit {
+                    info!("dfs_samples STOP: time out after {} samples", i);
                     return total_infeasible_cdf;
                 }
             }
@@ -200,6 +201,7 @@ pub trait CensoredProbStarSet2: CensoredProbStarSet<Ix2> + ProbStarSet2 {
                 }
             }
         }
+        info!("dfs_samples STOP: complete");
         total_infeasible_cdf
     }
 
@@ -233,7 +235,6 @@ pub trait CensoredProbStarSet2: CensoredProbStarSet<Ix2> + ProbStarSet2 {
         total_infeasible_cdf: &mut NNVFloat,
         rng: &mut R,
     ) -> usize {
-        info!("Infeasible reset at depth {}!", path.len());
         self.set_node_feasibility(x, false);
         let mut infeas_cdf = self.get_node_cdf(x, rng);
         path.drain(..).rev().for_each(|x| {
@@ -286,6 +287,7 @@ pub trait CensoredProbStarSet2: CensoredProbStarSet<Ix2> + ProbStarSet2 {
         time_limit_opt: Option<Duration>,
     ) -> Option<(Vec<Array1<NNVFloat>>, NNVFloat, NNVFloat)> {
         let start_time = Instant::now();
+        info!("sample_safe_star START");
         let max_iters = self.get_max_accept_reject_iters();
         let stability_eps = self.get_stability_eps();
         let mut sample_heap: BinaryHeap<FstOrdTuple<Reverse<OrderedFloat<f64>>, _>> =
@@ -295,15 +297,9 @@ pub trait CensoredProbStarSet2: CensoredProbStarSet<Ix2> + ProbStarSet2 {
         let mut path_logp = 0.;
         let mut total_infeasible_cdf = 0.;
         loop {
-            info!("Current node: {:?}", current_node);
-            info!(
-                "Current idx: {:?}",
-                self.get_node(current_node).get_dnn_index()
-            );
             // base case for feasability
             if current_node == 0 && self.is_node_infeasible(current_node) {
-                info!("No feasible value exists!");
-                println!("No feasible value exists!");
+                info!("sample_safe_star STOP: No feasible value exists!");
                 return None;
             }
             // Try to sample and return if a valid sample is found
@@ -313,14 +309,14 @@ pub trait CensoredProbStarSet2: CensoredProbStarSet<Ix2> + ProbStarSet2 {
                 .is_some());
             match safe_sample_opt {
                 Ok(safe_samples) => {
-                    info!(
-                        "Safe samples found less than {} at depth {}",
-                        self.get_safe_value(),
-                        path.len()
-                    );
                     if safe_samples.iter().any(|x| x.iter().any(|v| v.abs() > 10.)) {
                         panic!("Random safe sample big!");
                     }
+                    info!(
+                        "sample_safe_star STOP: Safe samples found less than {} at depth {}",
+                        self.get_safe_value(),
+                        path.len()
+                    );
                     return Some((safe_samples, path_logp, total_infeasible_cdf));
                 }
                 Err(sample_val_pairs) => sample_val_pairs
@@ -348,17 +344,28 @@ pub trait CensoredProbStarSet2: CensoredProbStarSet<Ix2> + ProbStarSet2 {
                     .is_some());
                 if output_bounds.1 <= self.get_safe_value() {
                     // handle case where star is safe
-                    info!(
-                        "Safe sample with value at most {} at depth {} (bounds {:?})",
-                        self.get_safe_value(),
-                        path.len(),
-                        output_bounds
-                    );
                     let safe_sample = self.sample_gaussian_node(current_node, rng, num_samples);
-                    if safe_sample.iter().any(|x| x.iter().any(|v| v.abs() > 10.)) {
-                        panic!("Safe node sample big!");
+                    if !safe_sample.is_empty() {
+                        if safe_sample.iter().any(|x| x.iter().any(|v| v.abs() > 10.)) {
+                            panic!("Safe node sample big!");
+                        }
+                        info!(
+                            "sample_safe_star STOP: Safe sample with value at most {} at depth {} (bounds {:?})",
+                            self.get_safe_value(),
+                            path.len(),
+                            output_bounds
+                        );
+                        return Some((safe_sample, path_logp, total_infeasible_cdf));
+                    } else {
+                        // Best thing to do here would be to figure out how to sample despite poor conditioning
+                        current_node = self.infeasible_reset(
+                            current_node,
+                            &mut path,
+                            &mut path_logp,
+                            &mut total_infeasible_cdf,
+                            rng,
+                        );
                     }
-                    return Some((safe_sample, path_logp, total_infeasible_cdf));
                 } else if output_bounds.0 > self.get_safe_value() {
                     // handle case where star is infeasible
                     self.set_node_feasibility(current_node, false);
@@ -374,11 +381,6 @@ pub trait CensoredProbStarSet2: CensoredProbStarSet<Ix2> + ProbStarSet2 {
                     match self.get_node_type(current_node) {
                         StarNodeType::Leaf { .. } => {
                             // do procedure to select safe part
-                            info!(
-                                "Safe sample with value at most {} at leaf (bounds {:?})",
-                                self.get_safe_value(),
-                                output_bounds
-                            );
                             let safe_sample = self.sample_gaussian_node_safe(
                                 current_node,
                                 rng,
@@ -391,6 +393,11 @@ pub trait CensoredProbStarSet2: CensoredProbStarSet<Ix2> + ProbStarSet2 {
                                 if safe_sample.iter().any(|x| x.iter().any(|v| v.abs() > 10.)) {
                                     panic!("Leaf safe sample big!");
                                 }
+                                info!(
+                                    "sample_safe_star STOP: Safe sample with value at most {} at leaf (bounds {:?})",
+                                    self.get_safe_value(),
+                                    output_bounds
+                                );
                                 return Some((safe_sample, path_logp, total_infeasible_cdf));
                             } else {
                                 // Best thing to do here would be to figure out how to sample despite poor conditioning
@@ -412,7 +419,6 @@ pub trait CensoredProbStarSet2: CensoredProbStarSet<Ix2> + ProbStarSet2 {
             // check timeout
             if let Some(time_limit) = time_limit_opt {
                 if start_time.elapsed() >= time_limit {
-                    info!("Unsafe sample after timeout at depth {}", path.len());
                     let samples: Vec<_> = sample_heap
                         .into_iter_sorted()
                         .take(num_samples)
@@ -421,6 +427,10 @@ pub trait CensoredProbStarSet2: CensoredProbStarSet<Ix2> + ProbStarSet2 {
                     if samples.iter().any(|x| x.iter().any(|v| v.abs() > 10.)) {
                         panic!("Timeout safe sample big!");
                     }
+                    info!(
+                        "sample_safe_star STOP: Unsafe sample after timeout at depth {}",
+                        path.len()
+                    );
                     return Some((samples, path_logp, total_infeasible_cdf));
                 }
             }
@@ -461,15 +471,19 @@ pub trait CensoredProbStarSet2: CensoredProbStarSet<Ix2> + ProbStarSet2 {
         let unsafe_sample_and_vals: Vec<(&Array1<NNVFloat>, f64)> = {
             let sample_iter = unsafe_sample.iter();
             let fixed_input_part: Option<Array1<NNVFloat>> = {
-                let unsafe_len = unsafe_sample[0].len();
+                let unsafe_len = unsafe_sample.get(0).map(|x| x.len());
+                if unsafe_len.is_none() {
+                    return Err(Vec::new());
+                }
+                let unsafe_len = unsafe_len.unwrap();
                 self.get_input_bounds().as_ref().map(|bounds| {
                     let fixed_bounds: Bounds1 = bounds.split_at(bounds.ndim() - unsafe_len).0;
                     let fixed_array: Array1<NNVFloat> = fixed_bounds.lower().to_owned();
                     fixed_array
                 })
             };
-            let node = self.get_node(current_node);
-            let bounds = self.get_input_bounds().as_ref();
+            let _node = self.get_node(current_node);
+            let _bounds = self.get_input_bounds().as_ref();
             if let Some(fix_part) = fixed_input_part {
                 sample_iter
                     .zip(iter::repeat(fix_part))
@@ -479,17 +493,17 @@ pub trait CensoredProbStarSet2: CensoredProbStarSet<Ix2> + ProbStarSet2 {
                             concatenate(Axis(0), &[fix.view(), unfix.view()]).unwrap(),
                         )
                     })
-                    .filter(|(_sample, x)| bounds.map(|b| b.is_member(&x.view())).unwrap_or(true))
-                    .filter(|(_sample, x)| node.is_input_member(&x.view()))
+                    //.filter(|(_sample, x)| bounds.map(|b| b.is_member(&x.view())).unwrap_or(true))
+                    //.filter(|(_sample, x)| node.is_input_member(&x.view()))
                     .map(|(sample, x)| (sample, self.get_dnn().forward1(x)[[0]]))
                     .collect()
             } else {
                 sample_iter
                     .map(|x| (x, self.get_dnn().forward1(x.clone())[[0]]))
-                    .filter(|(sample, _out)| {
-                        bounds.map(|b| b.is_member(&sample.view())).unwrap_or(true)
-                    })
-                    .filter(|(sample, _out)| node.is_input_member(&sample.view()))
+                    //.filter(|(sample, _out)| {
+                    //    bounds.map(|b| b.is_member(&sample.view())).unwrap_or(true)
+                    //})
+                    //.filter(|(sample, _out)| node.is_input_member(&sample.view()))
                     .collect()
             }
         };
