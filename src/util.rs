@@ -170,6 +170,8 @@ impl<A: Ord, B: Eq> Ord for FstOrdTuple<A, B> {
 ///
 /// * `representation_step`: The step for the `representation_id`.
 /// * `actual_step`: The step used to calculate bounds, stars, etc.
+///
+/// # Panics
 pub fn get_next_step(
     num_steps: Option<usize>,
     step: Option<usize>,

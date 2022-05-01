@@ -97,9 +97,7 @@ impl Graph {
     /// * `id` - Representation whose producing operation we are trying to retrieve
     pub fn get_representation_op_id(&self, id: &RepresentationId) -> Option<OperationId> {
         if id.operation_step.is_some() {
-            self.representation_ops
-                .get(&id.clone().with_step(None))
-                .copied()
+            self.representation_ops.get(&(*id).with_step(None)).copied()
         } else {
             self.representation_ops.get(id).copied()
         }
@@ -310,6 +308,7 @@ impl Graph {
     /// have double outputs when constructing `active_representation_ids`.
     ///
     /// # Errors
+    /// # Panics
     pub fn get_operation_set(
         &self,
         output_ids: &[RepresentationId],
@@ -338,7 +337,7 @@ impl Graph {
         // Set of representations that still need to be calculated, checking for case 3
         let mut active_representation_ids: Vec<_> = output_ids
             .iter()
-            .filter(|&out_id| !finished_representations.contains(&out_id.clone().with_step(None)))
+            .filter(|out_id| !finished_representations.contains(&out_id.with_step(None)))
             .collect();
 
         while !active_representation_ids.is_empty() {

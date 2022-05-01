@@ -7,7 +7,6 @@ use itertools::Itertools;
 use ndarray::Dimension;
 use ndarray::Ix2;
 use std::cell::{Ref, RefCell};
-use std::ops::Deref;
 
 pub struct GraphStarset<D: 'static + Dimension> {
     /// The network for which the starset is generated
@@ -72,12 +71,12 @@ impl<D: 'static + Dimension> StarSet<D> for GraphStarset<D> {
         Ref::map(self.arena.borrow(), |vec| &vec[star_id])
     }
 
-    fn get_producing_relationship(&self, star_id: &StarId) -> Option<StarRelationship> {
+    fn get_producing_relationship(&self, star_id: StarId) -> Option<StarRelationship> {
         self.relationships
             .borrow()
             .iter()
-            .find(|rel| rel.output_star_ids.iter().flatten().contains(star_id))
-            .map(|x| x.clone())
+            .find(|rel| rel.output_star_ids.iter().flatten().contains(&star_id))
+            .cloned()
     }
 
     fn get_relationship(&self, relationship_id: StarRelationshipId) -> Ref<StarRelationship> {
@@ -144,7 +143,7 @@ impl StarSet2 for GraphStarset<Ix2> {
                 output_bounds[star_id] = Some(
                     self.get_star(star_id)
                         .calculate_output_axis_aligned_bounding_box(input_bounds),
-                )
+                );
             }
         }
         Ref::map(self.try_get_local_output_bounds(star_id), |bounds_opt| {

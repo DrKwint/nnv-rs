@@ -40,7 +40,7 @@ pub trait StarSet<D: 'static + Dimension> {
     /// Get a reference to a star
     fn get_star(&self, star_id: StarId) -> Ref<Star<D>>;
     /// Gets the relationship that produces a star
-    fn get_producing_relationship(&self, star_id: &StarId) -> Option<StarRelationship>;
+    fn get_producing_relationship(&self, star_id: StarId) -> Option<StarRelationship>;
     /// Gets a relationship
     fn get_relationship(&self, relationship_id: StarRelationshipId) -> Ref<StarRelationship>;
     /// Add a star
@@ -59,11 +59,11 @@ pub trait StarSet<D: 'static + Dimension> {
 
     /// Returns a set of node ids that are all ancestors of `node_id`
     /// # Panics
-    fn get_ancestors(&self, star_id: &StarId) -> HashSet<usize> {
+    fn get_ancestors(&self, star_id: StarId) -> HashSet<usize> {
         let mut ancestors = HashSet::new();
-        let mut parent_stack = vec![*star_id];
+        let mut parent_stack = vec![star_id];
         while let Some(current_id) = parent_stack.pop() {
-            self.get_producing_relationship(&current_id)
+            self.get_producing_relationship(current_id)
                 .into_iter()
                 .for_each(|rel| {
                     rel.input_star_ids.into_iter().for_each(|parent_id| {
@@ -158,7 +158,7 @@ pub trait StarSet2: StarSet<Ix2> {
                 child_stars_bounds
                     .into_iter()
                     .map(|(star, child_local_output_bounds)| {
-                        let out_repr_id = output_repr_id.clone().with_step(repr_step);
+                        let out_repr_id = output_repr_id.with_step(repr_step);
                         self.add_star(star, out_repr_id, child_local_output_bounds)
                     })
                     .collect()

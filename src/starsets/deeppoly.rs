@@ -1,9 +1,7 @@
-use std::ops::Deref;
-
 use crate::affine::Affine2;
 use crate::bounds::Bounds1;
 use crate::dnn::DNN;
-use crate::graph::{Engine, Operation, OperationId, OperationNode, PhysicalOp, RepresentationId};
+use crate::graph::{Engine, Operation, OperationId, OperationNode, RepresentationId};
 use crate::util::get_next_step;
 use itertools::Itertools;
 use ndarray::{Array1, Array2, Axis, Slice};
@@ -26,20 +24,20 @@ use ndarray::{Array1, Array2, Axis, Slice};
 ///
 pub fn deep_poly(
     dnn: &DNN,
-    input_nodes: &Vec<(RepresentationId, &Bounds1)>,
-    output_ids: &Vec<RepresentationId>,
+    input_nodes: &[(RepresentationId, &Bounds1)],
+    output_ids: &[RepresentationId],
 ) -> Vec<Bounds1> {
     _deep_poly(dnn, input_nodes, output_ids).0
 }
 
-/// This function is used for testing deep_poly and should not be used in the public API.
+/// This function is used for testing `deep_poly` and should not be used in the public API.
 /// In addition to the tighter bounds calculated by concretizing the abstract bounds with
 /// the input bounds, this function also returns the concrete bounds, which is used to
 /// ensure that the concrete bounds are in fact looser.
 pub fn _deep_poly(
     dnn: &DNN,
-    input_nodes: &Vec<(RepresentationId, &Bounds1)>,
-    output_ids: &Vec<RepresentationId>,
+    input_nodes: &[(RepresentationId, &Bounds1)],
+    output_ids: &[RepresentationId],
 ) -> (Vec<Bounds1>, Vec<Bounds1>) {
     assert!(!input_nodes.is_empty());
 
@@ -51,14 +49,14 @@ pub fn _deep_poly(
         let all_upper_matrix = Array2::eye(input_size); // input_size x input_size
 
         input_nodes
-            .into_iter()
+            .iter()
             .scan(0, |start_idx, &(id, bounds)| {
                 let dim = bounds.ndim();
                 let end_idx: usize = *start_idx + dim;
                 let output = (
                     id,
                     (
-                        Bounds1::clone(&bounds),
+                        Bounds1::clone(bounds),
                         Affine2::new(
                             all_lower_matrix
                                 .slice_axis(Axis(1), Slice::from(*start_idx..end_idx))
@@ -83,29 +81,24 @@ pub fn _deep_poly(
     let outputs = engine.run_nodal(
         output_ids,
         &input_representations,
-        |op_id: OperationId,
+        |_op_id: OperationId,
          op_node: &OperationNode,
          inputs: &Vec<&(Bounds1, Affine2, Affine2)>,
          op_step: Option<usize>|
          -> (Option<usize>, Vec<(Bounds1, Affine2, Affine2)>) {
-            let mut op_step = op_step.clone();
             // op_step is None if nothing has run yet, output None as the step when the entire Op is done
             // This visitor, if a step is taken from None, should increment None -> 0 and then op.num_steps -> None
             let (bounds_concrete, laff, uaff): (Vec<_>, Vec<_>, Vec<_>) = inputs
-                .into_iter()
+                .iter()
                 .map(|&tup| (&tup.0, &tup.1, &tup.2))
                 .multiunzip();
             let output_id = output_ids
                 .iter()
                 .filter(|&out_id| out_id.operation_step.is_some())
                 .find(|&repr_id| {
-                    op_node
-                        .get_output_ids()
-                        .iter()
-                        .find(|&op_repr_id| {
-                            op_repr_id.representation_node_id == repr_id.representation_node_id
-                        })
-                        .is_some()
+                    op_node.get_output_ids().iter().any(|&op_repr_id| {
+                        op_repr_id.representation_node_id == repr_id.representation_node_id
+                    })
                 });
             if op_step.is_some() || output_id.is_some() {
                 let (repr_step, next_step) =
@@ -135,7 +128,7 @@ pub fn _deep_poly(
     // Collect all input bounds into one bound
     let input_bounds = input_nodes
         .iter()
-        .fold(Bounds1::default(0), |acc, &(_, b)| acc.append(&b));
+        .fold(Bounds1::default(0), |acc, &(_, b)| acc.append(b));
 
     // Concretize the bounds in terms of the input bounds
     outputs

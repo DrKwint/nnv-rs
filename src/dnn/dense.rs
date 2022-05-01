@@ -56,9 +56,9 @@ impl Operation for Dense {
         upper_aff: &[&Affine2],
     ) -> Vec<(Bounds1, Affine2, Affine2)> {
         assert_eq!(1, bounds.len());
-        let new_lower = self.aff.signed_compose(&lower_aff[0], &upper_aff[0]);
-        let new_upper = self.aff.signed_compose(&upper_aff[0], &lower_aff[0]);
-        vec![(self.aff.signed_apply(&bounds[0]), new_lower, new_upper)]
+        let new_lower = self.aff.signed_compose(lower_aff[0], upper_aff[0]);
+        let new_upper = self.aff.signed_compose(upper_aff[0], lower_aff[0]);
+        vec![(self.aff.signed_apply(bounds[0]), new_lower, new_upper)]
     }
 
     fn forward_star<StarRef: Deref<Target = Star2>, Bounds1Ref: Deref<Target = Bounds1>>(

@@ -94,7 +94,7 @@ impl DNN {
     /// # Returns
     /// `Vec<(num_samples, dimension)>` where each entry is a layer's activations
     ///
-    /// # Results
+    /// # Errors
     /// TODO
     ///
     /// # Panics
@@ -124,6 +124,7 @@ impl DNN {
         Ok(activation_patterns)
     }
 
+    /// # Errors
     pub fn calculate_activation_pattern1(
         &self,
         inputs: &[Array1<NNVFloat>],
@@ -170,7 +171,7 @@ impl DNN {
         let engine = Engine::new(&self.graph);
         let res = engine.run(
             self.get_output_representation_ids(),
-            &inputs,
+            inputs,
             |op: &PhysicalOp, inputs, _| -> (Option<usize>, Vec<Array1<NNVFloat>>) {
                 (None, op.forward1(inputs))
             },

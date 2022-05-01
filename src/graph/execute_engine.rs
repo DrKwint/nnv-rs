@@ -56,7 +56,7 @@ impl<'a> Engine<'a> {
     /// TODO
     pub fn run<T: Clone + Debug>(
         &self,
-        output_ids: &Vec<RepresentationId>,
+        output_ids: &[RepresentationId],
         inputs: &[(RepresentationId, T)],
         mut visit: impl FnMut(&PhysicalOp, &Vec<&T>, Option<usize>) -> (Option<usize>, Vec<T>),
     ) -> Result<Vec<(RepresentationId, T)>, ExecuteError> {
@@ -69,6 +69,7 @@ impl<'a> Engine<'a> {
         )
     }
 
+    /// # Panics
     pub fn run_nodal<T: Clone + Debug>(
         &self,
         output_ids: &[RepresentationId],
@@ -80,7 +81,7 @@ impl<'a> Engine<'a> {
             Option<usize>,
         ) -> (Option<usize>, Vec<T>),
     ) -> Result<Vec<(RepresentationId, T)>, ExecuteError> {
-        let mut state = ExecutionState::new(inputs, &output_ids)?;
+        let mut state = ExecutionState::new(inputs, output_ids)?;
 
         // Calculate subgraph and path of operations to perform
         // 1. Walk back through operations BFS
@@ -152,7 +153,7 @@ impl<'a> Engine<'a> {
                 }
 
                 for &repr_id in op_node.get_output_ids() {
-                    if let Some(&done_step) = state.get_step_end(repr_id) {
+                    if let Some(&_done_step) = state.get_step_end(repr_id) {
                         // Check if we just skipped a end step in the operation
                         // if new_step.map_or(true, |s| s > done_step) {
                         //     return Err(ExecuteError::SkippedEndStepOfOperation {
@@ -197,7 +198,7 @@ impl<'a> Engine<'a> {
             .map(|&id| state.get_representation(id).cloned().map(|r| (id, r)))
             .collect::<Option<Vec<(RepresentationId, T)>>>()
             .ok_or(ExecuteError::OneOfRepresentationsNotExist {
-                repr_ids: output_ids.iter().map(|&x| x).collect(),
+                repr_ids: output_ids.iter().copied().collect(),
             })?;
 
         Ok(outputs)
@@ -326,7 +327,7 @@ impl<T: Clone> ExecutionState<T> {
         output_ids: &[RepresentationId],
     ) -> Result<Self, ExecuteError> {
         let mut representations = HashMap::new();
-        for (repr_id, val) in inputs.into_iter() {
+        for (repr_id, val) in inputs {
             let already_added = representations.insert(*repr_id, val.clone());
             if already_added.is_some() {
                 return Err(ExecuteError::StateAlreadyHasRepresentation { rep_id: *repr_id });
@@ -341,7 +342,7 @@ impl<T: Clone> ExecutionState<T> {
             .collect();
         Ok(Self {
             representations,
-            step_starts: step_starts,
+            step_starts,
             step_ends: output_ids
                 .iter()
                 .filter(|id| id.operation_step.is_some())

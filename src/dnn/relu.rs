@@ -64,7 +64,7 @@ impl Operation for ReLU {
         upper_aff: &[&Affine2],
     ) -> Vec<(Bounds1, Affine2, Affine2)> {
         // if (self.ndims + 1) == bounds[0].ndim() {
-        vec![deep_poly_relu(&bounds[0], &lower_aff[0], &upper_aff[0])]
+        vec![deep_poly_relu(bounds[0], lower_aff[0], upper_aff[0])]
         // } else {
         //     let (bounds_head, bounds_tail) = bounds[0].split_at(self.ndims);
         //     let (lower_aff_head, lower_aff_tail) = lower_aff[0].split_at(self.ndims);
@@ -124,7 +124,7 @@ impl Operation for ReLU {
             star_local_output_bounds.push(parent_local_output_bounds_opt.as_ref().map(
                 |parent_local_output_bounds| {
                     let mut local_output_bounds: Bounds1 =
-                        Bounds1::clone(&parent_local_output_bounds);
+                        Bounds1::clone(parent_local_output_bounds);
                     local_output_bounds.index_mut(dim)[0] = 0.;
                     local_output_bounds.index_mut(dim)[1] = 0.;
                     local_output_bounds

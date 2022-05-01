@@ -75,7 +75,7 @@ impl<D: Dimension> Star<D> {
     pub fn num_constraints(&self) -> usize {
         self.constraints
             .as_ref()
-            .map_or(0, |polytope| polytope.num_constraints())
+            .map_or(0, Polytope::num_constraints)
     }
 
     /// Add constraints to restrict the input set. Each row represents a

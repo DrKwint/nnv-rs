@@ -83,10 +83,10 @@ pub trait Operation: Clone + Debug + Send + Sync {
     ///
     /// # Description
     ///
-    /// Returns the set of children stars with their input_bounds, one tuple for each output of the operation.
+    /// Returns the set of children stars with their `input_bounds`, one tuple for each output of the operation.
     /// In the case that there is one, sets the bool to whether the output bounds can be copied.
     ///
-    /// We pass axis_aligned_input_bounds through each operation because it's very cheap to update and expensive to calculate.
+    /// We pass `axis_aligned_input_bounds` through each operation because it's very cheap to update and expensive to calculate.
     ///
     /// # Arguments
     ///

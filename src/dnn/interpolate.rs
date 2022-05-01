@@ -55,6 +55,7 @@ impl Interpolate {
         s
     }
 
+    /// # Panics
     pub fn get_affine(&self) -> &Affine2 {
         self.affine.as_ref().unwrap()
     }
@@ -203,7 +204,7 @@ impl Operation for Interpolate {
     ) -> Vec<Vec<(Star2, Option<Bounds1>)>> {
         assert_eq!(1, stars.len());
         assert!(parent_local_output_bounds_opt.map_or(true, |b| b.len() == 1));
-        vec![vec![(stars[0].affine_map2(&self.get_affine()), None)]]
+        vec![vec![(stars[0].affine_map2(self.get_affine()), None)]]
     }
 }
 
