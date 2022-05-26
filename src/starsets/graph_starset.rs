@@ -71,7 +71,7 @@ impl<D: 'static + Dimension> StarSet<D> for GraphStarset<D> {
         Ref::map(self.arena.borrow(), |vec| &vec[star_id])
     }
 
-    fn get_producing_relationship(&self, star_id: StarId) -> Option<StarRelationship> {
+    fn get_producing_relationship(&self, star_id: &StarId) -> Option<StarRelationship> {
         self.relationships
             .borrow()
             .iter()
@@ -79,7 +79,7 @@ impl<D: 'static + Dimension> StarSet<D> for GraphStarset<D> {
                 rel.output_star_ids
                     .iter()
                     .flatten()
-                    .contains(&Some(star_id))
+                    .contains(&Some(*star_id))
             })
             .cloned()
     }
