@@ -208,4 +208,48 @@ pub trait ProbStarSet2: ProbStarSet<Ix2> + StarSet2 {
         );
         self.filter_node_member(node_id, samples)
     }
+
+    fn the_whole_enchilada(
+        &mut self,
+        frontier_select: impl Fn(StratifiedSamplingFrontier) -> StarId,
+        sample_node: impl Fn(NodeId, usize) -> Vec<Array1<NNVFloat>>,
+    ) {
+        // Iterative stratified importance sampling
+        // 0. Initialize the running estimated data
+        // 1. Initialize the frontier
+        #[derive(Default)]
+        struct StratifiedSamplingFrontier {
+            nodes_samples: HashMap<StarId, Vec<Array1<NNVFloat>>>,
+        }
+        impl StratifiedSamplingFrontier {
+            fn replace(&mut self, parent: NodeId, children: Vec<(NodeId, Vec<Array1<NNVFloat>>)>) {
+                todo!()
+            }
+        }
+        // Structure that tracks, at each split in the tree, how many samples went to each node from their parent
+        // This allows us to recover the probability of each region in the partition by taking the product of the probabilities from root to node.
+        struct PlinkoProbabilities {
+            fuck_i_dunno: todo!(),
+        }
+
+        let mut frontier = StratifiedSamplingFrontier {
+            nodes: vec![self.get_root_id()],
+            samples: Vec::default(),
+        };
+        // 2. Run selection function to take a node from the frontier to expand and sample
+        // 2a. Expand
+        let parent_id = frontier_select(frontier);
+        let children_nodes: Vec<NodeId> = todo!();
+        // 2b. Sample from each node
+        // 2ai. Calculate sample budget for each node
+        let chilren_samples: Vec<NodeId, Vec<Array1<NNVFloat>>> = children_nodes
+            .into_iter()
+            .map(|child_id| todo!())
+            .map(|child_id: NodeId, budget: usize| (child_id, sample_node(child_id, budget)))
+            .collect();
+        // 2aii. Add new samples to the frontier
+        frontier.replace(parent_id, children_samples)
+
+        // 3. Update the running estimate of the expected value
+    }
 }

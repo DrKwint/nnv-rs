@@ -199,6 +199,15 @@ impl Graph {
         (op, repr_id.operation_step)
     }
 
+    /// Calculates the next graph state after applying the next operation.
+    ///
+    /// Assumptions:
+    /// - If the next operation is stepped, takes a single step.
+    pub fn step<T: Clone + Debug>(&self, state: &GraphState<T>) -> GraphState<T> {
+        let next_operation = self.get_next_operation(state);
+        todo!()
+    }
+
     ///  Gets the reference counts of the `input_ids`
     ///
     /// # Description

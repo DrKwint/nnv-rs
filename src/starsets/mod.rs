@@ -21,4 +21,5 @@
 
 mod deeppoly;
 pub mod graph_starset;
+pub mod plinko_starset;
 pub mod starset;
