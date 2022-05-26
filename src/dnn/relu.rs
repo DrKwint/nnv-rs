@@ -99,13 +99,14 @@ impl Operation for ReLU {
         Some(vec![state[0].mapv(|x| x >= 0.0)])
     }
 
+    /// Ordering in each vec is \[lower, upper\], if both exist
     fn forward_star<StarRef: Deref<Target = Star2>, Bounds1Ref: Deref<Target = Bounds1>>(
         &self,
         stars: Vec<StarRef>,
         dim: Option<usize>,
         input_bounds: &Bounds1,
         parent_local_output_bounds_opt: Option<Vec<Bounds1Ref>>,
-    ) -> Vec<Vec<(Star2, Option<Bounds1>)>> {
+    ) -> Vec<Vec<Option<(Star2, Option<Bounds1>)>>> {
         assert!(parent_local_output_bounds_opt
             .as_ref()
             .map_or(true, |b| b.len() == 1));
@@ -117,19 +118,19 @@ impl Operation for ReLU {
         let child_stars = step_relu2(star, dim, Some(input_bounds));
         let is_single_child = child_stars.0.is_some() ^ child_stars.1.is_some();
 
-        let mut stars = vec![];
-        let mut star_local_output_bounds = Vec::new();
+        let mut children = vec![];
         if let Some(mut lower_star) = child_stars.0 {
             // local_output_bounds output
-            star_local_output_bounds.push(parent_local_output_bounds_opt.as_ref().map(
-                |parent_local_output_bounds| {
-                    let mut local_output_bounds: Bounds1 =
-                        Bounds1::clone(parent_local_output_bounds);
-                    local_output_bounds.index_mut(dim)[0] = 0.;
-                    local_output_bounds.index_mut(dim)[1] = 0.;
-                    local_output_bounds
-                },
-            ));
+            let local_output_bounds =
+                parent_local_output_bounds_opt
+                    .as_ref()
+                    .map(|parent_local_output_bounds| {
+                        let mut local_output_bounds: Bounds1 =
+                            Bounds1::clone(parent_local_output_bounds);
+                        local_output_bounds.index_mut(dim)[0] = 0.;
+                        local_output_bounds.index_mut(dim)[1] = 0.;
+                        local_output_bounds
+                    });
 
             // star output
             if is_single_child && lower_star.num_constraints() > star.num_constraints() {
@@ -137,13 +138,15 @@ impl Operation for ReLU {
                 let num_constraints = lower_star.num_constraints();
                 lower_star = lower_star.remove_constraint(num_constraints - 1);
             }
-            stars.push(lower_star);
+            children.push(Some((lower_star, local_output_bounds)));
+        } else {
+            children.push(None)
         }
 
         if let Some(mut upper_star) = child_stars.1 {
             // local_output_bounds output
-            star_local_output_bounds.push(parent_local_output_bounds_opt.map(
-                |parent_local_output_bounds| {
+            let local_output_bounds =
+                parent_local_output_bounds_opt.map(|parent_local_output_bounds| {
                     let mut local_output_bounds: Bounds1 =
                         Bounds1::clone(&parent_local_output_bounds);
                     let mut lb = local_output_bounds.index_mut(dim);
@@ -151,25 +154,23 @@ impl Operation for ReLU {
                         lb[0] = 0.;
                     }
                     local_output_bounds
-                },
-            ));
+                });
 
             // star output
             if is_single_child && upper_star.num_constraints() > star.num_constraints() {
                 // Remove redundant constraint added by step_relu2 above
                 let num_constraints = upper_star.num_constraints();
                 if num_constraints == 0 {
-                    println!("HERE");
+                    println!("TODO: DEBUG");
                 }
                 upper_star = upper_star.remove_constraint(num_constraints - 1);
             }
-            stars.push(upper_star);
+            children.push(Some((upper_star, local_output_bounds)));
+        } else {
+            children.push(None)
         }
 
-        vec![stars
-            .into_iter()
-            .zip(star_local_output_bounds.into_iter())
-            .collect()]
+        vec![children]
     }
 }
 

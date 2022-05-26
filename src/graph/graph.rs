@@ -1,3 +1,4 @@
+use super::Operation;
 use crate::dnn::conv::Conv;
 use crate::dnn::dense::Dense;
 use crate::dnn::interpolate::Interpolate;

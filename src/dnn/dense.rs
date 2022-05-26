@@ -67,10 +67,10 @@ impl Operation for Dense {
         _activation_idx: Option<usize>,
         _input_bounds: &Bounds1,
         parent_local_output_bounds_opt: Option<Vec<Bounds1Ref>>,
-    ) -> Vec<Vec<(Star2, Option<Bounds1>)>> {
+    ) -> Vec<Vec<Option<(Star2, Option<Bounds1>)>>> {
         assert_eq!(stars.len(), 1);
         assert!(parent_local_output_bounds_opt.map_or(true, |b| b.len() == 1));
-        vec![vec![(stars[0].affine_map2(&self.aff), None)]]
+        vec![vec![Some((stars[0].affine_map2(&self.aff), None))]]
     }
 }
 

@@ -75,7 +75,12 @@ impl<D: 'static + Dimension> StarSet<D> for GraphStarset<D> {
         self.relationships
             .borrow()
             .iter()
-            .find(|rel| rel.output_star_ids.iter().flatten().contains(&star_id))
+            .find(|rel| {
+                rel.output_star_ids
+                    .iter()
+                    .flatten()
+                    .contains(&Some(star_id))
+            })
             .cloned()
     }
 

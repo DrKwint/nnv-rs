@@ -106,7 +106,7 @@ pub trait Operation: Clone + Debug + Send + Sync {
         step_id: Option<usize>,
         input_bounds: &Bounds1,
         parent_local_output_bounds_opt: Option<Vec<Bounds1Ref>>,
-    ) -> Vec<Vec<(Star2, Option<Bounds1>)>>;
+    ) -> Vec<Vec<Option<(Star2, Option<Bounds1>)>>>;
 
     fn inputs_dims(&self) -> Vec<usize> {
         self.input_shapes()

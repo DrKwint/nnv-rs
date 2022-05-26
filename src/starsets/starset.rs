@@ -1,16 +1,21 @@
 use crate::bounds::Bounds;
 use crate::bounds::Bounds1;
 use crate::dnn::DNN;
+use crate::graph::Engine;
 use crate::graph::Graph;
+use crate::graph::GraphState;
 use crate::graph::Operation;
 use crate::graph::OperationId;
 use crate::graph::RepresentationId;
 use crate::star::Star;
 use crate::util::get_next_step;
+use crate::NNVFloat;
+use itertools::Itertools;
 use ndarray::Dimension;
 use ndarray::Ix2;
 use serde::{Deserialize, Serialize};
 use std::cell::Ref;
+use std::collections::HashMap;
 use std::collections::HashSet;
 
 pub type StarId = usize;
@@ -21,7 +26,7 @@ pub struct StarRelationship {
     pub operation_id: OperationId,
     pub step: Option<usize>,
     pub input_star_ids: Vec<usize>,
-    pub output_star_ids: Vec<Vec<usize>>,
+    pub output_star_ids: Vec<Vec<Option<usize>>>,
 }
 
 /// We assume there's a root star that is the ordered concatenation of the DNN's input variables.
@@ -151,18 +156,23 @@ pub trait StarSet2: StarSet<Ix2> {
         };
 
         // 2. Add child stars and StarRelationship
-        let child_star_ids: Vec<Vec<usize>> = outputs
+        let child_star_ids: Vec<Vec<Option<usize>>> = outputs
             .into_iter()
             .zip(operation_node.get_output_ids().iter())
-            .map(|(child_stars_bounds, &output_repr_id)| -> Vec<usize> {
-                child_stars_bounds
-                    .into_iter()
-                    .map(|(star, child_local_output_bounds)| {
-                        let out_repr_id = output_repr_id.with_step(repr_step);
-                        self.add_star(star, out_repr_id, child_local_output_bounds)
-                    })
-                    .collect()
-            })
+            .map(
+                |(child_stars_bounds, &output_repr_id)| -> Vec<Option<usize>> {
+                    child_stars_bounds
+                        .into_iter()
+                        .map(|x| match x {
+                            Some((star, child_local_output_bounds)) => {
+                                let out_repr_id = output_repr_id.with_step(repr_step);
+                                Some(self.add_star(star, out_repr_id, child_local_output_bounds))
+                            }
+                            None => None,
+                        })
+                        .collect()
+                },
+            )
             .collect();
 
         let star_rel = StarRelationship {
@@ -172,6 +182,110 @@ pub trait StarSet2: StarSet<Ix2> {
             output_star_ids: child_star_ids,
         };
         self.add_relationship(star_rel)
+    }
+
+    fn build_entire_tree(&self) {
+        let engine = Engine::new(self.get_graph());
+        // Expand all nodes in the starset tree by visiting each operation in order and expanding all stars for the inputs to that operation
+        let inputs = vec![(
+            self.get_dnn().get_input_representation_ids()[0].clone(),
+            vec![self.get_root_id()],
+        )];
+        let res = engine.run_nodal(
+            self.get_dnn().get_output_representation_ids(),
+            &inputs,
+            |op_id, op_node, inputs, step| -> (Option<usize>, Vec<Vec<usize>>) {
+                assert_eq!(1, inputs.len());
+                let (repr_step, _next_step) =
+                    get_next_step(op_node.get_operation().num_steps(), step);
+                let input_stars = inputs[0];
+                let star_ids = input_stars
+                    .into_iter()
+                    .map(|input_star_id| {
+                        let rel_id = self.expand(op_id, vec![*input_star_id]);
+                        let rel = self.get_relationship(rel_id);
+                        assert_eq!(repr_step, rel.step);
+                        rel.output_star_ids.clone().into_iter().flatten()
+                    })
+                    .flatten()
+                    .flat_map(|x| x)
+                    .collect();
+
+                (repr_step, vec![star_ids])
+            },
+        );
+    }
+
+    /// Currently assumes a sequential structure
+    fn calculate_max_value_given_activations(
+        &self,
+        layer_activations: Vec<Vec<bool>>,
+    ) -> Option<NNVFloat> {
+        let (graph_state, mut star_ids) = {
+            let output_ids = self.get_dnn().get_output_representation_ids();
+            let (input_ids, star_ids): (HashMap<RepresentationId, StarId>, _) = {
+                let repr_ids = self.get_dnn().get_input_representation_ids();
+                let star_ids: Vec<_> = repr_ids
+                    .iter()
+                    .map(|repr_id| {
+                        let repr_stars = self.get_stars_for_representation(repr_id);
+                        assert!(repr_stars.len() == 1);
+                        repr_stars[0]
+                    })
+                    .collect();
+                let repr_star_map = repr_ids
+                    .into_iter()
+                    .copied()
+                    .zip(star_ids.iter().copied())
+                    .collect::<HashMap<_, _>>();
+                (repr_star_map, star_ids)
+            };
+            let graph_state =
+                GraphState::new(output_ids.clone(), input_ids, self.get_dnn().get_graph());
+            (graph_state, star_ids)
+        };
+        let graph = self.get_dnn().get_graph();
+        let ops = graph
+            .get_operation_set(
+                self.get_dnn().get_output_representation_ids(),
+                self.get_dnn().get_input_representation_ids(),
+            )
+            .unwrap();
+
+        let output_stars = ops.into_iter().sorted().zip(layer_activations).fold(
+            vec![self.get_root_id()],
+            |mut star_ids, (operation_id, activations)| {
+                let op = self.get_dnn().get_operation(operation_id).unwrap();
+                for (step, act) in (0..op.num_steps().unwrap_or(1)).zip(activations) {
+                    let relationship_id = self.expand(operation_id, star_ids);
+                    // assume exactly one op output
+                    let child_star_id =
+                        self.get_relationship(relationship_id).output_star_ids[0][act as usize];
+                    match child_star_id {
+                        Some(x) => {
+                            println!("child star_id: {:?}", x);
+                            star_ids = vec![x]
+                        }
+                        None => panic!("Doesn't exist!"),
+                    }
+                }
+                star_ids
+            },
+        );
+        println!("output stars: {:?}", output_stars);
+
+        /*
+        for _ in 0..10 {
+            let (operation_id, step) = graph.get_next_operation(&graph_state);
+            let relation_id = self.expand(operation_id, star_ids);
+            let relationship = self.get_relationship(relation_id);
+            relationship.output_star_ids[0] // assume exactly one operation output
+                .into_iter()
+                .map(|star_id| (self.get_star_representation_id(star_id), star_id))
+                .collect();
+        }
+        */
+        todo!()
     }
 }
 
@@ -226,7 +340,7 @@ mod tests {
             prop_assert_eq!(None, rel.step);
             prop_assert_eq!(rel.input_star_ids.len(), 1);
             prop_assert_eq!(rel.output_star_ids.len(), 1);
-            prop_assert!(rel.output_star_ids[0][0] > rel.input_star_ids[0]);
+            prop_assert!(rel.output_star_ids[0][0] > Some(rel.input_star_ids[0]));
         }
 
         #[test]
@@ -249,7 +363,7 @@ mod tests {
                     let rel = starset.get_relationship(rel_id);
                     assert_eq!(repr_step, rel.step);
                     rel.output_star_ids.clone().into_iter().flatten()
-                }).flatten().collect();
+                }).flatten().map(|x| x.unwrap()).collect();
 
                 (repr_step, vec![star_ids])
             });
@@ -303,6 +417,7 @@ mod tests {
                         rel.output_star_ids.clone().into_iter().flatten()
                     })
                     .flatten()
+                    .map(|x| x.unwrap())
                     .collect();
 
                 (repr_step, vec![star_ids])
