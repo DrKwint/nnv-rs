@@ -158,6 +158,7 @@ mod tests {
     use proptest::prelude::*;
     use proptest::sample::select;
     use std::collections::HashMap;
+    use std::ops::Deref;
 
     #[test]
     fn test_deeppoly_concrete() {
@@ -364,7 +365,7 @@ mod tests {
 
 
                     let output_star_ids = starset.get_stars_for_representation(&end_repr).into_iter()
-                        .filter(|output_star_id| starset.get_ancestors(&output_star_id).contains(&input_star_id));
+                        .filter(|output_star_id| starset.get_ancestors(*output_star_id).contains(&input_star_id));
 
                     for output_star_id in output_star_ids.into_iter() {
                         let output_star = starset.get_star(output_star_id);
